@@ -18,6 +18,7 @@ public final class GateConfig {
     public boolean firstRunDone = false;
     public boolean hologramEnabled = true;
     public boolean domeEnabled = true;
+    public boolean gateNamesEnabled = true; // ゲート名ラベル (在世界・両次元) 既定 ON
 
     // 点群ポップアップの表示オプション (PointCloudViewState の器)。
     public boolean pcShowOverworld = true;

@@ -8,6 +8,7 @@ import com.kajiwara.visualizegate.domain.GridPos;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.config.GateConfigManager;
+import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.state.BackCalcStore;
 import com.kajiwara.visualizegate.state.PointCloudViewState;
 import com.kajiwara.visualizegate.state.VgOverlayState;
@@ -116,6 +117,12 @@ public final class VgCommands {
             boolean on = PointCloudViewState.toggleOverlayDetail();
             GateConfigManager.save();
             return feedbackToggle(c, "visualizegate.cmd.detail", on);
+        }));
+        // ゲート名ラベル トグル (各実ポータル上の在世界名前表示・状態色・SEE_THROUGH・GateConfig 永続・既定 ON)。
+        root.then(literal("names").executes(c -> {
+            boolean on = GateMenuState.toggleGateNames();
+            GateConfigManager.save();
+            return feedbackToggle(c, "visualizegate.cmd.names", on);
         }));
         // ㊸A `/vg perf` は廃止 (perf はドック展開＝フルメニューで常時表示)。
 
@@ -236,6 +243,7 @@ public final class VgCommands {
         src.sendFeedback(Component.translatable("visualizegate.help.dock", Component.translatable(
                 VgOverlayState.isDockExpanded() ? "visualizegate.help.expanded" : "visualizegate.help.collapsed")));
         src.sendFeedback(Component.translatable("visualizegate.help.detail", onOff(PointCloudViewState.isOverlayDetail())));
+        src.sendFeedback(Component.translatable("visualizegate.help.names", onOff(GateMenuState.isGateNamesEnabled())));
         src.sendFeedback(Component.translatable("visualizegate.help.clean"));
         src.sendFeedback(Component.translatable("visualizegate.help.backcalc"));
         return 1;

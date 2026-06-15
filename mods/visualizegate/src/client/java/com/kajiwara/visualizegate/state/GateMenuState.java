@@ -19,6 +19,8 @@ public final class GateMenuState {
     private static boolean hologramEnabled = true;
     // 機能3 探索ドーム (リンク検索範囲＋混線検出) 既定 ON。
     private static boolean domeEnabled = true;
+    // ゲート名ラベル (各ポータル上の在世界テキスト・状態色・SEE_THROUGH) 既定 ON。
+    private static boolean gateNamesEnabled = true;
 
     private GateMenuState() {
     }
@@ -112,5 +114,19 @@ public final class GateMenuState {
     public static boolean toggleDome() {
         domeEnabled = !domeEnabled;
         return domeEnabled;
+    }
+
+    // ── ゲート名ラベル (在世界・両次元の現存ポータル上) ──
+    public static boolean isGateNamesEnabled() {
+        return gateNamesEnabled;
+    }
+
+    public static void setGateNamesEnabled(boolean v) {
+        gateNamesEnabled = v;
+    }
+
+    public static boolean toggleGateNames() {
+        gateNamesEnabled = !gateNamesEnabled;
+        return gateNamesEnabled;
     }
 }

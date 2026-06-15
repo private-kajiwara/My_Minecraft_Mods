@@ -5,6 +5,7 @@ import com.kajiwara.visualizegate.client.keybind.GateKeyBindings;
 import com.kajiwara.visualizegate.client.render.BackCalcRenderer;
 import com.kajiwara.visualizegate.client.render.CornerIconRenderer;
 import com.kajiwara.visualizegate.client.render.GateGraphRenderer;
+import com.kajiwara.visualizegate.client.render.GateNameLabelRenderer;
 import com.kajiwara.visualizegate.client.render.HologramFrameRenderer;
 import com.kajiwara.visualizegate.client.render.PortalBoxRenderer;
 import com.kajiwara.visualizegate.client.render.PortalInfoCardRenderer;
@@ -69,6 +70,8 @@ public class VisualizeGateClient implements ClientModInitializer {
         PortalInfoCardRenderer.register();
         // ㉟C `/vg visualize` 全ゲート関係 in-world ワイヤーフレーム (既定 OFF・5 状態色・距離カリング・据置)。
         GateGraphRenderer.register();
+        // ゲート名ラベル (各実ポータル上に名前を在世界表示・SEE_THROUGH 壁越し・状態色・既定 ON・/vg names)。
+        GateNameLabelRenderer.register();
         // ㊲ B-F3 集約ドック (左上・畳/展・パフォ/状態/注記)。 ⑤④ 点群は別パネルへ移設したのでドックからは外れた。
         VgDockRenderer.register();
         // ⑤④ 案C 点群オーバーレイ (右下・[V] の真上・独立 HUD パネル)。 /vg point-cloud ON で表示。
