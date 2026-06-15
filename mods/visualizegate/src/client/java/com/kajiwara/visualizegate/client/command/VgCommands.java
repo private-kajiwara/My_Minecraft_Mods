@@ -2,6 +2,7 @@ package com.kajiwara.visualizegate.client.command;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import com.kajiwara.visualizegate.client.render.GateNameLabelRenderer;
 import com.kajiwara.visualizegate.domain.BackCalc;
@@ -28,6 +29,10 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
+import java.util.concurrent.CompletableFuture;
 
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 //? if >=26.1 {
@@ -92,18 +97,13 @@ public final class VgCommands {
     private static void build(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         LiteralArgumentBuilder<FabricClientCommandSource> root = literal("vg");
 
-        // /vg clean — ㉟ どのモードにも効く一括停止 (全 /vg オーバーレイ OFF ＋ 逆算ワイヤーフレーム消去)。
-        root.then(literal("clean").executes(c -> {
-            int n = BackCalcStore.size();
-            VgOverlayState.clearAll();
-            // ⑤⑥ パネルも明示 OFF＋永続 (clean=全 OFF)。 cloud-only も解除。 dock 元フラグは clearAll が畳む。
-            PointCloudViewState.setPanelVisible(false);
-            PointCloudViewState.setCloudOnly(false);
-            GateConfigManager.save();
-            BackCalcStore.clear();
-            c.getSource().sendFeedback(Component.translatable("visualizegate.cmd.cleanall", n));
-            return 1;
-        }));
+        // /vg clean — ㉟ 引数なし=どのモードにも効く一括停止 (全 /vg オーバーレイ OFF ＋ 逆算/解決ワイヤーフレーム消去)。
+        //            <gate-name> 指定=そのゲートの resolve-conflict 要素 (緑/赤/橙/ピン) だけ消す (オーバーレイは触らない)。
+        LiteralArgumentBuilder<FabricClientCommandSource> clean = literal("clean").executes(VgCommands::cleanAll);
+        clean.then(argument("name", StringArgumentType.greedyString())
+                .suggests((ctx, b) -> suggestOwnedGates(b))
+                .executes(c -> cleanByName(c, StringArgumentType.getString(c, "name"))));
+        root.then(clean);
 
         // ㉟ オーバーレイ トグル (複数同時可・既定 OFF・切断でリセット・永続なし)。 再実行で OFF。
         LiteralArgumentBuilder<FabricClientCommandSource> pc = literal("point-cloud").executes(c -> {
@@ -166,6 +166,64 @@ public final class VgCommands {
 
         root.then(back);
         dispatcher.register(root);
+    }
+
+    /** /vg clean (引数なし): どのモードにも効く一括停止 (全オーバーレイ OFF ＋ 全ワイヤーフレーム消去)。 従来不変。 */
+    private static int cleanAll(CommandContext<FabricClientCommandSource> c) {
+        int n = BackCalcStore.size();
+        VgOverlayState.clearAll();
+        // ⑤⑥ パネルも明示 OFF＋永続 (clean=全 OFF)。 cloud-only も解除。 dock 元フラグは clearAll が畳む。
+        PointCloudViewState.setPanelVisible(false);
+        PointCloudViewState.setCloudOnly(false);
+        GateConfigManager.save();
+        BackCalcStore.clear();
+        c.getSource().sendFeedback(Component.translatable("visualizegate.cmd.cleanall", n));
+        return 1;
+    }
+
+    /**
+     * /vg clean &lt;gate-name&gt;: そのゲートの resolve-conflict 要素 (緑/赤/橙/ピン・owner==G) だけ消す。
+     * オーバーレイ/パネル/back-calculate(owner=null) は触らない。 該当ゲート無し/要素無しはチャット通知 (no-op)。
+     */
+    private static int cleanByName(CommandContext<FabricClientCommandSource> c, String name) {
+        List<GateNode> nodes = PortalMemory.get().gateNodes();
+        String trimmed = name.trim();
+        int idx = resolveGateIndex(nodes, trimmed);
+        if (idx < 0) {
+            c.getSource().sendError(Component.translatable("visualizegate.cmd.gatenotfound", trimmed));
+            return 0;
+        }
+        GateNode g = nodes.get(idx);
+        String display = GateNameLabelRenderer.displayName(g);
+        int removed = BackCalcStore.clearOwner(gateKey(g));
+        if (removed == 0) {
+            c.getSource().sendFeedback(colored(GateColors.LINK_GRAY, "visualizegate.cmd.cleannonefor", display));
+            return 1;
+        }
+        c.getSource().sendFeedback(colored(GateColors.LINK_GREEN, "visualizegate.cmd.cleanedfor", removed, display));
+        return 1;
+    }
+
+    /** name サジェスト: 現在 store に要素を持つゲートの displayName をライブ算出して提案 (無ければ全ゲート名)。 */
+    private static CompletableFuture<Suggestions> suggestOwnedGates(SuggestionsBuilder b) {
+        List<GateNode> nodes = PortalMemory.get().gateNodes();
+        List<String> owned = new ArrayList<>();
+        List<String> all = new ArrayList<>();
+        for (GateNode g : nodes) {
+            String display = GateNameLabelRenderer.displayName(g);
+            all.add(display);
+            if (BackCalcStore.hasOwner(gateKey(g))) {
+                owned.add(display);
+            }
+        }
+        List<String> pool = owned.isEmpty() ? all : owned;
+        String rem = b.getRemaining().toLowerCase(Locale.ROOT);
+        for (String s : pool) {
+            if (s.toLowerCase(Locale.ROOT).startsWith(rem)) {
+                b.suggest(s);
+            }
+        }
+        return b.buildFuture();
     }
 
     private static int runHere(CommandContext<FabricClientCommandSource> c, PortalDimension override) {
@@ -266,20 +324,15 @@ public final class VgCommands {
         GateConflictAnalyzer.Result an = GateConflictAnalyzer.analyze(
                 nodes, NETHER_MIN_Y, NETHER_MAX_Y, OW_MIN_Y, OW_MAX_Y);
 
-        // 名前 → ゲート (表示名＝ユーザー命名 or 既定 OW-/N-<番号>・大小無視で照合)。
-        int idx = -1;
+        // 名前 → ゲート (共有ヘルパ・表示名＝ユーザー命名 or 既定 OW-/N-<番号>・trim/大小無視)。
         String trimmed = name.trim();
-        for (int i = 0; i < nodes.size(); i++) {
-            if (GateNameLabelRenderer.displayName(nodes.get(i)).equalsIgnoreCase(trimmed)) {
-                idx = i;
-                break;
-            }
-        }
+        int idx = resolveGateIndex(nodes, trimmed);
         if (idx < 0) {
             c.getSource().sendError(Component.translatable("visualizegate.cmd.gatenotfound", trimmed));
             return 0;
         }
         GateNode gate = nodes.get(idx);
+        String ownerKey = gateKey(gate); // この解決で積む全要素に付与 (/vg clean <name> で一括除去)
         if (an.states()[idx] != GateState.CONFLICT) {
             // 競合でないゲートには何もしない (誤動作防止)。 現状態を添えて通知。
             c.getSource().sendFeedback(Component.translatable("visualizegate.cmd.notconflict",
@@ -331,13 +384,13 @@ public final class VgCommands {
         // 競合元=赤・取り合い相手=橙 のマーカー＋名前ピン (解が無くても状況を可視化)。
         BackCalcStore.add(new BackCalcStore.Element(conflictDim,
                 gate.x() + 0.5, gate.y(), gate.z() + 0.5, GateColors.STATE_CONFLICT, true,
-                trimmed, GateColors.STATE_CONFLICT));
+                trimmed, GateColors.STATE_CONFLICT).withOwner(ownerKey));
         if (!partners.isEmpty()) {
             StringBuilder names = new StringBuilder();
             for (GateNode p : partners) {
                 BackCalcStore.add(new BackCalcStore.Element(p.dim(),
                         p.x() + 0.5, p.y(), p.z() + 0.5, GateColors.CROSSTALK, true,
-                        GateNameLabelRenderer.displayName(p), GateColors.CROSSTALK));
+                        GateNameLabelRenderer.displayName(p), GateColors.CROSSTALK).withOwner(ownerKey));
                 if (names.length() > 0) {
                     names.append(", ");
                 }
@@ -348,7 +401,7 @@ public final class VgCommands {
         }
 
         // ★A(b) 排他ゾーンを投影正方形で描く: 既存吸い込み=赤、 取り合い相手=橙 (現次元へ写像・半幅=相手半径換算)。
-        addExclusionZones(conflictDim, otherDim, nodes, partners, ox, oz);
+        addExclusionZones(conflictDim, otherDim, nodes, partners, ox, oz, ownerKey);
 
         if (safe == null) {
             // ★2 探索範囲内に安全位置が無い → 明示通知 (誤動作/無反応にしない)。
@@ -362,7 +415,7 @@ public final class VgCommands {
         String pinLabel = trimmed + "  " + safe.x() + " " + safe.y() + " " + safe.z();
         BackCalcStore.add(new BackCalcStore.Element(conflictDim,
                 safe.x() + 0.5, safe.y(), safe.z() + 0.5, GateColors.LINK_GREEN, false,
-                pinLabel, GateColors.LINK_GREEN));
+                pinLabel, GateColors.LINK_GREEN).withOwner(ownerKey));
         c.getSource().sendFeedback(colored(GateColors.LINK_GREEN, "visualizegate.resolveconflict.safe",
                 dimName(conflictDim), safe.x(), safe.y(), safe.z()));
         // ★A 範囲の一言: 赤/橙の外ならどこでも安全 (緑は最近傍の一例)。
@@ -387,7 +440,7 @@ public final class VgCommands {
      * (OW=128/Nether=16)。 起点近傍のみ・上限 {@value #ZONE_CAP} 件 (過密/性能保護)。
      */
     private static void addExclusionZones(PortalDimension conflictDim, PortalDimension otherDim,
-            List<GateNode> gates, List<GateNode> partners, int ox, int oz) {
+            List<GateNode> gates, List<GateNode> partners, int ox, int oz, String ownerKey) {
         int half = SafePlacement.exclusionHalfWidth(conflictDim);
         int cMinY = (conflictDim == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
         int cMaxY = (conflictDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
@@ -405,7 +458,7 @@ public final class VgCommands {
                 continue;
             }
             BackCalcStore.add(BackCalcStore.Element.square(conflictDim,
-                    c.x() + 0.5, c.y(), c.z() + 0.5, half, GateColors.STATE_CONFLICT));
+                    c.x() + 0.5, c.y(), c.z() + 0.5, half, GateColors.STATE_CONFLICT).withOwner(ownerKey));
             drawn++;
         }
         // 橙: 取り合い相手の交差ゾーン (conflictDim はそのまま中心、 otherDim は写像中心)。
@@ -414,8 +467,24 @@ public final class VgCommands {
                     ? p.pos()
                     : PortalCoordinateMapper.project(p.pos(), otherDim, conflictDim, cMinY, cMaxY);
             BackCalcStore.add(BackCalcStore.Element.square(conflictDim,
-                    c.x() + 0.5, c.y(), c.z() + 0.5, half, GateColors.CROSSTALK));
+                    c.x() + 0.5, c.y(), c.z() + 0.5, half, GateColors.CROSSTALK).withOwner(ownerKey));
         }
+    }
+
+    /** 共有: 表示名 (ユーザー命名＞既定 OW-/N-n・trim/大小無視) で nodes 中のゲート添字を引く。 無→-1。 */
+    private static int resolveGateIndex(List<GateNode> nodes, String name) {
+        String t = name.trim();
+        for (int i = 0; i < nodes.size(); i++) {
+            if (GateNameLabelRenderer.displayName(nodes.get(i)).equalsIgnoreCase(t)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** ゲートの所有キー (dim+anchor・BackCalcStore.Element.ownerKey と /vg clean の照合に使用)。 */
+    private static String gateKey(GateNode g) {
+        return g.dim().name() + ":" + g.x() + ":" + g.y() + ":" + g.z();
     }
 
     /**

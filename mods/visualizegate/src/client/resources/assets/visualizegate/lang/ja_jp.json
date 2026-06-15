@@ -44,6 +44,8 @@
 	"visualizegate.resolveconflict.safe": "最寄りの安全位置 (緑): %s の %s, %s, %s — ここに建てれば相手を専有できます",
 	"visualizegate.resolveconflict.range": "赤 (吸い込み) ・橙 (取り合い) の正方形の外側ならどこでも安全 — 緑箱はその最寄り例です",
 	"visualizegate.resolveconflict.none": "起点から %s ブロック以内に競合しない建設位置が見つかりません — 別の場所へ移動して再実行してください",
+	"visualizegate.cmd.cleanedfor": "%s 件の解決要素を消去しました (対象: %s)",
+	"visualizegate.cmd.cleannonefor": "「%s」 に消去できる解決要素がありません",
 
 	"visualizegate.cmd.cleanall": "/vg オーバーレイを全て OFF・逆算ワイヤーフレーム %s 件も消去",
 	"visualizegate.cmd.dock": "ドック展開: %s",
@@ -66,7 +68,7 @@
 	"visualizegate.help.detail": "  /vg detail — 点群パネルのオーバーレイ詳細を切替 [%s]",
 	"visualizegate.help.names": "  /vg names — 在世界のゲート名ラベルを切替 [%s]",
 	"visualizegate.help.resolveconflict": "  /vg resolving-conflict <ゲート名> — 赤(競合)ゲートの競合しない建設位置を探す",
-	"visualizegate.help.clean": "  /vg clean — すべて OFF",
+	"visualizegate.help.clean": "  /vg clean [ゲート名] — 全消去、 または指定ゲートの解決マーカーだけ消去",
 	"visualizegate.help.backcalc": "  /vg back-calculate <x y z | here> [ow|nether]",
 	"visualizegate.help.expanded": "展開",
 	"visualizegate.help.collapsed": "畳み",

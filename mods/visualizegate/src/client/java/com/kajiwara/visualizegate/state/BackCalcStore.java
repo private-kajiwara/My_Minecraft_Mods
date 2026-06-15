@@ -35,6 +35,11 @@ public final class BackCalcStore {
          * (排他ゾーン footprint) として描く (resolve-conflict の赤/橙ゾーン)。 0=従来の小ボックス。
          */
         public final double squareHalf;
+        /**
+         * 任意: この要素を積んだ<b>所有ゲートのキー</b> (dim+anchor・{@code null}=ゲート非依存=back-calculate)。
+         * {@code /vg clean <gate-name>} が owner 一致の要素だけ消すために使う。 描画には影響しない。
+         */
+        public String ownerKey;
 
         public Element(PortalDimension dim, double x, double y, double z, int colorArgb, boolean existing) {
             this(dim, x, y, z, colorArgb, existing, null, 0, 0.0);
@@ -63,6 +68,12 @@ public final class BackCalcStore {
                 double half, int colorArgb) {
             return new Element(dim, cx, y, cz, colorArgb, true, null, 0, half);
         }
+
+        /** 所有ゲートキーを付与して自身を返す (チェーン用・追加前に呼ぶ)。 */
+        public Element withOwner(String key) {
+            this.ownerKey = key;
+            return this;
+        }
     }
 
     private static final CopyOnWriteArrayList<Element> ELEMENTS = new CopyOnWriteArrayList<>();
@@ -82,6 +93,33 @@ public final class BackCalcStore {
     public static void clear() {
         ELEMENTS.clear();
         version++;
+    }
+
+    /** `/vg clean <gate-name>` 用: 指定 owner キーの要素だけ消し、 消した件数を返す (0=該当なし)。 */
+    public static int clearOwner(String ownerKey) {
+        if (ownerKey == null) {
+            return 0;
+        }
+        int before = ELEMENTS.size();
+        ELEMENTS.removeIf(e -> ownerKey.equals(e.ownerKey));
+        int removed = before - ELEMENTS.size();
+        if (removed > 0) {
+            version++;
+        }
+        return removed;
+    }
+
+    /** 指定 owner キーの要素が現在 store にあるか (サジェスト用)。 */
+    public static boolean hasOwner(String ownerKey) {
+        if (ownerKey == null) {
+            return false;
+        }
+        for (Element e : ELEMENTS) {
+            if (ownerKey.equals(e.ownerKey)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 変化検出用の版番号 (add/clean で単調増加)。 */
