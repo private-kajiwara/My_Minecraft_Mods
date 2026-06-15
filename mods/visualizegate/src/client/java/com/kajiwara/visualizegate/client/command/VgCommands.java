@@ -1,10 +1,17 @@
 package com.kajiwara.visualizegate.client.command;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import com.kajiwara.visualizegate.client.render.GateNameLabelRenderer;
 import com.kajiwara.visualizegate.domain.BackCalc;
 import com.kajiwara.visualizegate.domain.DomainPortal;
+import com.kajiwara.visualizegate.domain.GateConflict;
+import com.kajiwara.visualizegate.domain.GateConflictAnalyzer;
+import com.kajiwara.visualizegate.domain.GateNode;
+import com.kajiwara.visualizegate.domain.GateState;
 import com.kajiwara.visualizegate.domain.GridPos;
+import com.kajiwara.visualizegate.domain.PortalCoordinateMapper;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.config.GateConfigManager;
@@ -16,6 +23,7 @@ import com.kajiwara.visualizegate.ui.GateColors;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -30,7 +38,10 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 /**
  * ㉕ クライアント専用 `/vg` コマンド (Brigadier・サーバー非依存)。
@@ -124,6 +135,11 @@ public final class VgCommands {
             GateConfigManager.save();
             return feedbackToggle(c, "visualizegate.cmd.names", on);
         }));
+        // 競合解決: 赤(競合)ゲートに対し、 相手を専有できる<b>安全建設位置</b>を探して在世界表示する。
+        root.then(literal("resolving-conflict")
+                .then(argument("name", StringArgumentType.greedyString())
+                        .executes(c -> runResolveConflict(c, StringArgumentType.getString(c, "name")))));
+
         // ㊸A `/vg perf` は廃止 (perf はドック展開＝フルメニューで常時表示)。
 
         // ㊷B 一覧/状態: `/vg` (引数なし) と `/vg help` でサブコマンド一覧＋現在の ON/OFF＋dock 状態を表示。
@@ -225,6 +241,273 @@ public final class VgCommands {
         return 1;
     }
 
+    /** 競合解決の探索リング上限 (各軸 step 数)。 OW reach=96×16=1536 / Nether reach=96×2=192 ブロック。 */
+    private static final int RESOLVE_MAX_RINGS = 96;
+
+    /**
+     * `/vg resolving-conflict <name>`: 名前で引いた<b>赤(競合)ゲート</b>に対し、 相手を専有できる
+     * 安全建設位置 B を探す。 B = 現次元の有効位置で、 相手次元へ写像した座標が<b>既知の全既存ポータルの
+     * 探索半径外</b> (= バニラが新規生成し既存に吸われない) を満たす最近傍 ({@link BackCalc#compute} を述語に使用)。
+     * 競合元=赤・取り合い相手=橙・安全位置=緑のワイヤーフレーム＋名前/座標ピンを {@link BackCalcStore} へ積む
+     * (= `/vg clean` で一括消去・自動消滅なし)。 観測範囲外は判定不能なので注記する (誤断定しない)。
+     */
+    private static int runResolveConflict(CommandContext<FabricClientCommandSource> c, String name) {
+        Minecraft mc = Minecraft.getInstance();
+        ClientLevel level = mc.level;
+        LocalPlayer player = mc.player;
+        if (level == null || player == null) {
+            c.getSource().sendError(Component.translatable("visualizegate.cmd.no_player"));
+            return 0;
+        }
+        PortalDimension playerDim = PortalMemory.dimOf(level.dimension().identifier().toString());
+
+        List<GateNode> nodes = PortalMemory.get().gateNodes();
+        GateConflictAnalyzer.Result an = GateConflictAnalyzer.analyze(
+                nodes, NETHER_MIN_Y, NETHER_MAX_Y, OW_MIN_Y, OW_MAX_Y);
+
+        // 名前 → ゲート (表示名＝ユーザー命名 or 既定 OW-/N-<番号>・大小無視で照合)。
+        int idx = -1;
+        String trimmed = name.trim();
+        for (int i = 0; i < nodes.size(); i++) {
+            if (GateNameLabelRenderer.displayName(nodes.get(i)).equalsIgnoreCase(trimmed)) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx < 0) {
+            c.getSource().sendError(Component.translatable("visualizegate.cmd.gatenotfound", trimmed));
+            return 0;
+        }
+        GateNode gate = nodes.get(idx);
+        if (an.states()[idx] != GateState.CONFLICT) {
+            // 競合でないゲートには何もしない (誤動作防止)。 現状態を添えて通知。
+            c.getSource().sendFeedback(Component.translatable("visualizegate.cmd.notconflict",
+                    trimmed, Component.translatable(state5Key(an.states()[idx]))));
+            return 0;
+        }
+
+        PortalDimension conflictDim = gate.dim();
+        PortalDimension otherDim = (conflictDim == PortalDimension.OVERWORLD)
+                ? PortalDimension.NETHER : PortalDimension.OVERWORLD;
+        int cMinY = (conflictDim == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
+        int cMaxY = (conflictDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
+        int oMinY = (otherDim == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
+        int oMaxY = (otherDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
+        double otherRadius = (otherDim == PortalDimension.NETHER) ? NETHER_RADIUS : OW_RADIUS;
+        List<DomainPortal> knownOther = PortalMemory.get().knownInDimension(otherDim);
+
+        // 探索起点: プレイヤーが競合次元に居れば照準ブロック (無ければ足元)、 居なければ競合ゲート自身。
+        int ox;
+        int oy;
+        int oz;
+        if (playerDim == conflictDim) {
+            BlockPos hit = crosshairBlock(mc);
+            if (hit != null) {
+                ox = hit.getX();
+                oy = hit.getY();
+                oz = hit.getZ();
+            } else {
+                ox = (int) Math.floor(player.getX());
+                oy = (int) Math.floor(player.getY());
+                oz = (int) Math.floor(player.getZ());
+            }
+        } else {
+            ox = gate.x();
+            oy = gate.y();
+            oz = gate.z();
+        }
+        oy = Math.max(cMinY, Math.min(cMaxY, oy));
+        int step = (conflictDim == PortalDimension.OVERWORLD) ? 16 : 2;
+
+        GridPos safe = searchSafeBuildPos(ox, oy, oz, step, conflictDim, otherDim,
+                cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+
+        // 取り合い相手の特定 (当該ゲートを含む CONFLICT の他端)。
+        List<GateNode> partners = findPartners(an, gate, nodes);
+
+        // ヘッダ (金)。
+        c.getSource().sendFeedback(colored(GateColors.ACCENT, "visualizegate.resolveconflict.header",
+                trimmed, dimName(conflictDim)));
+
+        // 競合元=赤・取り合い相手=橙 を常に提示 (解が無くても状況を可視化)。
+        BackCalcStore.add(new BackCalcStore.Element(conflictDim,
+                gate.x() + 0.5, gate.y(), gate.z() + 0.5, GateColors.STATE_CONFLICT, true,
+                trimmed, GateColors.STATE_CONFLICT));
+        if (!partners.isEmpty()) {
+            StringBuilder names = new StringBuilder();
+            for (GateNode p : partners) {
+                BackCalcStore.add(new BackCalcStore.Element(p.dim(),
+                        p.x() + 0.5, p.y(), p.z() + 0.5, GateColors.CROSSTALK, true,
+                        GateNameLabelRenderer.displayName(p), GateColors.CROSSTALK));
+                if (names.length() > 0) {
+                    names.append(", ");
+                }
+                names.append(GateNameLabelRenderer.displayName(p));
+            }
+            c.getSource().sendFeedback(colored(GateColors.CROSSTALK,
+                    "visualizegate.resolveconflict.partners", names.toString()));
+        }
+
+        if (safe == null) {
+            // ★2 探索範囲内に安全位置が無い → 明示通知 (誤動作/無反応にしない)。
+            c.getSource().sendFeedback(colored(GateColors.LINK_GRAY,
+                    "visualizegate.resolveconflict.none", RESOLVE_MAX_RINGS * step));
+            c.getSource().sendFeedback(colored(GateColors.LINK_GRAY, "visualizegate.cmd.added"));
+            return 1;
+        }
+
+        // 安全位置 = 緑ボックス + 名前&座標ピン (現次元なら在世界・逆側なら点群スタックで見える)。
+        String pinLabel = trimmed + "  " + safe.x() + " " + safe.y() + " " + safe.z();
+        BackCalcStore.add(new BackCalcStore.Element(conflictDim,
+                safe.x() + 0.5, safe.y(), safe.z() + 0.5, GateColors.LINK_GREEN, false,
+                pinLabel, GateColors.LINK_GREEN));
+        c.getSource().sendFeedback(colored(GateColors.LINK_GREEN, "visualizegate.resolveconflict.safe",
+                dimName(conflictDim), safe.x(), safe.y(), safe.z()));
+
+        // 観測範囲外は既存を断定できない → 注記 (back-calculate と同原則)。
+        GridPos projB = PortalCoordinateMapper.project(safe, conflictDim, otherDim, oMinY, oMaxY);
+        if (!PortalMemory.get().isRegionObserved(otherDim, projB.x(), projB.z())) {
+            c.getSource().sendFeedback(colored(GateColors.LINK_GRAY, "visualizegate.cmd.unconfirmed"));
+        }
+        c.getSource().sendFeedback(colored(GateColors.LINK_GRAY, "visualizegate.cmd.added"));
+        return 1;
+    }
+
+    /**
+     * 起点から同心リング状に走査し、 相手次元への写像が全既存ポータルの探索半径外になる最近傍の B を返す
+     * (= {@link BackCalc.Kind#NEW_IN_CURRENT})。 見つからなければ null。
+     */
+    private static GridPos searchSafeBuildPos(int ox, int oy, int oz, int step,
+            PortalDimension conflictDim, PortalDimension otherDim,
+            int cMinY, int cMaxY, int oMinY, int oMaxY,
+            List<DomainPortal> knownOther, double otherRadius) {
+        int by = Math.max(cMinY, Math.min(cMaxY, oy));
+        for (int r = 0; r <= RESOLVE_MAX_RINGS; r++) {
+            if (r == 0) {
+                GridPos hit = testCandidate(ox, by, oz, conflictDim, otherDim,
+                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+                if (hit != null) {
+                    return hit;
+                }
+                continue;
+            }
+            for (int a = -r; a <= r; a++) {
+                GridPos h1 = testCandidate(ox + a * step, by, oz - r * step, conflictDim, otherDim,
+                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+                if (h1 != null) {
+                    return h1;
+                }
+                GridPos h2 = testCandidate(ox + a * step, by, oz + r * step, conflictDim, otherDim,
+                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+                if (h2 != null) {
+                    return h2;
+                }
+            }
+            for (int b = -r + 1; b <= r - 1; b++) {
+                GridPos h3 = testCandidate(ox - r * step, by, oz + b * step, conflictDim, otherDim,
+                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+                if (h3 != null) {
+                    return h3;
+                }
+                GridPos h4 = testCandidate(ox + r * step, by, oz + b * step, conflictDim, otherDim,
+                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+                if (h4 != null) {
+                    return h4;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 1 候補 B を判定: 相手次元への写像近傍に既存が無ければ (新規生成見込み) B を返す。 */
+    private static GridPos testCandidate(int bx, int by, int bz,
+            PortalDimension conflictDim, PortalDimension otherDim,
+            int cMinY, int cMaxY, int oMinY, int oMaxY,
+            List<DomainPortal> knownOther, double otherRadius) {
+        GridPos b = new GridPos(bx, by, bz);
+        GridPos projB = PortalCoordinateMapper.project(b, conflictDim, otherDim, oMinY, oMaxY);
+        boolean observed = PortalMemory.get().isRegionObserved(otherDim, projB.x(), projB.z());
+        BackCalc.Result res = BackCalc.compute(projB, otherDim, conflictDim,
+                cMinY, cMaxY, knownOther, otherRadius, observed);
+        return (res.kind() == BackCalc.Kind.NEW_IN_CURRENT) ? b : null;
+    }
+
+    /** 当該ゲートを含む CONFLICT の他端ゲートを集める (取り合い相手・anchor 重複排除)。 */
+    private static List<GateNode> findPartners(GateConflictAnalyzer.Result an, GateNode gate, List<GateNode> nodes) {
+        List<GateNode> out = new ArrayList<>();
+        for (GateConflict gc : an.conflicts()) {
+            if (gc.state() != GateState.CONFLICT) {
+                continue;
+            }
+            boolean contains = false;
+            for (int k = 0; k < gc.gateNumbers().length; k++) {
+                if (gc.gateNumbers()[k] == gate.number() && gc.dims()[k] == gate.dim()) {
+                    contains = true;
+                    break;
+                }
+            }
+            if (!contains) {
+                continue;
+            }
+            for (int k = 0; k < gc.gateNumbers().length; k++) {
+                int num = gc.gateNumbers()[k];
+                PortalDimension dim = gc.dims()[k];
+                if (num == gate.number() && dim == gate.dim()) {
+                    continue;
+                }
+                GateNode p = findNode(nodes, num, dim);
+                if (p != null && !containsAnchor(out, p)) {
+                    out.add(p);
+                }
+            }
+            break; // 最重大の 1 件のみ (conflicts は重大度降順)
+        }
+        return out;
+    }
+
+    private static GateNode findNode(List<GateNode> nodes, int number, PortalDimension dim) {
+        for (GateNode n : nodes) {
+            if (n.number() == number && n.dim() == dim) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    private static boolean containsAnchor(List<GateNode> list, GateNode n) {
+        for (GateNode e : list) {
+            if (e.x() == n.x() && e.y() == n.y() && e.z() == n.z() && e.dim() == n.dim()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 照準先のブロック座標 (BLOCK ヒット時のみ・無ければ null)。 */
+    private static BlockPos crosshairBlock(Minecraft mc) {
+        HitResult hr = mc.hitResult;
+        if (hr instanceof BlockHitResult bhr && hr.getType() == HitResult.Type.BLOCK) {
+            return bhr.getBlockPos();
+        }
+        return null;
+    }
+
+    /** {@link GateState} → state5 lang キー (notconflict の状態名表示用)。 */
+    private static String state5Key(GateState s) {
+        switch (s) {
+            case OK:
+                return "visualizegate.state5.ok";
+            case ORPHAN:
+                return "visualizegate.state5.orphan";
+            case OFFSET:
+                return "visualizegate.state5.offset";
+            case WILL_CREATE:
+                return "visualizegate.state5.will_create";
+            default:
+                return "visualizegate.state5.conflict";
+        }
+    }
+
     /**
      * ㊺E 意味で色分けしたチャットフィードバック。 色は ARGB 下位 24bit を {@code Style.withColor(int)} へ
      * (mixin で全ノード同一を確認済の API)。 文字列は lang・色は意味 (赤=警告/緑=新規/金=ヘッダ/淡=注記)。
@@ -244,6 +527,7 @@ public final class VgCommands {
                 VgOverlayState.isDockExpanded() ? "visualizegate.help.expanded" : "visualizegate.help.collapsed")));
         src.sendFeedback(Component.translatable("visualizegate.help.detail", onOff(PointCloudViewState.isOverlayDetail())));
         src.sendFeedback(Component.translatable("visualizegate.help.names", onOff(GateMenuState.isGateNamesEnabled())));
+        src.sendFeedback(Component.translatable("visualizegate.help.resolveconflict"));
         src.sendFeedback(Component.translatable("visualizegate.help.clean"));
         src.sendFeedback(Component.translatable("visualizegate.help.backcalc"));
         return 1;

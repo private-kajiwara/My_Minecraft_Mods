@@ -24,7 +24,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -44,13 +43,8 @@ public final class GateNameLabelRenderer {
 
     private static final GateNameLabelRenderer INSTANCE = new GateNameLabelRenderer();
 
-    // OmniChest ピン現物の値 (= 同一の見え方)。
-    private static final float PIN_TEXT_SCALE = 0.025f;       // ワールド→画面の基準スケール
-    private static final double PIN_SCALE_REF_DISTANCE = 6.0; // これ以遠は画面サイズ一定 (透視縮小を打ち消す)
-    private static final double PIN_BASE_HEIGHT = 0.45;       // ポータル天面からラベル下端までの余白
-    private static final int PIN_BG_ARGB = 0xE0000000;        // テキスト背景の黒帯 (drawInBatch bgColor)
-
-    private static final double MAX_DIST = 512.0; // 距離カリング上限 (ブロック・GateGraphRenderer と同値)
+    private static final double PIN_BASE_HEIGHT = 0.45; // ポータル天面からラベル下端までの余白 (OmniChest 現物)
+    private static final double MAX_DIST = 512.0;       // 距離カリング上限 (ブロック・GateGraphRenderer と同値)
 
     // バニラ標準の次元境界 (Y クランプ用・GateGraphRenderer と同一前提)。
     private static final int OW_MIN_Y = -64;
@@ -107,7 +101,7 @@ public final class GateNameLabelRenderer {
             }
             MultiBufferSource.BufferSource bs = textBuffer;
             Font font = mc.font;
-            double maxRenderDist = pinMaxRenderDistance(mc);
+            double maxRenderDist = WorldLabel.maxRenderDistance(mc);
 
             boolean drewAny = false;
             for (int i = 0; i < nodes.size(); i++) {
@@ -135,7 +129,7 @@ public final class GateNameLabelRenderer {
 
                 int color = 0xFF000000 | (GateColors.forStateOrdinal(analysis.states()[i].ordinal()) & 0xFFFFFF);
                 String name = displayName(node);
-                drawLabel(bs, matrices, camState, font, cx, cz, baseY, camPos, name, color, maxRenderDist);
+                WorldLabel.draw(bs, matrices, camState, font, cx, cz, baseY, camPos, name, color, maxRenderDist);
                 drewAny = true;
             }
             if (drewAny) {
@@ -146,60 +140,12 @@ public final class GateNameLabelRenderer {
         }
     }
 
-    /** ㉝B/点群画面と同ルール: ユーザー命名 > 既定名 {@code OW-/N-<番号>}。 */
-    private static String displayName(GateNode node) {
+    /** ㉝B/点群画面と同ルール: ユーザー命名 > 既定名 {@code OW-/N-<番号>}。 resolve-conflict コマンドと共用。 */
+    public static String displayName(GateNode node) {
         String name = PortalMemory.get().nameAt(node.dim(), node.x(), node.y(), node.z());
         if (name != null) {
             return name;
         }
         return (node.dim() == PortalDimension.NETHER ? "N-" : "OW-") + node.number();
-    }
-
-    /**
-     * 1 ゲートのビルボード名前ラベル (中央揃え・SEE_THROUGH・far クリップ引き寄せ)。 OmniChest
-     * {@code drawPinImmediate} のヘッダ描画と等価の変換 (アイコン/距離行は無し＝名前 1 行のみ)。
-     */
-    private void drawLabel(MultiBufferSource bs, PoseStack matrices, CameraRenderState camState, Font font,
-            double cx, double cz, double baseY, Vec3 camPos, String name, int color, double maxRenderDist) {
-        double dx = cx - camPos.x;
-        double dy = baseY - camPos.y;
-        double dz = cz - camPos.z;
-        double distM = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        // far クリップ平面の内側へ引き寄せ (= 遠距離でラベルが丸ごと消える GPU クリップ対策・OmniChest 現物)。
-        double renderDist = Math.min(distM, maxRenderDist);
-        double clampFactor = (distM > 1.0e-6) ? (renderDist / distM) : 1.0;
-        double rdx = dx * clampFactor;
-        double rdy = dy * clampFactor;
-        double rdz = dz * clampFactor;
-        // 基準距離より遠ければスケールを距離比例 (= 画面サイズ一定)。
-        float distScaleFactor = (float) (Math.max(renderDist, PIN_SCALE_REF_DISTANCE) / PIN_SCALE_REF_DISTANCE);
-        float worldScale = PIN_TEXT_SCALE * distScaleFactor;
-
-        Component label = Component.literal(name);
-        float halfWidth = font.width(label) / 2.0f;
-
-        matrices.pushPose();
-        try {
-            matrices.translate(rdx, rdy, rdz);
-            matrices.mulPose(camState.orientation);
-            matrices.scale(worldScale, -worldScale, worldScale);
-            // 中央揃え (左へ半幅) ・ベースライン上げ (= 文字下端 ≒ ポータル天面 + PIN_BASE_HEIGHT)。
-            matrices.translate(-halfWidth, -(font.lineHeight + 1) + 1.0f, 0);
-            font.drawInBatch(label.getVisualOrderText(), 0, 0,
-                    color, false, matrices.last().pose(), bs,
-                    Font.DisplayMode.SEE_THROUGH, PIN_BG_ARGB, 0xF000F0);
-        } finally {
-            matrices.popPose();
-        }
-    }
-
-    /** カメラ far 平面 (≈ 描画距離 ×16m) の内側目安 (OmniChest 現物)。 */
-    private static double pinMaxRenderDistance(Minecraft mc) {
-        try {
-            int chunks = mc.options.getEffectiveRenderDistance();
-            return Math.max(16.0, chunks * 16.0 * 0.8);
-        } catch (Throwable ignored) {
-            return 128.0;
-        }
     }
 }

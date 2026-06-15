@@ -17,7 +17,7 @@ import com.kajiwara.visualizegate.domain.PortalDimension;
  */
 public final class BackCalcStore {
 
-    /** 予測要素 1 件 (絶対ブロック座標・中心・所属次元・ARGB 色・既存/新規)。 */
+    /** 予測要素 1 件 (絶対ブロック座標・中心・所属次元・ARGB 色・既存/新規・任意の在世界ピンラベル)。 */
     public static final class Element {
         public final PortalDimension dim;
         public final double x;
@@ -26,14 +26,25 @@ public final class BackCalcStore {
         public final int colorArgb;
         /** true=既存ゲートへの吸い込み警告 (赤) / false=新規建設推奨 (緑)。 */
         public final boolean existing;
+        /** 任意: ボックス上に出す在世界ピンの 1 行テキスト (null=ピン無し＝back-calculate の従来挙動)。 */
+        public final String label;
+        /** ピンラベルの ARGB 色 (label!=null のときのみ有効)。 */
+        public final int labelColorArgb;
 
         public Element(PortalDimension dim, double x, double y, double z, int colorArgb, boolean existing) {
+            this(dim, x, y, z, colorArgb, existing, null, 0);
+        }
+
+        public Element(PortalDimension dim, double x, double y, double z, int colorArgb, boolean existing,
+                String label, int labelColorArgb) {
             this.dim = dim;
             this.x = x;
             this.y = y;
             this.z = z;
             this.colorArgb = colorArgb;
             this.existing = existing;
+            this.label = label;
+            this.labelColorArgb = labelColorArgb;
         }
     }
 
