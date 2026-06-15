@@ -150,6 +150,8 @@ public class PointCloudScreen extends Screen {
     private int renameWy;
     private int renameWz;
     private boolean renameNether;
+    private String renameSeed = "";        // 開始時に seed した表示名 (全選択済)
+    private boolean renameSeedWasDefault;  // seed が既定名 (ユーザー命名無し) だったか
 
     // ── レイアウト矩形 (init で算出) ──
     private int vpX;
@@ -195,6 +197,7 @@ public class PointCloudScreen extends Screen {
     private int[] rowWy = new int[0];
     private int[] rowWz = new int[0];
     private int[] rowNether = new int[0];
+    private int[] rowNumber = new int[0]; // 既定名 (OW-n/N-n) seed 用の採番
     private int[] rowY0 = new int[0];
     private int rowCount = 0;
 
@@ -310,6 +313,8 @@ public class PointCloudScreen extends Screen {
 
     @Override
     protected void init() {
+        // リサイズ/再 init は MC が全ウィジェットを作り直す → 浮いた renameBox 参照を捨てる (取消扱い・残骸防止)。
+        renameBox = null;
         // ㉓ トグル群 2×2 [OW][Nether] / [Gate links][Dim tint] (㉚ View タブ専用)。 位置/幅は recomputeLayout が設定。
         viewWidgets.clear();
         viewWidgets.add(addRenderableWidget(Button.builder(owLabel(), b -> {
@@ -336,7 +341,10 @@ public class PointCloudScreen extends Screen {
         // フッタ: Re-analyze / Done (width 基準・サイドバー幅に非依存)。
         int fy = this.height - FOOTER_H + 7;
         addRenderableWidget(Button.builder(Component.literal("Re-analyze"),
-                b -> PointCloudAnalysis.get().requestAnalysis())
+                b -> {
+                    commitRename(); // 再解析前に編集を確定 (浮いた EditBox を残さない)
+                    PointCloudAnalysis.get().requestAnalysis();
+                })
                 .bounds(MARGIN, fy, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Done"), b -> this.onClose())
                 .bounds(this.width - MARGIN - 120, fy, 120, 20).build());
@@ -1891,6 +1899,7 @@ public class PointCloudScreen extends Screen {
             rowWy[rowCount] = m.gateWy()[i];
             rowWz[rowCount] = m.gateWz()[i];
             rowNether[rowCount] = nether ? 1 : 0;
+            rowNumber[rowCount] = num;
             rowY0[rowCount] = ry;
             rowCount++;
         }
@@ -1962,6 +1971,7 @@ public class PointCloudScreen extends Screen {
             rowWy = new int[n];
             rowWz = new int[n];
             rowNether = new int[n];
+            rowNumber = new int[n];
             rowY0 = new int[n];
         }
     }
@@ -2155,6 +2165,17 @@ public class PointCloudScreen extends Screen {
                                 rowWx[r], rowWy[r], rowWz[r],
                                 !isGateHidden(rowNether[r] != 0, rowWx[r], rowWy[r], rowWz[r]));
                         return true;
+                    }
+                }
+                // Windows 風: 行をダブルクリック → その場でインライン編集 (全選択済)。 目アイコン上は除外 (上で処理済)。
+                if (doubleClick) {
+                    for (int r = 0; r < rowCount; r++) {
+                        if (my >= rowY0[r] && my < rowY0[r] + ROW_H) {
+                            startRename(r);
+                            drag = Drag.NONE;
+                            pressRow = -1;
+                            return true;
+                        }
                     }
                 }
             }
@@ -2352,10 +2373,13 @@ public class PointCloudScreen extends Screen {
                 Component.translatable("visualizegate.gates.rename.hint"));
         renameBox.setMaxLength(NAME_MAX);
         renameBox.setHint(Component.translatable("visualizegate.gates.rename.hint"));
+        // 現在の表示名を seed (ユーザー命名＞既定 OW-n/N-n)・全選択 (Windows 風＝タイプで即置換)。
         String cur = PortalMemory.get().nameAt(renameDim(), renameWx, renameWy, renameWz);
-        if (cur != null) {
-            renameBox.setValue(cur);
-        }
+        renameSeedWasDefault = (cur == null);
+        renameSeed = (cur != null) ? cur : ((renameNether ? "N-" : "OW-") + rowNumber[row]);
+        renameBox.setValue(renameSeed);
+        renameBox.setCursorPosition(renameSeed.length());
+        renameBox.setHighlightPos(0); // 0..len を選択範囲に (全選択)
         addRenderableWidget(renameBox);
         this.setFocused(renameBox);
         renameBox.setFocused(true);
@@ -2370,7 +2394,10 @@ public class PointCloudScreen extends Screen {
         if (v.length() > NAME_MAX) {
             v = v.substring(0, NAME_MAX);
         }
-        PortalMemory.get().setName(renameDim(), renameWx, renameWy, renameWz, v); // 空→null (既定名)
+        // 既定名を seed したまま無変更なら何も永続しない (既定名を保つ・"OW-n" を冗長に固定しない)。
+        if (!(renameSeedWasDefault && v.equals(renameSeed))) {
+            PortalMemory.get().setName(renameDim(), renameWx, renameWy, renameWz, v); // 空→null (既定名)
+        }
         closeRename();
     }
 
@@ -2498,6 +2525,7 @@ public class PointCloudScreen extends Screen {
 
     @Override
     public void onClose() {
+        commitRename(); // 編集中に閉じたら確定して終える (中途半端な EditBox を残さない)
         GateConfigManager.save();
         this.minecraft.setScreen(this.parent);
     }
