@@ -13,6 +13,7 @@ import com.kajiwara.visualizegate.domain.GateState;
 import com.kajiwara.visualizegate.domain.GridPos;
 import com.kajiwara.visualizegate.domain.PortalCoordinateMapper;
 import com.kajiwara.visualizegate.domain.PortalDimension;
+import com.kajiwara.visualizegate.domain.SafePlacement;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.config.GateConfigManager;
 import com.kajiwara.visualizegate.state.GateMenuState;
@@ -293,8 +294,6 @@ public final class VgCommands {
         int cMaxY = (conflictDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
         int oMinY = (otherDim == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
         int oMaxY = (otherDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
-        double otherRadius = (otherDim == PortalDimension.NETHER) ? NETHER_RADIUS : OW_RADIUS;
-        List<DomainPortal> knownOther = PortalMemory.get().knownInDimension(otherDim);
 
         // 探索起点: プレイヤーが競合次元に居れば照準ブロック (無ければ足元)、 居なければ競合ゲート自身。
         int ox;
@@ -319,8 +318,8 @@ public final class VgCommands {
         oy = Math.max(cMinY, Math.min(cMaxY, oy));
         int step = (conflictDim == PortalDimension.OVERWORLD) ? 16 : 2;
 
-        GridPos safe = searchSafeBuildPos(ox, oy, oz, step, conflictDim, otherDim,
-                cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
+        // 安全位置探索 (バニラ metric・正方形＋3D distSqr で吸い込み/取り合いを除外)。
+        GridPos safe = searchSafeBuildPos(ox, oy, oz, step, conflictDim, nodes);
 
         // 取り合い相手の特定 (当該ゲートを含む CONFLICT の他端)。
         List<GateNode> partners = findPartners(an, gate, nodes);
@@ -329,7 +328,7 @@ public final class VgCommands {
         c.getSource().sendFeedback(colored(GateColors.ACCENT, "visualizegate.resolveconflict.header",
                 trimmed, dimName(conflictDim)));
 
-        // 競合元=赤・取り合い相手=橙 を常に提示 (解が無くても状況を可視化)。
+        // 競合元=赤・取り合い相手=橙 のマーカー＋名前ピン (解が無くても状況を可視化)。
         BackCalcStore.add(new BackCalcStore.Element(conflictDim,
                 gate.x() + 0.5, gate.y(), gate.z() + 0.5, GateColors.STATE_CONFLICT, true,
                 trimmed, GateColors.STATE_CONFLICT));
@@ -348,6 +347,9 @@ public final class VgCommands {
                     "visualizegate.resolveconflict.partners", names.toString()));
         }
 
+        // ★A(b) 排他ゾーンを投影正方形で描く: 既存吸い込み=赤、 取り合い相手=橙 (現次元へ写像・半幅=相手半径換算)。
+        addExclusionZones(conflictDim, otherDim, nodes, partners, ox, oz);
+
         if (safe == null) {
             // ★2 探索範囲内に安全位置が無い → 明示通知 (誤動作/無反応にしない)。
             c.getSource().sendFeedback(colored(GateColors.LINK_GRAY,
@@ -363,6 +365,8 @@ public final class VgCommands {
                 pinLabel, GateColors.LINK_GREEN));
         c.getSource().sendFeedback(colored(GateColors.LINK_GREEN, "visualizegate.resolveconflict.safe",
                 dimName(conflictDim), safe.x(), safe.y(), safe.z()));
+        // ★A 範囲の一言: 赤/橙の外ならどこでも安全 (緑は最近傍の一例)。
+        c.getSource().sendFeedback(colored(GateColors.LINK_GREEN, "visualizegate.resolveconflict.range"));
 
         // 観測範囲外は既存を断定できない → 注記 (back-calculate と同原則)。
         GridPos projB = PortalCoordinateMapper.project(safe, conflictDim, otherDim, oMinY, oMaxY);
@@ -373,63 +377,86 @@ public final class VgCommands {
         return 1;
     }
 
+    /** 排他ゾーン描画上限 (過密保護) と起点からの描画範囲 (現次元ブロック)。 */
+    private static final int ZONE_CAP = 24;
+    private static final double ZONE_DRAW_RANGE = 2048.0;
+
     /**
-     * 起点から同心リング状に走査し、 相手次元への写像が全既存ポータルの探索半径外になる最近傍の B を返す
-     * (= {@link BackCalc.Kind#NEW_IN_CURRENT})。 見つからなければ null。
+     * ★A(b) 排他ゾーンを現次元の投影正方形 ({@link BackCalcStore.Element#square}) で積む。 既存 otherDim ポータルの
+     * <b>吸い込みゾーン=赤</b>、 取り合い相手の<b>交差ゾーン=橙</b>。 半幅は {@link SafePlacement#exclusionHalfWidth}
+     * (OW=128/Nether=16)。 起点近傍のみ・上限 {@value #ZONE_CAP} 件 (過密/性能保護)。
+     */
+    private static void addExclusionZones(PortalDimension conflictDim, PortalDimension otherDim,
+            List<GateNode> gates, List<GateNode> partners, int ox, int oz) {
+        int half = SafePlacement.exclusionHalfWidth(conflictDim);
+        int cMinY = (conflictDim == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
+        int cMaxY = (conflictDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
+        int drawn = 0;
+        // 赤: 既存の相手次元ポータル (吸い込み) を現次元へ写像した正方形。
+        for (GateNode g : gates) {
+            if (drawn >= ZONE_CAP) {
+                break;
+            }
+            if (g.dim() != otherDim) {
+                continue;
+            }
+            GridPos c = PortalCoordinateMapper.project(g.pos(), otherDim, conflictDim, cMinY, cMaxY);
+            if (Math.hypot(c.x() - ox, c.z() - oz) > ZONE_DRAW_RANGE + half) {
+                continue;
+            }
+            BackCalcStore.add(BackCalcStore.Element.square(conflictDim,
+                    c.x() + 0.5, c.y(), c.z() + 0.5, half, GateColors.STATE_CONFLICT));
+            drawn++;
+        }
+        // 橙: 取り合い相手の交差ゾーン (conflictDim はそのまま中心、 otherDim は写像中心)。
+        for (GateNode p : partners) {
+            GridPos c = (p.dim() == conflictDim)
+                    ? p.pos()
+                    : PortalCoordinateMapper.project(p.pos(), otherDim, conflictDim, cMinY, cMaxY);
+            BackCalcStore.add(BackCalcStore.Element.square(conflictDim,
+                    c.x() + 0.5, c.y(), c.z() + 0.5, half, GateColors.CROSSTALK));
+        }
+    }
+
+    /**
+     * 起点から同心リング状に走査し、 {@link SafePlacement} のバニラ metric (Chebyshev 正方形 ＋ 3D distSqr) で
+     * <b>安全 (吸い込み無し＋取り合い無し)</b> になる最近傍 B を返す。 見つからなければ null。
      */
     private static GridPos searchSafeBuildPos(int ox, int oy, int oz, int step,
-            PortalDimension conflictDim, PortalDimension otherDim,
-            int cMinY, int cMaxY, int oMinY, int oMaxY,
-            List<DomainPortal> knownOther, double otherRadius) {
+            PortalDimension conflictDim, List<GateNode> gates) {
+        int cMinY = (conflictDim == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
+        int cMaxY = (conflictDim == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
         int by = Math.max(cMinY, Math.min(cMaxY, oy));
         for (int r = 0; r <= RESOLVE_MAX_RINGS; r++) {
             if (r == 0) {
-                GridPos hit = testCandidate(ox, by, oz, conflictDim, otherDim,
-                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
-                if (hit != null) {
-                    return hit;
+                if (isSafeAt(ox, by, oz, conflictDim, gates)) {
+                    return new GridPos(ox, by, oz);
                 }
                 continue;
             }
             for (int a = -r; a <= r; a++) {
-                GridPos h1 = testCandidate(ox + a * step, by, oz - r * step, conflictDim, otherDim,
-                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
-                if (h1 != null) {
-                    return h1;
+                if (isSafeAt(ox + a * step, by, oz - r * step, conflictDim, gates)) {
+                    return new GridPos(ox + a * step, by, oz - r * step);
                 }
-                GridPos h2 = testCandidate(ox + a * step, by, oz + r * step, conflictDim, otherDim,
-                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
-                if (h2 != null) {
-                    return h2;
+                if (isSafeAt(ox + a * step, by, oz + r * step, conflictDim, gates)) {
+                    return new GridPos(ox + a * step, by, oz + r * step);
                 }
             }
             for (int b = -r + 1; b <= r - 1; b++) {
-                GridPos h3 = testCandidate(ox - r * step, by, oz + b * step, conflictDim, otherDim,
-                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
-                if (h3 != null) {
-                    return h3;
+                if (isSafeAt(ox - r * step, by, oz + b * step, conflictDim, gates)) {
+                    return new GridPos(ox - r * step, by, oz + b * step);
                 }
-                GridPos h4 = testCandidate(ox + r * step, by, oz + b * step, conflictDim, otherDim,
-                        cMinY, cMaxY, oMinY, oMaxY, knownOther, otherRadius);
-                if (h4 != null) {
-                    return h4;
+                if (isSafeAt(ox + r * step, by, oz + b * step, conflictDim, gates)) {
+                    return new GridPos(ox + r * step, by, oz + b * step);
                 }
             }
         }
         return null;
     }
 
-    /** 1 候補 B を判定: 相手次元への写像近傍に既存が無ければ (新規生成見込み) B を返す。 */
-    private static GridPos testCandidate(int bx, int by, int bz,
-            PortalDimension conflictDim, PortalDimension otherDim,
-            int cMinY, int cMaxY, int oMinY, int oMaxY,
-            List<DomainPortal> knownOther, double otherRadius) {
-        GridPos b = new GridPos(bx, by, bz);
-        GridPos projB = PortalCoordinateMapper.project(b, conflictDim, otherDim, oMinY, oMaxY);
-        boolean observed = PortalMemory.get().isRegionObserved(otherDim, projB.x(), projB.z());
-        BackCalc.Result res = BackCalc.compute(projB, otherDim, conflictDim,
-                cMinY, cMaxY, knownOther, otherRadius, observed);
-        return (res.kind() == BackCalc.Kind.NEW_IN_CURRENT) ? b : null;
+    private static boolean isSafeAt(int bx, int by, int bz, PortalDimension conflictDim, List<GateNode> gates) {
+        return SafePlacement.isSafe(new GridPos(bx, by, bz), conflictDim, gates,
+                OW_MIN_Y, OW_MAX_Y, NETHER_MIN_Y, NETHER_MAX_Y);
     }
 
     /** 当該ゲートを含む CONFLICT の他端ゲートを集める (取り合い相手・anchor 重複排除)。 */

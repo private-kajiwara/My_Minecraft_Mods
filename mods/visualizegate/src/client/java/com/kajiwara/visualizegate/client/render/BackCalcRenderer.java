@@ -42,6 +42,9 @@ public final class BackCalcRenderer {
     /** 建設推奨/警告ボックスの footprint 半幅 (ポータル枠 4 幅相当) と高さ (枠 5 高相当)。 */
     private static final double HALF_W = 2.0;
     private static final double HEIGHT = 5.0;
+    /** 排他ゾーン (平たい正方形リング) の薄い高さと線幅。 */
+    private static final double ZONE_HEIGHT = 0.4;
+    private static final float ZONE_WIDTH = 2.0f;
 
     private MultiBufferSource.BufferSource afterWaterBuffer;
 
@@ -87,6 +90,14 @@ public final class BackCalcRenderer {
             for (BackCalcStore.Element e : elements) {
                 // 現在ディメンションに属する要素のみ在世界に描く (逆側要素は点群スタックビューで見せる)。
                 if (e.dim != cur) {
+                    continue;
+                }
+                if (e.squareHalf > 0) {
+                    // 排他ゾーン: 平たい正方形リング (footprint・吸い込み=赤 / 取り合い=橙)。
+                    AABB zone = new AABB(e.x - e.squareHalf, e.y, e.z - e.squareHalf,
+                            e.x + e.squareHalf, e.y + ZONE_HEIGHT, e.z + e.squareHalf);
+                    OverlayDraw.box(bufferSource, matrices, camPos, zone, e.colorArgb, ZONE_WIDTH);
+                    drewAny = true;
                     continue;
                 }
                 AABB box = new AABB(e.x - HALF_W, e.y, e.z - HALF_W,

@@ -41,7 +41,8 @@
 	"visualizegate.cmd.notconflict": "ゲート 「%s」 は競合していません (状態: %s) — 解決は不要です",
 	"visualizegate.resolveconflict.header": "「%s」 の競合を解決 (建設先: %s)",
 	"visualizegate.resolveconflict.partners": "取り合っている相手: %s (橙)",
-	"visualizegate.resolveconflict.safe": "安全な建設位置 (緑): %s の %s, %s, %s — ここに建てれば相手を専有できます",
+	"visualizegate.resolveconflict.safe": "最寄りの安全位置 (緑): %s の %s, %s, %s — ここに建てれば相手を専有できます",
+	"visualizegate.resolveconflict.range": "赤 (吸い込み) ・橙 (取り合い) の正方形の外側ならどこでも安全 — 緑箱はその最寄り例です",
 	"visualizegate.resolveconflict.none": "起点から %s ブロック以内に競合しない建設位置が見つかりません — 別の場所へ移動して再実行してください",
 
 	"visualizegate.cmd.cleanall": "/vg オーバーレイを全て OFF・逆算ワイヤーフレーム %s 件も消去",

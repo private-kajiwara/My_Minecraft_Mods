@@ -30,13 +30,23 @@ public final class BackCalcStore {
         public final String label;
         /** ピンラベルの ARGB 色 (label!=null のときのみ有効)。 */
         public final int labelColorArgb;
+        /**
+         * 任意: &gt;0 なら通常の小ボックスでなく、 (x,z) 中心・半幅 {@code squareHalf} の<b>平たい正方形リング</b>
+         * (排他ゾーン footprint) として描く (resolve-conflict の赤/橙ゾーン)。 0=従来の小ボックス。
+         */
+        public final double squareHalf;
 
         public Element(PortalDimension dim, double x, double y, double z, int colorArgb, boolean existing) {
-            this(dim, x, y, z, colorArgb, existing, null, 0);
+            this(dim, x, y, z, colorArgb, existing, null, 0, 0.0);
         }
 
         public Element(PortalDimension dim, double x, double y, double z, int colorArgb, boolean existing,
                 String label, int labelColorArgb) {
+            this(dim, x, y, z, colorArgb, existing, label, labelColorArgb, 0.0);
+        }
+
+        public Element(PortalDimension dim, double x, double y, double z, int colorArgb, boolean existing,
+                String label, int labelColorArgb, double squareHalf) {
             this.dim = dim;
             this.x = x;
             this.y = y;
@@ -45,6 +55,13 @@ public final class BackCalcStore {
             this.existing = existing;
             this.label = label;
             this.labelColorArgb = labelColorArgb;
+            this.squareHalf = squareHalf;
+        }
+
+        /** 排他ゾーンの平たい正方形リング要素 (中心 (cx,cz)・半幅 half・指定 Y・色)。 ピン無し。 */
+        public static Element square(PortalDimension dim, double cx, double y, double cz,
+                double half, int colorArgb) {
+            return new Element(dim, cx, y, cz, colorArgb, true, null, 0, half);
         }
     }
 
