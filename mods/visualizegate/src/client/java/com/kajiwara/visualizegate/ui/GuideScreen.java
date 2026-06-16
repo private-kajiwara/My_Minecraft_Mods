@@ -186,74 +186,107 @@ public class GuideScreen extends Screen {
         // 左レーンラベル (バンド左の余白)。
         g.text(this.font, Component.translatable("visualizegate.guide.lane.ow"), ix, owY, GateColors.LINK_GRAY);
         g.text(this.font, Component.translatable("visualizegate.guide.lane.nether"), ix, nY, GateColors.LINK_GRAY);
-        // span ラベル: 「現世で8ブロック」= 上段ゲート間の上、 「= ネザーで1ブロック」= 下段ゲート間の下。
-        centerText(g, Component.translatable("visualizegate.guide.ov.ow"), owL, owR, owY - 11, GateColors.LINK_GRAY);
+        // span ブラケット＋ラベル: 「現世で8ブロック」= 上段ゲート間にスパン、 「= ネザーで1ブロック」= 下段中央下。
+        int brkY = owY - 4;
+        g.fill(owL, brkY, owR, brkY + 1, GateColors.LINK_GRAY);          // スパン横棒
+        g.fill(owL, brkY, owL + 1, brkY + 3, GateColors.LINK_GRAY);      // 左端ティック
+        g.fill(owR - 1, brkY, owR, brkY + 3, GateColors.LINK_GRAY);      // 右端ティック
+        centerText(g, Component.translatable("visualizegate.guide.ov.ow"), owL, owR, brkY - 11, GateColors.LINK_GRAY);
         centerText(g, Component.translatable("visualizegate.guide.ov.nether"),
-                bx, bx + bw, nY + 11, GateColors.LINK_GRAY);
+                nL, nR, nY + 11, GateColors.LINK_GRAY);
     }
 
-    // ── ② 5 状態 (横 1 列・各セル＝状態色のミニ 2 ゲート図＋名＋短説明・プロトタイプ準拠)。 ──
+    // ── ② 5 状態 (横 1 列・各セル＝現世/ネザーのミニ 2 レーン図＋名＋短説明・プロトタイプ準拠)。 ──
     private void drawStates(GuiGraphicsExtractor g, int ix, int iy, int iw, int ih) {
         int n = 5;
-        int cellW = iw / n;
-        int figCy = iy + 12;       // ミニ図の中心 Y
-        int nameY = iy + 26;       // 状態名
-        int descY = iy + 38;       // 短説明
+        int bandW = Math.min(iw, 290);            // 中央コンテンツ帯に収める (端まで伸ばさない)
+        int bandX = ix + (iw - bandW) / 2;
+        int cellW = bandW / n;
+        int figTop = iy + 6;       // ミニ 2 レーン図の上端
+        int nameY = iy + 32;       // 状態名
+        int descY = iy + 44;       // 短説明
         for (int i = 0; i < n; i++) {
-            int cl = ix + i * cellW;
+            int cl = bandX + i * cellW;
             int cx = cl + cellW / 2;
             int c = STATE_COLORS[i];
-            cellGlyph(g, cx, figCy, i, c);
+            cellGlyph(g, cx, figTop, i, c);
             centerText(g, Component.translatable(STATE_NAMES[i]), cl, cl + cellW, nameY, c);
             centerText(g, Component.translatable(STATE_DESCS[i]), cl, cl + cellW, descY, GateColors.TEXT);
         }
     }
 
-    /** ② セル用ミニ図 (中心 cx,cy・幅~26px・色 c)。 正常=相互リンク/片側=灰+空/ズレ=黄ズレ+金枠/未接続=橙+?/競合=赤2→1。 */
-    private void cellGlyph(GuiGraphicsExtractor g, int cx, int cy, int i, int c) {
+    /**
+     * ② セル用ミニ 2 レーン図 (中心 cx・上端 top・色 c)。 上=現世/下=ネザーの極小レーン棒に状態を描く。
+     * 正常=整列ゲート＋緑縦リンク／片側=灰ゲート＋点線空枠＋点線リンク／ズレ=斜めリンク＋金点線(本来位置)／
+     * 未接続=橙ゲート＋点線空枠(リンク無し=通ると新規)／競合=上2→下1 の赤リンク。
+     */
+    private void cellGlyph(GuiGraphicsExtractor g, int cx, int top, int i, int c) {
+        int figW = 30;
+        int bx = cx - figW / 2;
+        int barH = 5;
+        int owY = top;
+        int nY = top + 13;
+        lane(g, bx, owY, figW, barH);                       // 現世レーン (極小)
+        lane(g, bx, nY, figW, barH);                        // ネザーレーン (極小)
+        int owC = owY + barH / 2;
+        int nC = nY + barH / 2;
         switch (i) {
-            case 0 -> { // 正常: 相互リンク (2 点＋線)
-                sq(g, cx - 13, cy - 2, c);
-                sq(g, cx + 8, cy - 2, c);
-                g.fill(cx - 8, cy, cx + 8, cy + 1, c);
+            case 0 -> { // 正常: 整列ゲート＋緑縦リンク
+                mg(g, cx, owC, c);
+                mg(g, cx, nC, c);
+                g.fill(cx, owC, cx + 1, nC, c);
             }
-            case 1 -> { // 片側: 相手が空 (点＋空枠)
-                sq(g, cx - 13, cy - 2, c);
-                frame(g, cx + 8, cy - 2, 5, 5, c);
+            case 1 -> { // 片側: 灰ゲート＋点線空枠 (相手未確認・点線リンク)
+                mg(g, cx, owC, c);
+                dseg(g, cx, owC + 2, cx, nC - 3, c);
+                dframe(g, cx - 3, nC - 3, 6, 6, c);
             }
-            case 2 -> { // ズレ: 斜めにつながる＋ズレ無し位置 (金枠)
-                sq(g, cx - 13, cy + 1, c);
-                sq(g, cx + 8, cy - 4, c);
-                seg(g, cx - 11, cy + 3, cx + 10, cy - 2, c);
-                frame(g, cx + 8, cy + 2, 5, 5, GateColors.ACCENT); // ズレ無し位置=金枠
+            case 2 -> { // ズレ: 斜めリンク＋本来位置 (金点線枠)
+                int oL = cx - 6;
+                int oR = cx + 6;
+                mg(g, oL, owC, c);
+                mg(g, oR, nC, c);
+                seg(g, oL, owC + 1, oR, nC - 1, c);
+                dframe(g, oL - 3, nC - 3, 6, 6, GateColors.ACCENT); // 本来の位置=金点線
             }
-            case 3 -> { // 未接続: 通ると新規 (橙単体＋?)
-                sq(g, cx - 8, cy - 2, c);
-                g.text(this.font, Component.literal("?"), cx + 2, cy - 4, c);
+            case 3 -> { // 未接続: 橙ゲート＋点線空枠 (リンク無し＝通ると新規)
+                mg(g, cx, owC, c);
+                dframe(g, cx - 3, nC - 3, 6, 6, c);
             }
-            default -> { // 競合: 2 つが 1 つを取り合い (赤 2→1)
-                sq(g, cx - 13, cy - 3, c);
-                sq(g, cx + 8, cy - 3, c);
-                seg(g, cx - 11, cy + 1, cx, cy + 6, c);
-                seg(g, cx + 10, cy + 1, cx, cy + 6, c);
+            default -> { // 競合: 上 2 ゲート → 下 1 ゲートを赤で取り合い
+                int aL = cx - 7;
+                int aR = cx + 7;
+                mg(g, aL, owC, c);
+                mg(g, aR, owC, c);
+                mg(g, cx, nC, c);
+                seg(g, aL, owC + 1, cx, nC - 1, c);
+                seg(g, aR, owC + 1, cx, nC - 1, c);
             }
         }
     }
 
     // ── ③ ワールドでの見え方 (見ると状態が色付き線で／色は②)。 ──
     private void drawWorld(GuiGraphicsExtractor g, int ix, int iy, int iw, int ih) {
-        // 俯瞰 1 ペアを「正常=緑」の状態色リンクで例示 (ワールドの線は紫でなく状態色＝語弊回避)。 中央コンテンツ幅に収める。
+        // 俯瞰 2 ペアを「正常=緑」の状態色リンクで例示 (ワールドの線は紫でなく状態色＝語弊回避)。 中央コンテンツ幅に収める。
         int bw = Math.min(iw, CONTENT_W);
         int bx = ix + (iw - bw) / 2;
         int owY = iy + 16;
         int nY = iy + ih - 28;
         lane(g, bx, owY, bw);
         lane(g, bx, nY, bw);
-        int a = bx + bw * 40 / 100;
-        int b = bx + bw * 58 / 100;
-        seg(g, a, owY + 4, b, nY + 4, GateColors.STATE_OK);
-        gate(g, a, owY + 4, GateColors.MAIN);
-        gate(g, b, nY + 4, GateColors.MAIN);
+        // ゲートはワールドではポータル枠 (中立紫)、 つながり線だけが状態色。
+        int ow1 = bx + bw * 26 / 100;
+        int ow2 = bx + bw * 52 / 100;
+        int n1 = bx + bw * 30 / 100;
+        int n2 = bx + bw * 48 / 100;
+        int orphanOw = bx + bw * 80 / 100; // 未接続の例 (点線空枠・つながり線なし)
+        seg(g, ow1, owY + 4, n1, nY + 4, GateColors.STATE_OK);
+        seg(g, ow2, owY + 4, n2, nY + 4, GateColors.STATE_OK);
+        gate(g, ow1, owY + 4, GateColors.MAIN);
+        gate(g, ow2, owY + 4, GateColors.MAIN);
+        dgate(g, orphanOw, owY + 4, GateColors.LINK_GRAY);
+        gate(g, n1, nY + 4, GateColors.MAIN);
+        gate(g, n2, nY + 4, GateColors.MAIN);
         g.text(this.font, Component.translatable("visualizegate.guide.lane.ow"), ix, owY, GateColors.LINK_GRAY);
         g.text(this.font, Component.translatable("visualizegate.guide.lane.nether"), ix, nY, GateColors.LINK_GRAY);
         // 橋渡し: ワールドでは見ると色付き線で出る (色は前ページの5状態)。
@@ -261,23 +294,38 @@ public class GuideScreen extends Screen {
                 ix, ix + iw, iy + ih - 9, GateColors.LINK_GRAY);
     }
 
-    // ── ④ 火打石で計画 (検索範囲=シアン円/ズレ無し=金枠/混線=橙枠/リンク=線) ＋ 4 凡例。 ──
+    // ── ④ 火打石で計画 (あなた=シアン矢印/検索範囲=シアン円/ズレ無し=金枠/混線ゲート=橙枠/リンク=紫線) ＋ 1 行 4 凡例。 ──
     private void drawFlint(GuiGraphicsExtractor g, int ix, int iy, int iw, int ih) {
-        int sceneH = ih * 55 / 100;
-        int pcx = ix + iw * 32 / 100;
+        int sceneH = ih * 60 / 100;
+        // 左: 検索範囲 (シアン円) ＋ あなた (シアン矢印) ＋ ズレ無し位置 (金枠・リンク線つき)。
+        int pcx = ix + iw * 28 / 100;
         int pcy = iy + sceneH / 2;
-        int r = Math.min(iw * 26 / 100, sceneH / 2 - 2);
-        ring(g, pcx, pcy, r, GateColors.DOME);             // 検索範囲 (シアン・境界=円)
-        cross(g, pcx, pcy, GateColors.ACCENT);             // プレイヤー (金十字)
-        frame(g, pcx + r / 2, pcy - 4, 8, 9, GateColors.ACCENT);        // ズレ無し設置位置 (金枠)
-        frame(g, pcx + r - 4, pcy + r / 2, 8, 9, GateColors.CROSSTALK); // 混線 (橙枠・範囲縁)
-        // 4 凡例 (2 列 2 行)。
-        int ly = iy + sceneH + 2;
-        int colW = iw / 2;
-        note(g, ix, ly, false, GateColors.DOME, "visualizegate.legend.dome");
-        note(g, ix + colW, ly, true, GateColors.ACCENT, "visualizegate.legend.ghost");
-        note(g, ix, ly + LINE, true, GateColors.CROSSTALK, "visualizegate.legend.crosstalk");
-        note(g, ix + colW, ly + LINE, false, GateColors.MAIN, "visualizegate.legend.link_line");
+        int r = Math.min(iw * 22 / 100, sceneH / 2 - 8);
+        ring(g, pcx, pcy, r, GateColors.DOME);                 // 検索範囲 (シアン・境界=円)
+        int gfx = pcx + r * 6 / 10;
+        int gfy = pcy + 1;
+        seg(g, pcx, pcy, gfx, gfy, GateColors.PC_LINK);        // リンク線 (紫)
+        frame(g, gfx - 4, gfy - 5, 9, 11, GateColors.ACCENT);  // ズレ無し位置 (金枠)
+        arrowUp(g, pcx, pcy, GateColors.DOME);                 // あなた (シアン矢印)
+        // 図中ラベルは「あなた」のみ (矢印直下)。 金枠=ズレ無し位置は下段凡例で識別＝重複ラベル省略で衝突回避。
+        centerText(g, Component.translatable("visualizegate.guide.flint.you"),
+                pcx - 16, pcx + 16, pcy + 7, GateColors.DOME);
+        // 右: 混線ゲート (橙枠) → 下の橙枠へ紫リンク線。
+        int rcx = ix + iw * 74 / 100;
+        int tFy = pcy - 8;
+        int bFy = pcy + 14;
+        centerText(g, Component.translatable("visualizegate.guide.flint.gate"),
+                rcx - 30, rcx + 30, tFy - 16, GateColors.CROSSTALK);
+        frame(g, rcx - 4, tFy - 5, 9, 11, GateColors.CROSSTALK);
+        seg(g, rcx, tFy + 6, rcx, bFy - 5, GateColors.PC_LINK);
+        frame(g, rcx - 4, bFy - 5, 9, 11, GateColors.CROSSTALK);
+        // 凡例: 下に 1 行で 4 項 (リンク/検索範囲/ズレ無し位置/混線)。
+        int ly = iy + sceneH + 6;
+        int colW = iw / 4;
+        note(g, ix, ly, false, GateColors.PC_LINK, "visualizegate.legend.link_line");
+        note(g, ix + colW, ly, false, GateColors.DOME, "visualizegate.guide.flint.range");
+        note(g, ix + colW * 2, ly, true, GateColors.ACCENT, "visualizegate.guide.flint.zero");
+        note(g, ix + colW * 3, ly, true, GateColors.CROSSTALK, "visualizegate.guide.flint.cross");
     }
 
     // ── ⑤ 左上のドック (畳スリムバー → 展開ドックのミニ再現)。 中央コンテンツ幅。 ──
@@ -398,9 +446,14 @@ public class GuideScreen extends Screen {
 
     // ── 描画プリミティブ ────────────────────────────────────────────────
 
-    /** レーン (薄い横帯)。 */
+    /** レーン (薄い横帯・高さ 9px)。 */
     private void lane(GuiGraphicsExtractor g, int x, int y, int w) {
-        g.fill(x, y, x + w, y + 9, GateColors.BASE);
+        lane(g, x, y, w, 9);
+    }
+
+    /** レーン (薄い横帯・高さ指定)。 */
+    private void lane(GuiGraphicsExtractor g, int x, int y, int w, int h) {
+        g.fill(x, y, x + w, y + h, GateColors.BASE);
     }
 
     /** 小ゲート印 (中心 cx,cy の紫小枠)。 */
@@ -408,9 +461,66 @@ public class GuideScreen extends Screen {
         frame(g, cx - 2, cy - 4, 5, 8, color);
     }
 
-    /** 5×5 塗り四角 (左上 x,y)。 */
-    private void sq(GuiGraphicsExtractor g, int x, int y, int color) {
-        g.fill(x, y, x + 5, y + 5, color);
+    /** 点線ゲート枠 (中心 cx,cy・相手未確認/新規生成の空き枠)。 */
+    private void dgate(GuiGraphicsExtractor g, int cx, int cy, int color) {
+        dframe(g, cx - 2, cy - 4, 5, 8, color);
+    }
+
+    /** ② ミニ図のゲート (中心 cx,cy の 4×4 塗り)。 */
+    private void mg(GuiGraphicsExtractor g, int cx, int cy, int color) {
+        g.fill(cx - 2, cy - 2, cx + 2, cy + 2, color);
+    }
+
+    /** 点線枠 (左上 x,y・w×h・1px on/off)。 */
+    private void dframe(GuiGraphicsExtractor g, int x, int y, int w, int h, int color) {
+        for (int i = 0; i < w; i += 2) {
+            g.fill(x + i, y, x + i + 1, y + 1, color);
+            g.fill(x + i, y + h - 1, x + i + 1, y + h, color);
+        }
+        for (int i = 0; i < h; i += 2) {
+            g.fill(x, y + i, x + 1, y + i + 1, color);
+            g.fill(x + w - 1, y + i, x + w, y + i + 1, color);
+        }
+    }
+
+    /** 点線の線分 (Bresenham・1 区画おき)。 */
+    private void dseg(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1, int color) {
+        int dx = Math.abs(x1 - x0);
+        int dy = Math.abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+        int x = x0;
+        int y = y0;
+        int step = 0;
+        int guard = 0;
+        while (guard++ < 4096) {
+            if ((step & 1) == 0) {
+                g.fill(x, y, x + 1, y + 1, color);
+            }
+            if (x == x1 && y == y1) {
+                break;
+            }
+            int e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx) {
+                err += dx;
+                y += sy;
+            }
+            step++;
+        }
+    }
+
+    /** 上向き矢印 (中心 cx,cy)。 ④ プレイヤー位置 (シアン)。 */
+    private void arrowUp(GuiGraphicsExtractor g, int cx, int cy, int color) {
+        g.fill(cx, cy - 4, cx + 1, cy - 3, color);
+        g.fill(cx - 1, cy - 3, cx + 2, cy - 2, color);
+        g.fill(cx - 2, cy - 2, cx + 3, cy - 1, color);
+        g.fill(cx - 3, cy - 1, cx + 4, cy, color);
+        g.fill(cx - 1, cy, cx + 1, cy + 4, color);
     }
 
     /** 1px 枠 (左上 x,y・w×h)。 */

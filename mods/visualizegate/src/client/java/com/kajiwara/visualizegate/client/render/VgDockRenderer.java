@@ -12,11 +12,6 @@ import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
 //? if >=26.1 {
-import com.kajiwara.visualizegate.domain.PortalDimension;
-import com.kajiwara.visualizegate.pointcloud.DockRadar;
-import com.kajiwara.visualizegate.pointcloud.PointCloudSnapshot;
-import com.kajiwara.visualizegate.state.PointCloudViewState;
-import com.mojang.blaze3d.textures.GpuTextureView;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 //?} else {
@@ -102,6 +97,10 @@ public final class VgDockRenderer {
     }
 
     private void onHudRender(GuiGraphicsExtractor g) {
+        if (VgOverlayState.isCloudSolo()) {
+            lastFrameNano = 0; // ⑤⑤ 点群ソロ中はドック抑止 (dockExpanded は不変＝解除で自前 /vg dock 状態へ復帰)
+            return;
+        }
         if (!VgOverlayState.dockVisible()) {
             lastFrameNano = 0; // 非表示中は計測を切る (再表示時の巨大 dt を防ぐ)
             return;
@@ -157,38 +156,20 @@ public final class VgDockRenderer {
     private static final int GAP = 3;
     private static final int SPARK_H = 18;   // スパークライン高 (通常)
     private static final int SW = 7;         // スウォッチ一辺
-    // ㊼B コンパクト (tight) レイアウト値: 点群が小さくなる時だけ上部セクションを詰めて点群分の高さを捻出。
-    private static final int ROW_TIGHT = 10;     // 状態/注記の 1 行高 (通常 LINE=11)
-    private static final int SPARK_H_TIGHT = 8;  // CPU スパークライン高 (通常 18)
-    private static final int DIV_TIGHT = 4;      // セクション区切り間隔 (通常 DIV=6)
-    private static final int COMFORT_PC_TH = 56; // 点群高がこれ未満ならコンパクト化を試みる
-    private static final int PC_ABS_MIN = 12; // ㊼A 点群サムネの絶対最低高 (これ未満になる極小画面でのみ非表示・通常は縮小して必ず表示)
-    // ㊺C/㊼A 下部中央 HUD (ホットバー 182px＋体力/空腹/XP) の安全帯。 ドックがこの x 帯に掛かる時だけ下端を上に止める。
-    private static final int HOTBAR_HALF_W = 100;  // ホットバー半幅 91px ＋ 余裕
-    private static final int BOTTOM_SAFE = 44;     // 通常確保: ホットバー＋体力/空腹/XP 帯の高さ (下端マージン)
-    private static final int BOTTOM_SAFE_MIN = 24; // ㊼A 余裕ゼロの極小画面でだけ詰める最小確保 (ホットバーだけは死守)
 
     // セクション見出し (定数・グリフ非依存テキスト)。
     private static final Component T_PERF = Component.translatable("visualizegate.dock.perf");
     private static final Component T_STATUS = Component.translatable("visualizegate.dock.status");
     private static final Component T_NOTES = Component.translatable("visualizegate.dock.notes");
 
-    // ㊼B 現レイアウト値 (通常 or tight)。 render スレッド単独＝インスタンスフィールドで安全。 高さ helper と draw が共有。
-    private int lRow = LINE;
-    private int lSpark = SPARK_H;
-    private int lDiv = DIV;
-
-    /** ㊼B レイアウトを通常/コンパクトに切替 (上部セクションの行高/スパーク高/区切り間隔)。 */
-    private void setLayout(boolean tight) {
-        lRow = tight ? ROW_TIGHT : LINE;
-        lSpark = tight ? SPARK_H_TIGHT : SPARK_H;
-        lDiv = tight ? DIV_TIGHT : DIV;
-    }
+    // ⑤④ レイアウト値 (点群移設後は常に通常・tight は撤去)。 高さ helper と draw が共有。
+    private final int lRow = LINE;
+    private final int lSpark = SPARK_H;
+    private final int lDiv = DIV;
 
     private void drawExpanded(GuiGraphicsExtractor g, Minecraft mc, int x, int y) {
-        // ㊸A 展開＝常にフルメニュー: perf＋ゲート状態＋注記をフラグ非依存で常時表示。 点群のみ pointCloud 連動で追加。
-        boolean pc = VgOverlayState.isPointCloud();
-
+        // ㊸A 展開＝常にフルメニュー: perf＋ゲート状態＋注記を常時表示。
+        //     ⑤④ 点群は右下の独立 HUD パネル (PointCloudHudRenderer) へ移設＝ドックは点群を持たない (短くなるだけ)。
         // ㊳A 実幅は GUI スケール画面に収まるよう制約: 中央 (クロスヘア) を越えない (≤ 画面半分)、 上限 spec 452。
         int sw = mc.getWindow().getGuiScaledWidth();
         int dockW = Math.min(DOCK_W, sw / 2 - MARGIN * 2);
@@ -197,32 +178,7 @@ public final class VgDockRenderer {
         int innerX = x + PAD;
         int innerW = dockW - PAD * 2;
 
-        // ㊹C/㊺C ドック全体を画面内に収める。 ㊺C ドックの x 帯が下部中央 HUD (ホットバー/体力/空腹/XP) に掛かる時は
-        //     下端を安全帯ぶん上で止める (被り防止)。 掛からない (狭い/極小画面) 時は下端 MARGIN まで使う。
-        int sh = mc.getWindow().getGuiScaledHeight();
-        boolean overlapsBottomHud = (x + dockW) > (sw / 2 - HOTBAR_HALF_W);
-        int bottomReserve = overlapsBottomHud ? BOTTOM_SAFE : MARGIN;
-
-        // ㊼A/㊼B 点群: 通常レイアウトでサムネ高を出し、 小さければ (4K Auto=gsh240 等) コンパクト化して捻出。
-        setLayout(false);
-        int pcTh = pc ? cloudHeight(sh, bottomReserve, overlapsBottomHud, innerW) : 0;
-        if (pc && pcTh < COMFORT_PC_TH) {
-            setLayout(true);
-            int tightTh = cloudHeight(sh, bottomReserve, overlapsBottomHud, innerW);
-            if (tightTh > pcTh) {
-                pcTh = tightTh;
-            } else {
-                setLayout(false); // コンパクト化で増えないなら通常レイアウトへ戻す
-            }
-        }
-        boolean showPc = pc && pcTh >= PC_ABS_MIN; // 絶対最低高未満 (真に余地が無い時) のみ非表示
-        int pcTw = showPc ? Math.min(innerW, PC_W) : 0;
-        if (!showPc) {
-            pcTh = 0;
-        }
-
-        int hSections = hSections();
-        int h = hSections + (showPc ? (lDiv + LINE + pcTh + 2) : 0) + PAD;
+        int h = hSections() + PAD;
 
         g.fill(x, y, x + dockW, y + h, BG_EXPANDED);
         drawHeaderRow(g, mc, x, y, dockW, header(mc), true);
@@ -234,36 +190,14 @@ public final class VgDockRenderer {
         cy = drawStatus(g, mc, innerX, cy, innerW);
         cy += GAP;
         cy = drawNotes(g, mc, innerX, cy, innerW);
-        if (showPc) {
-            cy = divider(g, x, cy, dockW);
-            cy = drawPointCloud(g, mc, innerX, cy, pcTw, pcTh);
-        }
     }
 
-    /** 固定セクション高 (ヘッダ + perf + 状態 + 注記・最終 PAD 前まで)。 現レイアウト値 (lRow/lSpark/lDiv) で算出。 */
+    /** 固定セクション高 (ヘッダ + perf + 状態 + 注記・最終 PAD 前まで)。 レイアウト値 (lRow/lSpark/lDiv) で算出。 */
     private int hSections() {
         int h = PAD + LINE; // top pad + header row
         h += lDiv + perfHeight();
         h += lDiv + statusHeight() + GAP + notesHeight();
         return h;
-    }
-
-    /**
-     * ㊼A/㊼B 現レイアウトでの点群サムネ高 (shrink-to-fit)。 通常はフル下部安全帯 (BOTTOM_SAFE) を維持して HUD 非侵、
-     * 余裕ゼロの極小画面でだけ安全帯をホットバー最小まで詰めて雲を死守。 ABS_MIN 未満 (真に余地無し) なら非表示扱いの値を返す。
-     */
-    private int cloudHeight(int sh, int bottomReserve, boolean overlapsBottomHud, int innerW) {
-        int pcTw = Math.min(innerW, PC_W);
-        int aspectTh = Math.round(pcTw * (float) PC_H / PC_W);
-        int want = Math.min(aspectTh, sh / 3);          // 望ましいサムネ高 (アスペクト維持・画面 1/3 上限)
-        int pcChrome = lDiv + LINE + 2;                 // 区切り＋見出し行＋下余白
-        int fixed = (hSections() + PAD) + pcChrome;     // 点群以外で確実に要る高さ
-        int avail = (sh - MARGIN - bottomReserve) - fixed;
-        if (avail < PC_ABS_MIN && overlapsBottomHud) {
-            // フル安全帯では雲が消える極小画面のみ: ホットバー最小まで詰めて雲を残す (体力/空腹/XP 帯は一部諦める)。
-            avail = (sh - MARGIN - BOTTOM_SAFE_MIN) - fixed;
-        }
-        return Math.min(want, avail);
     }
 
     private int perfHeight() {
@@ -511,412 +445,6 @@ public final class VgDockRenderer {
         int c = id.indexOf(':');
         return (c >= 0) ? id.substring(c + 1) : id;
     }
-
-    // ── ㊲D 点群サブセクション (ドック内・任意・静止・現次元・420×176) ──
-    private static final int PC_W = 420;
-    private static final int PC_H = 176;
-    private static final Component T_POINTCLOUD = Component.translatable("visualizegate.dock.pointcloud");
-
-    /** 点群セクション (見出し＋サムネ枠・寸法は drawExpanded で算出済)。 サムネ本体は GPU3D (>=26.1) / legacy は注記。 */
-    private int drawPointCloud(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int tw, int th) {
-        g.text(mc.font, T_POINTCLOUD, x, y, GateColors.TEXT);
-        y += LINE;
-        g.fill(x, y, x + tw, y + th, GateColors.BASE); // FBO 背景枠
-        //? if >=26.1 {
-        drawThumb(g, mc, x, y, tw, th);
-        //?} else {
-        /*note(g, mc, x, y, tw, th, "visualizegate.pc.hud.legacy");*/
-        //?}
-        return y + th + 2;
-    }
-
-    /** サムネ枠中央に淡色注記 (データなし/legacy)。 */
-    private void note(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int w, int h, String key) {
-        Component c = Component.translatable(key);
-        int cw = mc.font.width(c);
-        g.text(mc.font, c, x + Math.max(0, (w - cw) / 2), y + h / 2 - 4, GateColors.LINK_GRAY);
-    }
-
-    //? if >=26.1 {
-    // ㊵B ドック点群サムネ: Vメニュー (PointCloudScreen.buildGpuGeometry) と<b>同式</b>＝両層・密度(gpuDetail)・
-    //   スケール・spacing・dimTint・pointSize・表示トグル・hidden を {@link PointCloudViewState}/{@link PortalMemory}
-    //   から参照 (品質 parity)。 向きはプレイヤー yaw 追従 (㊵C)。 共有 FBO/VBO は Vメニュー画面と排他 (画面表示中は HUD 非表示)。
-    private static final float PITCH = 0.32f; // Vメニュー既定 pitch に合わせる (固定)
-    private static final float YAW_EPS = 0.02f; // ㊵C yaw 変化の再描画しきい値 (~1.1°・微小ジッタで再ラスタしない)
-    private static final float CENTER_EPS = 0.05f; // ㊽A カメラ中心 (プレイヤー追従) の再ラスタしきい値 (微小移動で再ラスタしない)
-    private static final int PC_MAX_DIM = 2048; // ㊶A SS FBO の各辺上限 (テクスチャ寸の安全側)
-    private static final int DIM_TINT_OW = GateColors.PC_OW_HIGH;
-    private static final int DIM_TINT_NETHER = GateColors.PC_NETHER_HIGH;
-    private static final float DIM_TINT_FRAC = 0.15f;
-    // ㊽A 局所レーダーの近距離ズーム係数 (プレイヤー中心・単層)。 ㊻ の重心フィット (radius*1.2) を踏襲しつつ、
-    //     カメラ中心はプレイヤー現在地に毎フレーム追従 (drawThumb)。 局所データなので雲は常にプレイヤー周辺＝非空。
-    private static final float PC_FIT_K = 1.2f;      // 雲半径フィット係数 (近距離ズーム)
-    // ㊺A 現在地マーカー (金十字) の寸法比 (V-menu と同式・雲半径×比)。
-    private static final float GPU_MARKER_ARM_FRAC = 0.03f;
-    private static final float GPU_MARKER_W_FRAC = 0.0022f;
-    // ㊺B ゲート枠 (V-menu emitGateFrame と同式・雲半径×比)。
-    private static final float GPU_GATE_FRAME_HALF_H_FRAC = 0.022f;
-    private static final float GPU_GATE_FRAME_HALF_W_FRAC = 0.0176f;
-    private static final float GPU_GATE_BAR_W_FRAC = 0.0026f;
-    private static final float GPU_GATE_GRID_W_FRAC = 0.0014f;
-    private float pcDistance = 200f;
-    private boolean pcWasVisible = false;
-    private final float[] pcEmpty = new float[0];
-    private final int[] pcEmptyI = new int[0];
-    // ㊵C 直近に FBO へ描いた yaw/寸法 (これらが変わった時だけ再ラスタ＝アイドル時は前フレームを blit)。
-    private float pcRenderYaw = Float.NaN;
-    private int pcRenderW = -1;
-    private int pcRenderH = -1;
-    // ㊽A 直近に FBO へ描いたカメラ中心 (= プレイヤー現在地のビュー座標)。 変化時のみ再ラスタ＝移動中だけ追従描画。
-    private float pcRenderCx = Float.NaN;
-    private float pcRenderCy = Float.NaN;
-    private float pcRenderCz = Float.NaN;
-    // 幾何署名 (Vメニューと同じトグル/設定群・変化時のみ VBO 再構築)。
-    private PointCloudSnapshot gSnap;
-    private boolean gShowOw;
-    private boolean gShowN;
-    private boolean gDimTint;
-    private int gSpacing;
-    private int gDetail;
-    private int gPointSize;
-    private float gOwScale = Float.NaN;
-    private float gNetherScale = Float.NaN;
-    private int gHiddenVer = -1;
-
-    private void drawThumb(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int w, int h) {
-        if (!PointCloudGpuRenderer.usable()) {
-            note(g, mc, x, y, w, h, "visualizegate.pc.hud.legacy");
-            pcWasVisible = false;
-            return;
-        }
-        // ㊽B ライブ局所レーダー: ~3Hz でプレイヤー周辺を再生成 (オフスレッド)。 dock 専用＝フル画面は不変。
-        DockRadar.get().maybeCapture(System.nanoTime());
-        PointCloudSnapshot snap = DockRadar.get().snapshot();
-        if (snap == null || snap.isEmpty()) {
-            note(g, mc, x, y, w, h, "visualizegate.pc.hud.empty");
-            pcWasVisible = false;
-            return;
-        }
-        try {
-            boolean takeover = !pcWasVisible; // 再表示時は共有 VBO/FBO が画面のものかもしれない＝必ず組み直す
-            boolean geomDirty = false;
-            if (takeover || gpuGeomChanged(snap)) {
-                pcUpload(snap);
-                geomDirty = true;
-            }
-            // ㊶A FBO を<b>実デバイス解像度</b> (サムネ GUI px × GUI スケール SS) で描き、 サムネ矩形へ縮小 blit
-            //     ＝鮮鋭化 (Vメニューと同等 SS)。 GUI px をそのまま FBO テクセル数にすると拡大されてブロック状になる。
-            int ss = Math.max(1, mc.getWindow().getGuiScale());
-            while (ss > 1 && (w * ss > PC_MAX_DIM || h * ss > PC_MAX_DIM)) {
-                ss--;
-            }
-            int rw = w * ss;
-            int rh = h * ss;
-            // ㊵C 向き＝プレイヤーの yaw (x,z) に追従 (アイドルスピンはしない)。
-            float yaw = (float) Math.toRadians(mc.player != null ? mc.player.getYRot(1.0f) : 0f);
-            // ㊽A カメラ中心 = プレイヤー現在地 (毎フレーム追従)。 geometry は capture-player 基準 (3Hz)、 中心は
-            //     marker + (現在地 − capture地) のビュー座標で毎フレーム動かす＝滑らかに寄る (滑らか追従)。
-            float cx = 0f;
-            float cy = 0f;
-            float cz = 0f;
-            if (snap.hasMarker && mc.player != null) {
-                boolean neth = snap.markerNether;
-                float pivotY = PointCloudViewState.getDimensionSpacing() * 0.5f;
-                float ms = neth ? PointCloudViewState.getNetherDisplayScale()
-                        : PointCloudViewState.getOwDisplayScale();
-                float xzW = neth ? PointCloudSnapshot.NETHER_XZ_SCALE : 1f; // ネザーは水平 1/8 (terrain と同変換)
-                double dX = mc.player.getX() - DockRadar.get().capX();
-                double dY = mc.player.getY() - DockRadar.get().capY();
-                double dZ = mc.player.getZ() - DockRadar.get().capZ();
-                cx = (snap.markerX + (float) (dX * xzW)) * ms;
-                cy = (snap.markerY + (float) dY) + (neth ? -pivotY : pivotY);
-                cz = (snap.markerZ + (float) (dZ * xzW)) * ms;
-            }
-            // yaw/FBO 寸法/幾何/カメラ中心が変わった時だけ再ラスタ＝静止時は前フレーム FBO を blit (性能予算)。
-            boolean centerMoved = Float.isNaN(pcRenderCx) || Math.abs(cx - pcRenderCx) > CENTER_EPS
-                    || Math.abs(cy - pcRenderCy) > CENTER_EPS || Math.abs(cz - pcRenderCz) > CENTER_EPS;
-            boolean rerender = takeover || geomDirty || rw != pcRenderW || rh != pcRenderH
-                    || Float.isNaN(pcRenderYaw) || Math.abs(yaw - pcRenderYaw) > YAW_EPS || centerMoved;
-            if (rerender && PointCloudGpuRenderer.render(rw, rh, yaw, PITCH, pcDistance, cx, cy, cz, GateColors.BASE)) {
-                pcRenderYaw = yaw;
-                pcRenderW = rw;
-                pcRenderH = rh;
-                pcRenderCx = cx;
-                pcRenderCy = cy;
-                pcRenderCz = cz;
-            }
-            GpuTextureView cv = PointCloudGpuRenderer.colorView();
-            if (cv != null) {
-                // FBO 全域 (UV 0..1) を w×h GUI 矩形へ縮小合成 (V 反転)。 SS 倍テクスチャ→1:1 でくっきり。
-                g.blit(cv, PointCloudGpuRenderer.sampler(), x, y, x + w, y + h, 0f, 1f, 1f, 0f);
-            }
-            pcWasVisible = true;
-        } catch (Throwable t) {
-            note(g, mc, x, y, w, h, "visualizegate.pc.hud.legacy");
-            pcWasVisible = false;
-        }
-    }
-
-    /** Vメニューと同じ署名 (snapshot/トグル/スケール/detail/pointSize/spacing/hidden版) の変化検出。 */
-    private boolean gpuGeomChanged(PointCloudSnapshot snap) {
-        boolean showOw = PointCloudViewState.isShowOverworld();
-        boolean showN = PointCloudViewState.isShowNether();
-        boolean tint = PointCloudViewState.isDimTint();
-        int spacing = PointCloudViewState.getDimensionSpacing();
-        int detail = PointCloudViewState.getGpuDetail();
-        int pointSize = PointCloudViewState.getPointSize();
-        float owScale = PointCloudViewState.getOwDisplayScale();
-        float nScale = PointCloudViewState.getNetherDisplayScale();
-        int hiddenVer = PortalMemory.displayVersion();
-        if (snap == gSnap && showOw == gShowOw && showN == gShowN && tint == gDimTint
-                && spacing == gSpacing && detail == gDetail && pointSize == gPointSize
-                && owScale == gOwScale && nScale == gNetherScale && hiddenVer == gHiddenVer) {
-            return false;
-        }
-        gSnap = snap;
-        gShowOw = showOw;
-        gShowN = showN;
-        gDimTint = tint;
-        gSpacing = spacing;
-        gDetail = detail;
-        gPointSize = pointSize;
-        gOwScale = owScale;
-        gNetherScale = nScale;
-        gHiddenVer = hiddenVer;
-        return true;
-    }
-
-    /**
-     * Vメニュー (buildGpuGeometry) の品質設定を流用し、 dock サムネを<b>データ基準のタイトフィット</b>で組む (㊻A):
-     * 地形点 (両層)＋ゲート枠 (5状態色 wireframe・㊺B)＋現在地マーカー (金十字・㊺A) を<b>重心中心</b>のまま置き、
-     * 距離を全データが枠内に収まる範囲で詰める＝<b>常に非空</b>でサムネを埋める。 現在地マーカーは実位置 (データ外なら
-     * 雲の縁へクランプ＋方向)。 ㊺ の「プレイヤー原点＋固定局所ズーム」は、 解析データが現在地から離れると画面外＝
-     * 空になる回帰のため撤回 (㊻A)。 yaw 追従/再ラスタ間引き (㊵C)・両層/密度/scale/hidden parity (㊵B) は維持。
-     */
-    private void pcUpload(PointCloudSnapshot snap) {
-        float pivotY = PointCloudViewState.getDimensionSpacing() * 0.5f;
-        boolean tint = PointCloudViewState.isDimTint();
-        boolean showOw = PointCloudViewState.isShowOverworld();
-        boolean showN = PointCloudViewState.isShowNether();
-        float owScale = PointCloudViewState.getOwDisplayScale();
-        float nScale = PointCloudViewState.getNetherDisplayScale();
-        int detail = PointCloudViewState.getGpuDetail();
-
-        // ── 地形点 (両層・⑤頂点色・重心センタリングの生座標)。 ゲートは点でなく枠 (㊺B) で描く。 ──
-        int owN = showOw ? snap.owX.length : 0;
-        int nN = showN ? snap.nX.length : 0;
-        int owStride = (owN > detail) ? (owN + detail - 1) / detail : 1;
-        int nStride = (nN > detail) ? (nN + detail - 1) / detail : 1;
-        int total = (owN + owStride - 1) / owStride + (nN + nStride - 1) / nStride;
-        float[] xyz = new float[total * 3];
-        int[] col = new int[total];
-        int k = 0;
-        for (int i = 0; i < owN; i += owStride) {
-            xyz[k * 3] = snap.owX[i] * owScale;
-            xyz[k * 3 + 1] = snap.owY[i] + pivotY;
-            xyz[k * 3 + 2] = snap.owZ[i] * owScale;
-            col[k] = tint ? mix(snap.owColor[i], DIM_TINT_OW, DIM_TINT_FRAC) : snap.owColor[i];
-            k++;
-        }
-        for (int i = 0; i < nN; i += nStride) {
-            xyz[k * 3] = snap.nX[i] * nScale;
-            xyz[k * 3 + 1] = snap.nY[i] - pivotY;
-            xyz[k * 3 + 2] = snap.nZ[i] * nScale;
-            col[k] = tint ? mix(snap.nColor[i], DIM_TINT_NETHER, DIM_TINT_FRAC) : snap.nColor[i];
-            k++;
-        }
-        // ㊶B 点サイズはサムネ寸法に縮小 (小ビューポートでは密で点が潰れる＝構造が見える細さに・最大 2px)。
-        int pointSize = Math.max(1, Math.min(2, PointCloudViewState.getPointSize()));
-        PointCloudGpuRenderer.uploadPoints(xyz, col, k, pointSize);
-
-        // ── overlay: 現在次元のゲート枠 (㊺B・5状態色・範囲外は縁クランプ＋方向 ㊽A) ＋ 現在地マーカー (金十字)。 ──
-        // ㊽ 局所レーダーはプレイヤーの次元中心 (#4)。 ゲートは現在次元のみ描き、 範囲外 (R 超) は局所ビューの縁へ。
-        int[] gateState = snap.gateMeta != null ? snap.gateMeta.gateState() : null;
-        boolean pNeth = snap.markerNether;
-        float ms = pNeth ? nScale : owScale; // プレイヤー層の表示スケール (terrain と同変換)
-        int visGates = 0;
-        for (int i = 0; i < snap.gateX.length; i++) {
-            if (snap.gateNether[i] == pNeth && (pNeth ? showN : showOw) && !gateHidden(snap, i)) {
-                visGates++;
-            }
-        }
-        float gateHalfH = Math.max(1.2f, snap.radius * GPU_GATE_FRAME_HALF_H_FRAC);
-        float gateHalfW = Math.max(0.9f, snap.radius * GPU_GATE_FRAME_HALF_W_FRAC);
-        float gateBarW = Math.max(0.08f, snap.radius * GPU_GATE_BAR_W_FRAC);
-        float gateGridW = Math.max(0.06f, snap.radius * GPU_GATE_GRID_W_FRAC);
-        // 現在地マーカー (= capture プレイヤー) のビュー座標＝ゲート縁クランプの基準。 カメラは drawThumb で現在地に追従。
-        float mcx = snap.hasMarker ? snap.markerX * ms : 0f;
-        float mcy = snap.hasMarker ? (pNeth ? snap.markerY - pivotY : snap.markerY + pivotY) : 0f;
-        float mcz = snap.hasMarker ? snap.markerZ * ms : 0f;
-        float clampR = Math.max(snap.radius, 1f); // 局所ビュー半径 (これを超えるゲートはこの縁へ寄せる)
-        int ov = visGates * 112 + (snap.hasMarker ? 48 : 0); // ゲート枠=112頂点 / 現在地十字=48頂点
-        if (ov > 0) {
-            float[] oxyz = new float[ov * 3];
-            int[] ocol = new int[ov];
-            int j = 0;
-            for (int i = 0; i < snap.gateX.length; i++) {
-                if (snap.gateNether[i] != pNeth || !(pNeth ? showN : showOw) || gateHidden(snap, i)) {
-                    continue;
-                }
-                float gx = snap.gateX[i] * ms;
-                float gy = snap.gateY[i] + (pNeth ? -pivotY : pivotY);
-                float gz = snap.gateZ[i] * ms;
-                // ㊽A 範囲外ゲートは局所ビューの縁へクランプ (方向は保持)＝近距離ズームでも見失わせない。
-                float ddx = gx - mcx;
-                float ddz = gz - mcz;
-                float dd = (float) Math.sqrt(ddx * ddx + ddz * ddz);
-                if (dd > clampR) {
-                    float s = clampR / dd;
-                    gx = mcx + ddx * s;
-                    gz = mcz + ddz * s;
-                }
-                int st = (gateState != null && i < gateState.length) ? gateState[i] : 0;
-                j = emitGateFrame(oxyz, ocol, j, gx, gy, gz,
-                        gateHalfW, gateHalfH, gateBarW, gateGridW, GateColors.forStateOrdinal(st));
-            }
-            if (snap.hasMarker) {
-                // 現在地マーカー＝capture プレイヤー (camera が現在地に追従＝常に画面中心付近)。 ㊺A 金 3D 十字。
-                float markArm = Math.max(2f, snap.radius * GPU_MARKER_ARM_FRAC);
-                float markW = Math.max(0.1f, snap.radius * GPU_MARKER_W_FRAC);
-                int gold = 0xFF000000 | (GateColors.ACCENT & 0xFFFFFF);
-                j = emitCross(oxyz, ocol, j, mcx, mcy, mcz, markArm, markW, gold);
-            }
-            PointCloudGpuRenderer.uploadOverlay(oxyz, ocol, j);
-        } else {
-            PointCloudGpuRenderer.uploadOverlay(pcEmpty, pcEmptyI, 0);
-        }
-
-        // ㊽A 局所単層の近距離ズーム: プレイヤー周辺 (snap.radius≈局所半径) を詰めて見せる (spacing 項は撤去＝単層)。
-        pcDistance = Math.max(snap.radius * PC_FIT_K, 30f);
-    }
-
-    /** ㉝C 非表示ゲート判定 (Vメニューの isGateHidden と同一・{@link PortalMemory#isHidden})。 */
-    private boolean gateHidden(PointCloudSnapshot snap, int i) {
-        if (snap.gateMeta == null || i >= snap.gateMeta.gateWx().length) {
-            return false;
-        }
-        return PortalMemory.get().isHidden(
-                snap.gateNether[i] ? PortalDimension.NETHER : PortalDimension.OVERWORLD,
-                snap.gateMeta.gateWx()[i], snap.gateMeta.gateWy()[i], snap.gateMeta.gateWz()[i]);
-    }
-
-    /** ARGB 線形ブレンド (Vメニューの mix と同一・dimTint 用)。 */
-    private static int mix(int a, int b, float t) {
-        int al = (a >>> 24) & 0xFF;
-        int ar = (a >> 16) & 0xFF;
-        int ag = (a >> 8) & 0xFF;
-        int ab = a & 0xFF;
-        int r = Math.round(ar + (((b >> 16) & 0xFF) - ar) * t);
-        int gg = Math.round(ag + (((b >> 8) & 0xFF) - ag) * t);
-        int bl = Math.round(ab + ((b & 0xFF) - ab) * t);
-        return (al << 24) | (r << 16) | (gg << 8) | bl;
-    }
-
-    // ── ㊺ 3D ワイヤージオメトリ emit (Vメニュー PointCloudScreen と同一ロジックを複製・画面は不変)。 ──
-    //    純 float[] 書込み (MC API 非依存)。 QUADS 経路 (quadPipeline) に載る展開済み頂点を書く。
-
-    /** ㊺B ゲート枠: 外枠 (emitPortalFrame・4 バー) ＋内側格子 (縦2・横1)＝計 7 バー×16=112 頂点。 */
-    private static int emitGateFrame(float[] xyz, int[] col, int v, float x, float y, float z,
-            float halfW, float halfH, float barW, float gridW, int c) {
-        v = emitPortalFrame(xyz, col, v, x, y, z, halfW, halfH, barW, c);
-        float vx = halfW * 0.34f;
-        v = emitBox(xyz, col, v, x - vx, y - halfH, z, x - vx, y + halfH, z, gridW, c);
-        v = emitBox(xyz, col, v, x + vx, y - halfH, z, x + vx, y + halfH, z, gridW, c);
-        v = emitBox(xyz, col, v, x - halfW, y, z, x + halfW, y, z, gridW, c);
-        return v;
-    }
-
-    /** ㊺B 黒曜石ポータル枠 (左右の柱2＋上下の桁2・各細角柱・4×16=64 頂点・X–Y 平面)。 */
-    private static int emitPortalFrame(float[] xyz, int[] col, int v, float x, float y, float z,
-            float halfW, float halfH, float barW, int c) {
-        float x0 = x - halfW;
-        float x1 = x + halfW;
-        float y0 = y - halfH;
-        float y1 = y + halfH;
-        v = emitBox(xyz, col, v, x0, y0, z, x0, y1, z, barW, c);
-        v = emitBox(xyz, col, v, x1, y0, z, x1, y1, z, barW, c);
-        v = emitBox(xyz, col, v, x0, y1, z, x1, y1, z, barW, c);
-        v = emitBox(xyz, col, v, x0, y0, z, x1, y0, z, barW, c);
-        return v;
-    }
-
-    /** ㊺A 現在地マーカー: 中心 (x,y,z) の 3D 太十字 (X/Y/Z 各 1 角柱=48 頂点)。 */
-    private static int emitCross(float[] xyz, int[] col, int v, float x, float y, float z,
-            float arm, float w, int c) {
-        v = emitBox(xyz, col, v, x - arm, y, z, x + arm, y, z, w, c);
-        v = emitBox(xyz, col, v, x, y - arm, z, x, y + arm, z, w, c);
-        v = emitBox(xyz, col, v, x, y, z - arm, x, y, z + arm, w, c);
-        return v;
-    }
-
-    /** 始点(a)→終点(b) の四角断面角柱 (半幅 w) の側面 4 枚=16 頂点。 退化時は無書込み。 */
-    private static int emitBox(float[] xyz, int[] col, int v, float ax, float ay, float az,
-            float bx, float by, float bz, float w, int c) {
-        float dx = bx - ax;
-        float dy = by - ay;
-        float dz = bz - az;
-        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (len < 1e-4f) {
-            return v;
-        }
-        dx /= len;
-        dy /= len;
-        dz /= len;
-        float ux = 0f;
-        float uy = 1f;
-        float uz = 0f;
-        if (Math.abs(dy) > 0.9f) {
-            ux = 1f;
-            uy = 0f;
-            uz = 0f;
-        }
-        float s1x = dy * uz - dz * uy;
-        float s1y = dz * ux - dx * uz;
-        float s1z = dx * uy - dy * ux;
-        float s1l = (float) Math.sqrt(s1x * s1x + s1y * s1y + s1z * s1z);
-        s1x = s1x / s1l * w;
-        s1y = s1y / s1l * w;
-        s1z = s1z / s1l * w;
-        float s2x = dy * s1z - dz * s1y;
-        float s2y = dz * s1x - dx * s1z;
-        float s2z = dx * s1y - dy * s1x;
-        float s2l = (float) Math.sqrt(s2x * s2x + s2y * s2y + s2z * s2z);
-        s2x = s2x / s2l * w;
-        s2y = s2y / s2l * w;
-        s2z = s2z / s2l * w;
-        float a0x = ax - s1x - s2x, a0y = ay - s1y - s2y, a0z = az - s1z - s2z;
-        float a1x = ax + s1x - s2x, a1y = ay + s1y - s2y, a1z = az + s1z - s2z;
-        float a2x = ax + s1x + s2x, a2y = ay + s1y + s2y, a2z = az + s1z + s2z;
-        float a3x = ax - s1x + s2x, a3y = ay - s1y + s2y, a3z = az - s1z + s2z;
-        float b0x = bx - s1x - s2x, b0y = by - s1y - s2y, b0z = bz - s1z - s2z;
-        float b1x = bx + s1x - s2x, b1y = by + s1y - s2y, b1z = bz + s1z - s2z;
-        float b2x = bx + s1x + s2x, b2y = by + s1y + s2y, b2z = bz + s1z + s2z;
-        float b3x = bx - s1x + s2x, b3y = by - s1y + s2y, b3z = bz - s1z + s2z;
-        v = emitQuad(xyz, col, v, a0x, a0y, a0z, a1x, a1y, a1z, b1x, b1y, b1z, b0x, b0y, b0z, c);
-        v = emitQuad(xyz, col, v, a1x, a1y, a1z, a2x, a2y, a2z, b2x, b2y, b2z, b1x, b1y, b1z, c);
-        v = emitQuad(xyz, col, v, a2x, a2y, a2z, a3x, a3y, a3z, b3x, b3y, b3z, b2x, b2y, b2z, c);
-        v = emitQuad(xyz, col, v, a3x, a3y, a3z, a0x, a0y, a0z, b0x, b0y, b0z, b3x, b3y, b3z, c);
-        return v;
-    }
-
-    private static int emitQuad(float[] xyz, int[] col, int v,
-            float x0, float y0, float z0, float x1, float y1, float z1,
-            float x2, float y2, float z2, float x3, float y3, float z3, int c) {
-        v = putV(xyz, col, v, x0, y0, z0, c);
-        v = putV(xyz, col, v, x1, y1, z1, c);
-        v = putV(xyz, col, v, x2, y2, z2, c);
-        v = putV(xyz, col, v, x3, y3, z3, c);
-        return v;
-    }
-
-    private static int putV(float[] xyz, int[] col, int v, float x, float y, float z, int c) {
-        xyz[v * 3] = x;
-        xyz[v * 3 + 1] = y;
-        xyz[v * 3 + 2] = z;
-        col[v] = c;
-        return v + 1;
-    }
-    //?}
 
     static String fmt(float v) {
         return String.format(Locale.ROOT, "%.1f", v);

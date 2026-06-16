@@ -13,6 +13,7 @@ import com.google.gson.GsonBuilder;
 import com.kajiwara.visualizegate.VisualizeGateMod;
 import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.state.PointCloudViewState;
+import com.kajiwara.visualizegate.state.VgOverlayState;
 
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -61,6 +62,7 @@ public final class GateConfigManager {
             GateMenuState.setFirstRunDone(cfg.firstRunDone);
             GateMenuState.setHologramEnabled(cfg.hologramEnabled);
             GateMenuState.setDomeEnabled(cfg.domeEnabled);
+            GateMenuState.setGateNamesEnabled(cfg.gateNamesEnabled);
             PointCloudViewState.setShowOverworld(cfg.pcShowOverworld);
             PointCloudViewState.setShowNether(cfg.pcShowNether);
             PointCloudViewState.setShowLinks(cfg.pcShowLinks);
@@ -71,6 +73,11 @@ public final class GateConfigManager {
             PointCloudViewState.setOwDisplayScale(cfg.pcOwDisplayScale);
             PointCloudViewState.setNetherDisplayScale(cfg.pcNetherDisplayScale);
             PointCloudViewState.setSidebarWidth(cfg.pcSidebarW); // ㉞ 生値 (画面 init で現ウィンドウへ再クランプ)
+            PointCloudViewState.setOverlayDetailRaw(cfg.pcOverlayDetail); // ⑤④/⑤⑤B 詳細度 (null=未設定→実効 詳細)
+            PointCloudViewState.setCloudOnly(cfg.pcCloudOnly); // ⑤⑤ 点群ソロ表示 (cloud-only)
+            // ⑤⑥ パネル可視の永続ミラーを反映し、 セッションの実描画ゲート (VgOverlayState.pointCloud) を seed。
+            PointCloudViewState.setPanelVisible(cfg.pcPanelVisible);
+            VgOverlayState.setPointCloud(cfg.pcPanelVisible);
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn(
                     "[visualizegate] config load failed (defaults kept): {}", t.toString());
@@ -88,6 +95,7 @@ public final class GateConfigManager {
             cfg.firstRunDone = GateMenuState.isFirstRunDone();
             cfg.hologramEnabled = GateMenuState.isHologramEnabled();
             cfg.domeEnabled = GateMenuState.isDomeEnabled();
+            cfg.gateNamesEnabled = GateMenuState.isGateNamesEnabled();
             cfg.pcShowOverworld = PointCloudViewState.isShowOverworld();
             cfg.pcShowNether = PointCloudViewState.isShowNether();
             cfg.pcShowLinks = PointCloudViewState.isShowLinks();
@@ -98,6 +106,9 @@ public final class GateConfigManager {
             cfg.pcOwDisplayScale = PointCloudViewState.getOwDisplayScale();
             cfg.pcNetherDisplayScale = PointCloudViewState.getNetherDisplayScale();
             cfg.pcSidebarW = PointCloudViewState.getSidebarWidth(); // ㉞ サイドバー幅
+            cfg.pcOverlayDetail = PointCloudViewState.getOverlayDetailRaw(); // ⑤④/⑤⑤B 生値 (null=未設定→GSON 省略)
+            cfg.pcCloudOnly = PointCloudViewState.isCloudOnly(); // ⑤⑤ 点群ソロ表示 (cloud-only)
+            cfg.pcPanelVisible = PointCloudViewState.isPanelVisible(); // ⑤⑥ パネル可視の永続ミラー (deliberate 値)
             writeAtomic(file(), GSON.toJson(cfg));
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] config save failed: {}", t.toString());

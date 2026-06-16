@@ -36,7 +36,9 @@ import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * 世代横断のポータル記憶 (機能2 の緑/赤判定の前提)。 {@link PortalIndex} はディメンションを去ると
@@ -54,12 +56,21 @@ public final class PortalMemory {
     private static final String FILE_NAME = "visualizegate-portals.json";
     private static final int PERIODIC_INTERVAL = 20; // tick
     /**
-     * ⑰ reconcile 猶予 (tick)。 ロード済みなのに anchor が portal でなくても、 今セッションで最近
-     * (この tick 数以内) ライブ確認済みなら除去しない＝ディメンション往復直後のチャンクロード過渡で
-     * 記憶 (=点群 Links の素) を誤って失わない。 本当に破壊されたポータルは PortalIndex から消え
-     * sessionConfirmTick が更新されなくなり、 この猶予を過ぎて初めて除去される。 100t≒5s。
+     * ⑤⑦B reconcile の game-time grace (ワールド tick)。 最後にライブ確認した {@code lastConfirmedGameTime} から
+     * この game-tick 数以内なら、 たとえ成分不在でも除去しない (再観測待ち)。 復元/入場直後は join seed で full grace。
+     * 200t≒10s。 game-time 基準なのでゲームを閉じている間は進まない (= 実時間放置で勝手に期限切れしない)。
      */
-    private static final long RECONCILE_GRACE_TICKS = 100;
+    private static final long RECONCILE_GRACE_GAMETIME = 200;
+    /**
+     * ⑤⑦B 除去抑止 (settle) ウィンドウ (game-tick)。 join / dimension 切替の直後、 チャンクが確定するまで
+     * <b>reconcile の除去自体を停止</b>する (= 入場過渡の「ロード済みだがブロック未同期」で復元ポータルを nuke しない)。 100t≒5s。
+     */
+    private static final long SETTLE_GAMETIME = 100;
+    /**
+     * ⑤⑦B 除去に必要な「ロード済み＋成分不在」連続確認回数 (reconcile サイクル)。 単発の過渡的不在では除去せず、
+     * 実ロード状態で N 回連続して成分が無い時だけ除去＝誤除去ゼロと「破壊済みポータルの正規除去」を両立。
+     */
+    private static final int ABSENT_STREAK_REQUIRED = 3;
     /** 観測リージョンセルのサイズ (チャンク四方)。 4ch=64ブロック。 */
     private static final int CELL_CHUNKS = 4;
     /** ㉙ 確定接続ペアの解決パラメタ (点群 buildLinks と同値・OW→ネザー 1:8 写像の水平半径/Y境界)。 */
@@ -73,6 +84,16 @@ public final class PortalMemory {
     private MemoryFile file;          // 全 world 分 (lazy load)
     private String currentWorldId;    // 現接続の world-id
     private long tickCounter = 0;
+
+    // ⑤⑦B reconcile 堅牢化の状態。 settle ウィンドウ終端 (game-time)・直近 reconcile dim・join seed 待ち。
+    private long removalSuppressedUntilGameTime = Long.MIN_VALUE;
+    private String reconcileLastDim = null;
+    private boolean joinSeedPending = false;
+
+    // ⑤⑦C デバウンス定期保存 (unclean exit 対策・別コミット)。 構造変化時に dirty を立て、 在ワールド中に間引いて保存。
+    private static final long SAVE_DEBOUNCE_TICKS = 600; // 30s (= I/O スラッシュ回避・小ファイル)
+    private boolean dirty = false;
+    private long lastSaveTick = 0;
 
     private PortalMemory() {
     }
@@ -95,6 +116,9 @@ public final class PortalMemory {
             ensureLoaded();
             currentWorldId = worldId(mc); // null 可 (= 取得不能なら記憶を触らない)
             VisualizeGateMod.LOGGER.info("[visualizegate] portal-memory JOIN worldId={}", currentWorldId);
+            // ⑤⑦B 復元直後は最初の tick で lastConfirmed を現 game-time に seed＋settle 抑止 (= rejoin nuke 防止)。
+            joinSeedPending = true;
+            reconcileLastDim = null;
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] portal-memory join failed: {}", t.toString());
         }
@@ -149,11 +173,24 @@ public final class PortalMemory {
                 }
             }
             String dimId = dimensionId(level);
+            long gameTime = level.getLevelData().getGameTime(); // ⑤⑦B 永続 game-time 基準 (両世代共通 API)
+            // ⑤⑦B 復元直後の seed: join 後の最初の tick で全ポータルの lastConfirmed を現 game-time へ＝復元直後は full grace。
+            if (joinSeedPending) {
+                seedLastConfirmed(gameTime);
+                removalSuppressedUntilGameTime = gameTime + SETTLE_GAMETIME; // join settle
+                joinSeedPending = false;
+            }
+            // ⑤⑦B dimension 切替の settle: 入場直後はチャンク確定まで除去抑止 (OW↔ネザー往復もカバー)。
+            if (!dimId.equals(reconcileLastDim)) {
+                reconcileLastDim = dimId;
+                removalSuppressedUntilGameTime = Math.max(removalSuppressedUntilGameTime, gameTime + SETTLE_GAMETIME);
+            }
             markVisited(dimId);
-            promoteLiveRecords(level, dimId);
-            reconcile(level, dimId);
+            promoteLiveRecords(level, dimId, gameTime);
+            reconcile(level, dimId, gameTime);
             ensureNumbered(); // ㉛ 全 dim の number==0 を一意化 (別 dim の N-0 残りを根治)
             confirmLinks(); // ㉙ 開いて繋がった OW↔ネザーの確定ペアを永続記録
+            maybePeriodicSave(); // ⑤⑦C 構造変化があればデバウンス保存 (unclean exit 対策)
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] portal-memory tick failed (continuing): {}", t.toString());
         }
@@ -189,6 +226,7 @@ public final class PortalMemory {
             Map<String, Integer> byDim = file.nextGateNumber.computeIfAbsent(currentWorldId, k -> new java.util.HashMap<>());
             byDim.put(dimId, Math.max(byDim.getOrDefault(dimId, 1), max + 1));
             if (changed) {
+                markDirty(); // ⑤⑦C 採番変化＝構造変化
                 VisualizeGateMod.LOGGER.info(
                         "[visualizegate] renumbered zero-numbered gates in dim={} (now unique, max={})", dimId, max);
             }
@@ -203,8 +241,8 @@ public final class PortalMemory {
         }
     }
 
-    /** PortalIndex の現ディメンション確定レコードを記憶へ昇格 (liveConfirmed=true)。 */
-    private void promoteLiveRecords(ClientLevel level, String dimId) {
+    /** PortalIndex の現ディメンション確定レコードを記憶へ昇格 (liveConfirmed=true・⑤⑦B lastConfirmed を game-time で更新)。 */
+    private void promoteLiveRecords(ClientLevel level, String dimId, long gameTime) {
         List<MemoryPortal> mem = file.dimPortals(currentWorldId, dimId);
         for (PortalRecord r : PortalIndex.get().recordsFor(level.dimension())) {
             BlockPos a = r.anchor();
@@ -217,8 +255,10 @@ public final class PortalMemory {
                 mp.az = a.getZ();
                 mp.number = file.allocateGateNumber(currentWorldId, dimId); // ㉚ 発見時に安定採番
                 mem.add(mp);
+                markDirty(); // ⑤⑦C 新規ゲート＝構造変化
             } else if (mp.number == 0) {
                 mp.number = file.allocateGateNumber(currentWorldId, dimId); // 旧データ (番号無し) に遡及採番
+                markDirty();
             }
             mp.minX = r.aabb().minX;
             mp.minY = r.aabb().minY;
@@ -228,37 +268,124 @@ public final class PortalMemory {
             mp.maxZ = r.aabb().maxZ;
             mp.axis = r.axis().name();
             mp.lastSeenTick = tickCounter;
-            mp.sessionConfirmTick = tickCounter; // ⑰ reconcile 猶予の基準
+            mp.lastConfirmedGameTime = gameTime; // ⑤⑦B reconcile grace の基準 (game-time・永続)
+            mp.absentStreak = 0;                 // ⑤⑦B ライブ確認＝不在連続をリセット
             mp.liveConfirmed = true;
         }
     }
 
+    /** ⑤⑦C 構造変化 (ゲート/リンクの追加・失効・採番) を記録＝次のデバウンス窓で保存。 */
+    private void markDirty() {
+        dirty = true;
+    }
+
+    /** ⑤⑦C 在ワールド中、 構造変化があり前回保存から {@link #SAVE_DEBOUNCE_TICKS} 経過していれば保存 (I/O 間引き)。 */
+    private void maybePeriodicSave() {
+        if (!dirty || tickCounter - lastSaveTick < SAVE_DEBOUNCE_TICKS) {
+            return;
+        }
+        try {
+            save(); // 成功で dirty=false (save 内)
+            lastSaveTick = tickCounter;
+            VisualizeGateMod.LOGGER.info("[visualizegate] portal-memory periodic save (debounced)");
+        } catch (Throwable t) {
+            VisualizeGateMod.LOGGER.warn("[visualizegate] portal-memory periodic save failed: {}", t.toString());
+        }
+    }
+
+    /** ⑤⑦B 復元/join 直後に全ポータルの lastConfirmed を現 game-time へ seed (= 復元直後は full grace・nuke 防止)。 */
+    private void seedLastConfirmed(long gameTime) {
+        if (file == null || currentWorldId == null) {
+            return;
+        }
+        for (List<MemoryPortal> list : file.worldPortals(currentWorldId).values()) {
+            for (MemoryPortal mp : list) {
+                mp.lastConfirmedGameTime = gameTime;
+                mp.absentStreak = 0;
+            }
+        }
+    }
+
     /**
-     * 記憶位置がライブでロード済みなのに実ポータルが無ければ除去 (破壊済みポータルの嘘を防ぐ)。
-     * ⑰ ただし<b>今セッションで最近ライブ確認済み</b> ({@link #RECONCILE_GRACE_TICKS} 以内) のものは除去しない＝
-     * ディメンション往復直後のチャンクロード過渡 (ロード済みだが portal ブロックがまだ読めない一瞬) で
-     * 点群 Links の素を誤失しない。 本当に消えたポータルは PortalIndex から外れ confirm が止まり、 猶予経過後に除去。
+     * ⑤⑦B 記憶ポータルの整合 (破壊済みポータルで緑が嘘にならない／復元ポータルを誤除去しない、 の両立)。
+     * 除去は<b>厳密ロード済み (FULL チャンク) AND 成分 flood-fill で不在 AND game-time grace 超過 AND N 回連続不在</b>の
+     * 時だけ。 settle ウィンドウ中 (join/dim 切替直後) は除去自体を停止。 未ロード/過渡は保持＝nuke しない。
      */
-    private void reconcile(ClientLevel level, String dimId) {
+    private void reconcile(ClientLevel level, String dimId, long gameTime) {
+        if (gameTime < removalSuppressedUntilGameTime) {
+            return; // ④ settle: 入場過渡では除去しない (チャンク確定待ち)
+        }
         List<MemoryPortal> mem = file.dimPortals(currentWorldId, dimId);
         for (Iterator<MemoryPortal> it = mem.iterator(); it.hasNext();) {
             MemoryPortal mp = it.next();
-            if (!level.hasChunk(mp.ax >> 4, mp.az >> 4)) {
-                continue; // 未ロード → 「分からない」ので保持 (liveConfirmed は据置)
+            // ① strict loaded: FULL ロード済みチャンクのみ判定。 未ロード/未完は「分からない」→保持＋streak リセット。
+            if (!isStrictlyLoaded(level, mp.ax, mp.az)) {
+                mp.absentStreak = 0;
+                continue;
             }
-            BlockPos a = new BlockPos(mp.ax, mp.ay, mp.az);
-            if (level.getBlockState(a).getBlock() == Blocks.NETHER_PORTAL) {
+            // ② 成分検出: 記憶 anchor を作ったのと同じ flood-fill 規律で実ポータルの存在を確認 (単ブロック読みの誤判定を排除)。
+            if (portalComponentPresent(level, mp)) {
+                mp.lastConfirmedGameTime = gameTime;
+                mp.absentStreak = 0;
                 continue; // 実在 → 保持
             }
-            if (tickCounter - mp.sessionConfirmTick <= RECONCILE_GRACE_TICKS) {
-                continue; // ⑰ 最近ライブ確認済み → 過渡の誤読とみなし猶予 (除去しない)
+            // ⑤ game-time grace: 最近ライブ確認済み (復元/入場 seed 含む) なら保持 (再観測待ち)。
+            if (gameTime - mp.lastConfirmedGameTime <= RECONCILE_GRACE_GAMETIME) {
+                continue;
             }
-            it.remove(); // ロード済み・portal 不在・猶予経過 → 記憶を失効
+            // ③ 実ロード＋成分不在を N 回連続で確認した時だけ除去 (= 破壊済みの正規除去・誤除去ゼロ)。
+            if (++mp.absentStreak < ABSENT_STREAK_REQUIRED) {
+                continue;
+            }
+            it.remove(); // FULL ロード済み・成分不在・grace 超過・N 連続 → 記憶を失効 (★B-1 維持)
             pruneLinksReferencing(mp.ax, mp.ay, mp.az); // ㉙ この端を含む確定ペアも剪定 (線が嘘にならない)
+            markDirty(); // ⑤⑦C 失効＝構造変化
             VisualizeGateMod.LOGGER.info(
-                    "[visualizegate] reconcile removed portal dim={} anchor=({},{},{}) (absent, grace passed)",
-                    dimId, mp.ax, mp.ay, mp.az);
+                    "[visualizegate] reconcile removed portal dim={} anchor=({},{},{}) (absent x{} + grace passed)",
+                    dimId, mp.ax, mp.ay, mp.az, ABSENT_STREAK_REQUIRED);
         }
+    }
+
+    /**
+     * ⑤⑦B ① 厳密ロード判定: チャンクが<b>FULL ステータス</b>で取得できる時だけ true (= 入場過渡の「hasChunk は true
+     * だがブロック未同期」を除外＝過渡の空気読みで誤除去しない)。 未ロード/未完は false＝reconcile は保持。
+     */
+    private boolean isStrictlyLoaded(ClientLevel level, int blockX, int blockZ) {
+        ChunkAccess ca = level.getChunk(blockX >> 4, blockZ >> 4, ChunkStatus.FULL, false);
+        return ca instanceof LevelChunk;
+    }
+
+    /**
+     * ⑤⑦B ② 成分検出: 記憶ポータルの位置に実 NETHER_PORTAL があるかを<b>記憶 anchor を作ったのと同じ flood-fill 規律</b>で
+     * 確認する。 anchor 単ブロックが空気でも、 記憶 AABB 内に portal ブロックが 1 つでもあれば存在とみなす (anchor ±1
+     * ドリフト/部分ロード耐性)。 未ロード隣接は読みに行かない。 異常サイズの AABB は走査せず不在扱い (暴走ガード)。
+     */
+    private boolean portalComponentPresent(ClientLevel level, MemoryPortal mp) {
+        if (level.getBlockState(new BlockPos(mp.ax, mp.ay, mp.az)).getBlock() == Blocks.NETHER_PORTAL) {
+            return true; // fast path: anchor がそのまま portal
+        }
+        int x0 = (int) Math.floor(mp.minX);
+        int y0 = (int) Math.floor(mp.minY);
+        int z0 = (int) Math.floor(mp.minZ);
+        int x1 = (int) Math.floor(mp.maxX);
+        int y1 = (int) Math.floor(mp.maxY);
+        int z1 = (int) Math.floor(mp.maxZ);
+        if (x1 - x0 > 16 || y1 - y0 > 32 || z1 - z0 > 16 || x1 < x0 || y1 < y0 || z1 < z0) {
+            return false; // 異常/未記録 AABB は走査しない
+        }
+        for (int x = x0; x <= x1; x++) {
+            for (int z = z0; z <= z1; z++) {
+                if (!level.hasChunk(x >> 4, z >> 4)) {
+                    continue; // 未ロード隣接は読まない (force-load/NPE 回避)
+                }
+                for (int y = y0; y <= y1; y++) {
+                    if (level.getBlockState(new BlockPos(x, y, z)).getBlock() == Blocks.NETHER_PORTAL) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** ㉙ 指定 anchor をどちらかの端に持つ確定ペアを除去 (ポータル失効に追従)。 */
@@ -294,6 +421,7 @@ public final class PortalMemory {
                 existing.lastConfirmedTick = tickCounter;
             } else {
                 ls.add(link);
+                markDirty(); // ⑤⑦C 新規確定リンク＝構造変化
                 VisualizeGateMod.LOGGER.info("[visualizegate] confirmed gate link {} (persisted)", link.key());
             }
         }
@@ -615,6 +743,7 @@ public final class PortalMemory {
         } catch (java.nio.file.AtomicMoveNotSupportedException amns) {
             Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING);
         }
+        dirty = false; // ⑤⑦C 保存成功＝未保存変更なし (定期保存/leave/setName/setHidden 全経路で共通)
     }
 
     private static Path path() {

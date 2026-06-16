@@ -2,6 +2,7 @@ package com.kajiwara.visualizegate.client.render;
 
 import com.kajiwara.visualizegate.client.keybind.GateKeyBindings;
 import com.kajiwara.visualizegate.state.GateMenuState;
+import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
 //? if >=26.1 {
@@ -55,6 +56,8 @@ public final class CornerIconRenderer {
         if (mc.screen != null)                        // 他 Screen 表示中
             return;
         if (mc.getDebugOverlay().showDebugScreen())   // F3 デバッグ中
+            return;
+        if (VgOverlayState.isCloudSolo())             // ⑤⑤ 点群ソロ中は [V] も抑止 (パネルだけ残す)
             return;
 
         int sw = mc.getWindow().getGuiScaledWidth();

@@ -9,6 +9,7 @@ import com.kajiwara.visualizegate.domain.LinkPrediction;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.domain.PredictedLinkState;
 import com.kajiwara.visualizegate.state.GateMenuState;
+import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.terrain.TerrainStore;
 import com.kajiwara.visualizegate.ui.GateColors;
 
@@ -76,6 +77,8 @@ public final class PortalInfoCardRenderer {
         if (mc.screen != null)                        // 他 Screen 表示中
             return;
         if (mc.getDebugOverlay().showDebugScreen())   // F3 デバッグ中
+            return;
+        if (VgOverlayState.isCloudSolo())             // ⑤⑤ 点群ソロ中は注視カードも抑止 (パネルだけ残す)
             return;
 
         PortalGaze.Result r = PortalGaze.resolve(mc);

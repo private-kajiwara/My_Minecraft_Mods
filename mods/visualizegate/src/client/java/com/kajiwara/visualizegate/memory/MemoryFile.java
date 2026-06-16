@@ -15,7 +15,7 @@ import java.util.Set;
  */
 public final class MemoryFile {
 
-    public int schemaVersion = 1;
+    public int schemaVersion = 2; // ⑤⑦B v2: lastConfirmedGameTime (game-time 基準・旧 tick 値は join seed で上書き)
 
     /** worldId → dimensionId → ポータル一覧。 */
     public Map<String, Map<String, List<MemoryPortal>>> worlds = new HashMap<>();

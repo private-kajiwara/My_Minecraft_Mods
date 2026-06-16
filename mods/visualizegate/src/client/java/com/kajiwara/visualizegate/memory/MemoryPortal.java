@@ -25,11 +25,17 @@ public final class MemoryPortal {
     public long lastSeenTick;
     public boolean liveConfirmed;
     /**
-     * ⑰ 今セッションで最後にライブ確認 (PortalIndex スキャン一致) した tick。 <b>transient</b>＝永続しない
-     * (tickCounter はセッション毎に 0 から＝跨ぐと無意味なため)。 reconcile の猶予判定に使い、 ディメンション
-     * 往復直後のチャンクロード過渡 (ロード済みだが portal ブロックがまだ読めない一瞬) で記憶を誤除去しない。
+     * ⑤⑦B 最後にライブ確認 (flood-fill 成分検出一致) した<b>ワールド game-time</b> ({@code level.getLevelData().getGameTime()})。
+     * <b>永続</b>＝ワールドの経過 tick 基準なのでセッションを跨いでも意味を持つ (閉じている実時間では進まない＝
+     * 期限切れにならない)。 reconcile の game-time grace に使う。 復元/join 直後は現 game-time で seed され full grace。
+     * 旧 tick ベース値 (schemaVersion≤1) は基準が違うため join seed で上書きされる (= 移行不要)。
      */
-    public transient long sessionConfirmTick;
+    public long lastConfirmedGameTime;
+    /**
+     * ⑤⑦B 「ロード済み＋成分不在」を連続で確認した回数 (reconcile サイクル)。 <b>transient</b>＝永続しない。
+     * N 回連続でのみ除去＝部分ロードの過渡的不在で誤除去しない。 存在確認/未ロードで 0 にリセット。
+     */
+    public transient int absentStreak;
 
     public MemoryPortal() {
         // GSON 用 no-arg ctor

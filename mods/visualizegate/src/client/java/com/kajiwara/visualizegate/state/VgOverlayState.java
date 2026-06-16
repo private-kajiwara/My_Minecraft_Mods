@@ -34,6 +34,22 @@ public final class VgOverlayState {
         return pointCloud;
     }
 
+    /**
+     * ⑤⑤ 点群パネルの表示フラグを直接設定 (ドック auto-expand なし)。 {@code only} 系がソロ化時に使う＝
+     * {@code togglePointCloud()} の副作用 (dockExpanded 書換) を避けてパネルだけ点ける。
+     */
+    public static void setPointCloud(boolean v) {
+        pointCloud = v;
+    }
+
+    /**
+     * ⑤⑤ 実効「点群ソロ」(cloud-only)。 パネルが出ている (pointCloud) かつ cloud-only 設定 ON のときだけ true。
+     * 点群パネル以外の VG HUD レンダラがこれを見て early-return する (単一の抑止述語・dockExpanded は不変)。
+     */
+    public static boolean isCloudSolo() {
+        return pointCloud && com.kajiwara.visualizegate.state.PointCloudViewState.isCloudOnly();
+    }
+
     public static boolean togglePointCloud() {
         pointCloud = !pointCloud;
         // ㊸A 点群はドック内サブセクション＝有効化したら展開して見せる (自動展開)。 OFF はフルメニューを残す (畳まない)。
