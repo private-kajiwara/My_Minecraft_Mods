@@ -20,6 +20,9 @@
 	"visualizegate.menu.status": "%s · Gates: %s · %s",
 
 	"visualizegate.gates.rename.hint": "Gate name (Enter to save, Esc to cancel)",
+	"visualizegate.rename.title": "Rename gate",
+	"visualizegate.rename.save": "Save",
+	"visualizegate.rename.cancel": "Cancel",
 
 	"visualizegate.config.tab.display": "Display",
 	"visualizegate.config.tab.about": "About",

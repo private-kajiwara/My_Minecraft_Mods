@@ -20,6 +20,9 @@
 	"visualizegate.menu.status": "%s · ゲート: %s · %s",
 
 	"visualizegate.gates.rename.hint": "ゲート名 (Enter で保存・Esc で取消)",
+	"visualizegate.rename.title": "ゲート名を変更",
+	"visualizegate.rename.save": "保存",
+	"visualizegate.rename.cancel": "キャンセル",
 
 	"visualizegate.config.tab.display": "表示",
 	"visualizegate.config.tab.about": "情報",

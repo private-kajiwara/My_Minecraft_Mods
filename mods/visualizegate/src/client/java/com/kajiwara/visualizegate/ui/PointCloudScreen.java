@@ -6,7 +6,6 @@ import java.util.List;
 
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
-import org.lwjgl.glfw.GLFW;
 
 import com.kajiwara.visualizegate.config.GateConfigManager;
 import com.kajiwara.visualizegate.domain.GateConflict;
@@ -26,9 +25,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 //?}
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -131,27 +128,14 @@ public class PointCloudScreen extends Screen {
     /** ㉞ スプリッターの掴み判定の半幅 (vp とサイドバーの MARGIN ギャップ＝±MARGIN/2 を埋める)。 */
     private static final int SPLITTER_GRAB_HALF = 4;
 
-    // ── ㉝B 長押しリネーム (短クリック=選択 / 長押し=リネーム / ドラッグ=スクロール) ──
-    /** 長押し判定しきい (ns)。 ~400ms (windows の長押し相当)。 */
-    private static final long LONG_PRESS_NANOS = 400_000_000L;
-    /** クリック/長押しとドラッグの分離しきい (px)。 これ以上動いたらスクロール扱い (選択/リネームしない)。 */
+    // ── ㉝B 行操作 (短クリック=選択 / ダブルクリック=リネームポップアップ / ドラッグ=スクロール) ──
+    /** クリックとドラッグの分離しきい (px)。 これ以上動いたらスクロール扱い (選択しない)。 */
     private static final int CLICK_SLOP = 4;
-    /** ㉝B リネーム名の最大文字数。 */
-    private static final int NAME_MAX = 24;
     private int pressRow = -1;       // 押下中の行 (rowY0/rowWx... の添字)・-1=非押下
-    private long pressNanos;         // 押下時刻 (System.nanoTime)
     private double pressX;
     private double pressY;
     private boolean pressMoved;      // CLICK_SLOP 超で true (= ドラッグ＝スクロール確定)
     private int pressScroll0;        // 押下時の gatesScroll (ドラッグ移動量の基準)
-    // リネーム中の状態 (renameBox != null の間)。 対象は anchor (wx/wy/wz+dim) で保持。
-    private EditBox renameBox;
-    private int renameWx;
-    private int renameWy;
-    private int renameWz;
-    private boolean renameNether;
-    private String renameSeed = "";        // 開始時に seed した表示名 (全選択済)
-    private boolean renameSeedWasDefault;  // seed が既定名 (ユーザー命名無し) だったか
 
     // ── レイアウト矩形 (init で算出) ──
     private int vpX;
@@ -313,8 +297,6 @@ public class PointCloudScreen extends Screen {
 
     @Override
     protected void init() {
-        // リサイズ/再 init は MC が全ウィジェットを作り直す → 浮いた renameBox 参照を捨てる (取消扱い・残骸防止)。
-        renameBox = null;
         // ㉓ トグル群 2×2 [OW][Nether] / [Gate links][Dim tint] (㉚ View タブ専用)。 位置/幅は recomputeLayout が設定。
         viewWidgets.clear();
         viewWidgets.add(addRenderableWidget(Button.builder(owLabel(), b -> {
@@ -341,10 +323,7 @@ public class PointCloudScreen extends Screen {
         // フッタ: Re-analyze / Done (width 基準・サイドバー幅に非依存)。
         int fy = this.height - FOOTER_H + 7;
         addRenderableWidget(Button.builder(Component.literal("Re-analyze"),
-                b -> {
-                    commitRename(); // 再解析前に編集を確定 (浮いた EditBox を残さない)
-                    PointCloudAnalysis.get().requestAnalysis();
-                })
+                b -> PointCloudAnalysis.get().requestAnalysis())
                 .bounds(MARGIN, fy, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Done"), b -> this.onClose())
                 .bounds(this.width - MARGIN - 120, fy, 120, 20).build());
@@ -408,12 +387,6 @@ public class PointCloudScreen extends Screen {
         slY = slScaleY + slH + 22;  // Dimension spacing
         sl2Y = slY + slH + 22;      // ⑭ GPU detail
         sl3Y = sl2Y + slH + 22;     // ⑯ 点サイズ
-
-        // リネーム中なら EditBox 幅も追従 (㉝B のインライン入力)。
-        if (renameBox != null) {
-            renameBox.setX(sbContentX + SIDE_PAD + 8);
-            renameBox.setWidth(sbW - 2 * SIDE_PAD - 8);
-        }
     }
 
     /**
@@ -529,17 +502,6 @@ public class PointCloudScreen extends Screen {
         } else {
             drawLinksList(g, snap);
             drawLegend(g);
-        }
-        maybeStartLongPressRename(); // ㉝B 行を押したまま ~400ms 経過 → リネーム開始
-    }
-
-    /** ㉝B 一覧の行を動かさず LONG_PRESS_NANOS 超え押下したらリネーム開始 (短クリック=選択 / ドラッグ=スクロールと切り分け)。 */
-    private void maybeStartLongPressRename() {
-        if (pressRow >= 0 && !pressMoved && renameBox == null && drag == Drag.LIST_SCROLL
-                && tab == Tab.GATES && pressRow < rowCount
-                && (System.nanoTime() - pressNanos) >= LONG_PRESS_NANOS) {
-            startRename(pressRow);
-            pressRow = -1; // 消費 (release で選択しない)
         }
     }
 
@@ -2129,16 +2091,8 @@ public class PointCloudScreen extends Screen {
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x();
         double my = event.y();
-        // ㉝B リネーム中: EditBox 内クリックは委譲 (カーソル移動)、 外側クリックは確定して閉じ通常処理へ。
-        if (renameBox != null) {
-            if (renameBox.isMouseOver(mx, my)) {
-                return super.mouseClicked(event, doubleClick);
-            }
-            commitRename();
-        }
-        // ㉞ スプリッターの掴み (回転/一覧より先に hit-test)。 リネーム中なら確定して閉じる。
+        // ㉞ スプリッターの掴み (回転/一覧より先に hit-test)。
         if (event.button() == 0 && inSplitter(mx, my)) {
-            commitRename();
             drag = Drag.SPLITTER;
             lastInputNanos = System.nanoTime(); // ⑨ ドラッグ中 → SS=1 (安価な FBO リサイズ)
             return true;
@@ -2146,17 +2100,15 @@ public class PointCloudScreen extends Screen {
         // ㉚ タブバークリック → タブ切替。
         if (event.button() == 0 && my >= tabBarY && my <= tabBarY + TABBAR_H
                 && mx >= sbContentX && mx <= sbContentX + sidebarW) {
-            commitRename(); // ㉝B タブ切替時は編集を確定して閉じる
             int i = (int) ((mx - sbContentX) / (sidebarW / 3));
             Tab[] tabs = Tab.values();
             tab = tabs[Math.max(0, Math.min(2, i))];
             applyTabVisibility();
             return true;
         }
-        // ㉝B 一覧の押下: 短クリック=選択 / 長押し=リネーム / ドラッグ=スクロール。 ここでは押下を記録するだけ
-        //     (選択は mouseReleased、 リネームは extractRenderState の長押し判定で確定)。
+        // ㉝B 一覧の押下: 短クリック=選択 / ダブルクリック=リネームポップアップ / ドラッグ=スクロール。
         if (event.button() == 0 && (tab == Tab.GATES || tab == Tab.LINKS) && inListArea(mx, my)) {
-            // ㉝C 目アイコンのクリック → 表示/非表示トグル (選択・長押し・スクロールの対象外)。
+            // ㉝C 目アイコンのクリック → 表示/非表示トグル (選択・リネーム・スクロールの対象外)。
             if (tab == Tab.GATES) {
                 for (int r = 0; r < rowCount; r++) {
                     if (inEyeIcon(r, mx, my)) {
@@ -2167,11 +2119,11 @@ public class PointCloudScreen extends Screen {
                         return true;
                     }
                 }
-                // Windows 風: 行をダブルクリック → その場でインライン編集 (全選択済)。 目アイコン上は除外 (上で処理済)。
+                // 行をダブルクリック → 金床式リネームポップアップを開く (目アイコン上は除外＝上で処理済)。
                 if (doubleClick) {
                     for (int r = 0; r < rowCount; r++) {
                         if (my >= rowY0[r] && my < rowY0[r] + ROW_H) {
-                            startRename(r);
+                            openRename(r);
                             drag = Drag.NONE;
                             pressRow = -1;
                             return true;
@@ -2183,13 +2135,12 @@ public class PointCloudScreen extends Screen {
             pressMoved = false;
             pressX = mx;
             pressY = my;
-            pressNanos = System.nanoTime();
             pressScroll0 = (tab == Tab.GATES) ? gatesScroll : linksScroll;
             pressRow = -1;
             if (tab == Tab.GATES) {
                 for (int r = 0; r < rowCount; r++) {
                     if (my >= rowY0[r] && my < rowY0[r] + ROW_H) {
-                        pressRow = r; // 選択/リネーム対象行
+                        pressRow = r; // 選択対象行
                         break;
                     }
                 }
@@ -2294,9 +2245,8 @@ public class PointCloudScreen extends Screen {
             drag = Drag.NONE;
             return true;
         }
-        // ㉝B 一覧の短クリック (動かず・長押し未満) → ゲート選択。 長押しは extractRenderState で既に消費済。
+        // ㉝B 一覧の短クリック (動かず) → ゲート選択 (ダブルクリックは mouseClicked でリネームを開き消費済)。
         if (drag == Drag.LIST_SCROLL && tab == Tab.GATES && !pressMoved && pressRow >= 0
-                && renameBox == null && (System.nanoTime() - pressNanos) < LONG_PRESS_NANOS
                 && pressRow < rowCount) {
             selWx = rowWx[pressRow]; // ㉛ 選択を一意 anchor で保持 (1 クリック 1 ゲート)
             selWy = rowWy[pressRow];
@@ -2325,7 +2275,6 @@ public class PointCloudScreen extends Screen {
         }
         // ㉚ Gates/Links 一覧上のホイール → スクロール。
         if (inListArea(mouseX, mouseY)) {
-            commitRename(); // ㉝B スクロールしたら編集を確定して閉じる (浮いた EditBox を残さない)
             int step = (int) (-scrollY * ROW_H * 2);
             if (tab == Tab.GATES) {
                 gatesScroll = Math.max(0, gatesScroll + step);
@@ -2337,101 +2286,17 @@ public class PointCloudScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
-    // ── ㉝B 行リネーム (インライン EditBox・Enter確定/Esc取消・name を anchorKey 永続) ──
+    // ── ㉝B 行リネーム (ダブルクリック → 金床式 GateRenameScreen ポップアップ・name を anchorKey 永続) ──
 
-    @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (renameBox != null) {
-            int k = event.key();
-            if (k == GLFW.GLFW_KEY_ENTER || k == GLFW.GLFW_KEY_KP_ENTER) {
-                commitRename(); // 確定 (空なら setName が既定名へ戻す)
-                return true;
-            }
-            if (k == GLFW.GLFW_KEY_ESCAPE) {
-                closeRename(); // 取消 (保存しない・画面は閉じない)
-                return true;
-            }
-        }
-        return super.keyPressed(event); // 通常: フォーカス中の EditBox がタイプを受ける
-    }
-
-    //? if >=26.1 {
     /**
-     * IME 変換中 (preedit) イベントを<b>編集中の renameBox へ明示ルーティング</b> (char/key と同じ手動転送の流儀)。
-     * これで {@code EditBox.preeditUpdated} が {@code IMEPreeditOverlay} を生成し、 変換中文字が枠内に出る。
-     * 非編集中は既定経路 (getFocused) へ委譲。 ※preeditUpdated/PreeditEvent は 26.1+ のみ (1.21.x は IME 経路が別)。
+     * 行 row のゲートを<b>金床式の専用ポップアップ</b> {@link GateRenameScreen} で改名する (インライン編集を置換)。
+     * 子画面が init/setInitialFocus 経路で IME-aware を確立＝変換中文字がインライン表示。 確定/取消で本画面へ戻る
+     * (parent 保持＝リスト/スクロール/選択は維持)。 名前は子画面が {@code setName} で永続 (本画面は読むだけ)。
      */
-    @Override
-    public boolean preeditUpdated(net.minecraft.client.input.PreeditEvent event) {
-        // 編集中は変換中(preedit)イベントを renameBox へ明示転送 (belt-and-suspenders・sticky focus と併用で確実化)。
-        if (renameBox != null) {
-            return renameBox.preeditUpdated(event);
-        }
-        return super.preeditUpdated(event);
-    }
-    //?}
-
-    private PortalDimension renameDim() {
-        return renameNether ? PortalDimension.NETHER : PortalDimension.OVERWORLD;
-    }
-
-    /** 行 row のインライン EditBox を生成しフォーカス (既存 name を初期値に・最大 NAME_MAX 文字)。 */
-    private void startRename(int row) {
-        commitRename(); // 念のため別編集が残っていれば確定
-        renameNether = rowNether[row] != 0;
-        renameWx = rowWx[row];
-        renameWy = rowWy[row];
-        renameWz = rowWz[row];
-        int x = sbContentX + SIDE_PAD;
-        int maxW = sidebarW - 2 * SIDE_PAD;
-        int ry = rowY0[row];
-        renameBox = new EditBox(this.font, x + 8, ry, maxW - 8, ROW_H,
-                Component.translatable("visualizegate.gates.rename.hint"));
-        renameBox.setMaxLength(NAME_MAX);
-        renameBox.setHint(Component.translatable("visualizegate.gates.rename.hint"));
-        // 金床(AnvilScreen)と同じ sticky フォーカス: canLoseFocus=false なら EditBox.setFocused(false) が no-op になり
-        // 編集中フォーカスが外れない＝onTextInputFocusChange(true) が維持され IME(変換中文字/予測変換) が有効のまま。
-        // (既定 canLoseFocus=true だとフォーカス再評価で defocus→IME 無効化され preedit が screen に届かなかった。)
-        renameBox.setCanLoseFocus(false);
-        // 現在の表示名を seed (ユーザー命名＞既定 OW-n/N-n)・全選択 (Windows 風＝タイプで即置換)。
-        String cur = PortalMemory.get().nameAt(renameDim(), renameWx, renameWy, renameWz);
-        renameSeedWasDefault = (cur == null);
-        renameSeed = (cur != null) ? cur : ((renameNether ? "N-" : "OW-") + rowNumber[row]);
-        renameBox.setValue(renameSeed);
-        renameBox.setCursorPosition(renameSeed.length());
-        renameBox.setHighlightPos(0); // 0..len を選択範囲に (全選択)
-        addRenderableWidget(renameBox);
-        this.setFocused(renameBox);
-        renameBox.setFocused(true);
-    }
-
-    /** 編集中の name を確定保存して閉じる (空＝既定名へ戻す)。 編集中でなければ無処理。 */
-    private void commitRename() {
-        if (renameBox == null) {
-            return;
-        }
-        String v = renameBox.getValue().trim();
-        if (v.length() > NAME_MAX) {
-            v = v.substring(0, NAME_MAX);
-        }
-        // 既定名を seed したまま無変更なら何も永続しない (既定名を保つ・"OW-n" を冗長に固定しない)。
-        if (!(renameSeedWasDefault && v.equals(renameSeed))) {
-            PortalMemory.get().setName(renameDim(), renameWx, renameWy, renameWz, v); // 空→null (既定名)
-        }
-        closeRename();
-    }
-
-    /** EditBox を除去してフォーカス解除 (保存はしない)。 */
-    private void closeRename() {
-        if (renameBox == null) {
-            return;
-        }
-        // teardown: sticky を解除して defocus → onTextInputFocusChange(false) で IME を無効化 (浮いた IME 状態を残さない)。
-        renameBox.setCanLoseFocus(true);
-        renameBox.setFocused(false);
-        this.removeWidget(renameBox);
-        renameBox = null;
-        this.setFocused(null);
+    private void openRename(int row) {
+        PortalDimension dim = (rowNether[row] != 0) ? PortalDimension.NETHER : PortalDimension.OVERWORLD;
+        this.minecraft.setScreen(new GateRenameScreen(
+                this, dim, rowWx[row], rowWy[row], rowWz[row], rowNumber[row]));
     }
 
     private boolean inViewport(double mx, double my) {
@@ -2548,7 +2413,6 @@ public class PointCloudScreen extends Screen {
 
     @Override
     public void onClose() {
-        commitRename(); // 編集中に閉じたら確定して終える (中途半端な EditBox を残さない)
         GateConfigManager.save();
         this.minecraft.setScreen(this.parent);
     }
