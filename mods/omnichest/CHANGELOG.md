@@ -4,6 +4,13 @@ OmniChest の主要な修正・変更の記録。新しいエントリを上に�
 
 ## [Unreleased]
 
+### Changed — ワークスペース/リポジトリ名
+
+- ワークスペース名を `MyFabricMod` → `MyMinecraftMod` にリネーム（on-disk ルートフォルダ名と表示用文字列のみ）。
+  `fabric.mod.json` の contact URL を実 origin `github.com/private-kajiwara/My_Minecraft_Mods` に整合。
+  **mod 挙動・バイトコード・mod_id・名前空間・archivesBaseName・jar 名・対象 MC 版集合は不変**
+  （インフラ/ワークスペースのみの変更のため mod_version は bump しない）。
+
 ### Added — 世代跨ぎ多版対応（1.21.11〜26.1.x を単一ソースから単一ビルド）
 
 - **Stonecutter ハイブリッド導入**: 1 つのソースツリー（基準名は 26.1 の非難読化公式名）から、
