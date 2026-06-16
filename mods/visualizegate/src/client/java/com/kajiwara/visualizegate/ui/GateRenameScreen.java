@@ -6,7 +6,6 @@ import com.kajiwara.visualizegate.memory.PortalMemory;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
@@ -30,6 +29,20 @@ public class GateRenameScreen extends Screen {
 
     private static final int NAME_MAX = 24; // PointCloudScreen の旧インラインと同値
 
+    // ── レイアウト確定案 (MC GUI px・init と描画で computeLayout() を共用) ──
+    private static final int CONTENT_W = 200;   // タイトル/EditBox/ボタン行の内容幅
+    private static final int PAD = 14;          // パネル内パディング (上下左右)
+    private static final int PANEL_W = CONTENT_W + PAD * 2; // 228
+    // 上 14 + タイトル 9 + 間隔 10 + EditBox 20 + 間隔 10 + ボタン 20 + 下 14 = 97
+    private static final int PANEL_H = 97;
+    private static final int BTN_GAP = 4;       // 保存/キャンセル間の間隔
+    private int panelX;
+    private int panelY;
+    private int contentX;
+    private int titleY;
+    private int editY;
+    private int buttonY;
+
     private final Screen parent;
     private final PortalDimension dim;
     private final int gx;
@@ -52,13 +65,20 @@ public class GateRenameScreen extends Screen {
                 : ((dim == PortalDimension.NETHER ? "N-" : "OW-") + number);
     }
 
+    /** レイアウト確定案を算出 (init・描画で共用)。 パネルは画面中央・内容は contentX 起点・幅 {@value #CONTENT_W} に整列。 */
+    private void computeLayout() {
+        panelX = (this.width - PANEL_W) / 2;
+        panelY = (this.height - PANEL_H) / 2;
+        contentX = panelX + PAD;
+        titleY = panelY + PAD;          // 上パディング後
+        editY = titleY + 9 + 10;        // タイトル(9) + 間隔10
+        buttonY = editY + 20 + 10;      // EditBox(20) + 間隔10
+    }
+
     @Override
     protected void init() {
-        int cx = this.width / 2;
-        int cy = this.height / 2;
-        int w = 200;
-        addRenderableWidget(new StringWidget(cx - w / 2, cy - 44, w, 12, this.title, this.font));
-        editBox = new EditBox(this.font, cx - w / 2, cy - 22, w, 20,
+        computeLayout();
+        editBox = new EditBox(this.font, contentX, editY, CONTENT_W, 20,
                 Component.translatable("visualizegate.gates.rename.hint"));
         editBox.setMaxLength(NAME_MAX);
         editBox.setHint(Component.translatable("visualizegate.gates.rename.hint"));
@@ -67,10 +87,12 @@ public class GateRenameScreen extends Screen {
         editBox.setHighlightPos(0);       // 全選択 (Windows 風＝タイプで即置換)
         editBox.setCanLoseFocus(false);   // 金床と同じ sticky フォーカス (IME 維持)
         addRenderableWidget(editBox);
+        // 保存/キャンセルを横並びで合計 200 (= フィールド幅) にぴったり整列。
+        int bw = (CONTENT_W - BTN_GAP) / 2; // 98
         addRenderableWidget(Button.builder(Component.translatable("visualizegate.rename.save"), b -> commit())
-                .bounds(cx - 102, cy + 6, 100, 20).build());
+                .bounds(contentX, buttonY, bw, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("visualizegate.rename.cancel"), b -> onClose())
-                .bounds(cx + 2, cy + 6, 100, 20).build());
+                .bounds(contentX + bw + BTN_GAP, buttonY, bw, 20).build());
     }
 
     /** 金床と同一: マウスで開いても EditBox を確実にフォーカス (= IME-aware を init 経路で確立)。 */
@@ -110,17 +132,20 @@ public class GateRenameScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        computeLayout();
         // 半透明 dim (背後のワールドを暗く) ＋ 小パネル。
         g.fill(0, 0, this.width, this.height, 0xA0000000);
-        int cx = this.width / 2;
-        int cy = this.height / 2;
-        int pw = 224;
-        int ph = 92;
-        int px = cx - pw / 2;
-        int py = cy - ph / 2;
-        g.fill(px, py, px + pw, py + ph, GateColors.PANEL);
-        g.fill(px, py, px + pw, py + 1, GateColors.MAIN);
-        g.fill(px, py + ph - 1, px + pw, py + ph, GateColors.MAIN);
-        super.extractRenderState(g, mouseX, mouseY, partialTick); // widgets (title/editBox/buttons)
+        int px2 = panelX + PANEL_W;
+        int py2 = panelY + PANEL_H;
+        g.fill(panelX, panelY, px2, py2, GateColors.PANEL);
+        // ボーダー: 下/左/右 は通常 (暗め) で統一、 上端のみ明るい紫アクセント。
+        g.fill(panelX, py2 - 1, px2, py2, GateColors.MAIN_DIM);          // 下
+        g.fill(panelX, panelY, panelX + 1, py2, GateColors.MAIN_DIM);    // 左
+        g.fill(px2 - 1, panelY, px2, py2, GateColors.MAIN_DIM);          // 右
+        g.fill(panelX, panelY, px2, panelY + 1, GateColors.MAIN);        // 上端アクセント (明るい紫)
+        // タイトル: 内容幅 (contentX..+CONTENT_W) の中央寄せ。
+        int tw = this.font.width(this.title);
+        g.text(this.font, this.title, contentX + (CONTENT_W - tw) / 2, titleY, GateColors.TEXT);
+        super.extractRenderState(g, mouseX, mouseY, partialTick); // widgets (editBox/buttons)
     }
 }
