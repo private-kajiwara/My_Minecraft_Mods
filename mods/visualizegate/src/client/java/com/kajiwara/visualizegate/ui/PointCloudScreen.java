@@ -2355,6 +2355,22 @@ public class PointCloudScreen extends Screen {
         return super.keyPressed(event); // 通常: フォーカス中の EditBox がタイプを受ける
     }
 
+    //? if >=26.1 {
+    /**
+     * IME 変換中 (preedit) イベントを<b>編集中の renameBox へ明示ルーティング</b> (char/key と同じ手動転送の流儀)。
+     * これで {@code EditBox.preeditUpdated} が {@code IMEPreeditOverlay} を生成し、 変換中文字が枠内に出る。
+     * 非編集中は既定経路 (getFocused) へ委譲。 ※preeditUpdated/PreeditEvent は 26.1+ のみ (1.21.x は IME 経路が別)。
+     */
+    @Override
+    public boolean preeditUpdated(net.minecraft.client.input.PreeditEvent event) {
+        // 編集中は変換中(preedit)イベントを renameBox へ明示転送 (belt-and-suspenders・sticky focus と併用で確実化)。
+        if (renameBox != null) {
+            return renameBox.preeditUpdated(event);
+        }
+        return super.preeditUpdated(event);
+    }
+    //?}
+
     private PortalDimension renameDim() {
         return renameNether ? PortalDimension.NETHER : PortalDimension.OVERWORLD;
     }
@@ -2373,6 +2389,10 @@ public class PointCloudScreen extends Screen {
                 Component.translatable("visualizegate.gates.rename.hint"));
         renameBox.setMaxLength(NAME_MAX);
         renameBox.setHint(Component.translatable("visualizegate.gates.rename.hint"));
+        // 金床(AnvilScreen)と同じ sticky フォーカス: canLoseFocus=false なら EditBox.setFocused(false) が no-op になり
+        // 編集中フォーカスが外れない＝onTextInputFocusChange(true) が維持され IME(変換中文字/予測変換) が有効のまま。
+        // (既定 canLoseFocus=true だとフォーカス再評価で defocus→IME 無効化され preedit が screen に届かなかった。)
+        renameBox.setCanLoseFocus(false);
         // 現在の表示名を seed (ユーザー命名＞既定 OW-n/N-n)・全選択 (Windows 風＝タイプで即置換)。
         String cur = PortalMemory.get().nameAt(renameDim(), renameWx, renameWy, renameWz);
         renameSeedWasDefault = (cur == null);
@@ -2406,6 +2426,9 @@ public class PointCloudScreen extends Screen {
         if (renameBox == null) {
             return;
         }
+        // teardown: sticky を解除して defocus → onTextInputFocusChange(false) で IME を無効化 (浮いた IME 状態を残さない)。
+        renameBox.setCanLoseFocus(true);
+        renameBox.setFocused(false);
         this.removeWidget(renameBox);
         renameBox = null;
         this.setFocused(null);
