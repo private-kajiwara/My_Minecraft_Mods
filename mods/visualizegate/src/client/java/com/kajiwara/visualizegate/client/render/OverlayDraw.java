@@ -59,21 +59,34 @@ public final class OverlayDraw {
         //?}
     }
 
-    /** 任意の 3D 線分 (world 座標)。 非シェーダ=lines / シェーダ=細クアッド。 */
+    /** 任意の 3D 線分 (world 座標)。 非シェーダ=lines / シェーダ= (>=26.1) HUD 2D 射影 / (旧世代) 細クアッド。 */
     public static void segment(MultiBufferSource.BufferSource bs, PoseStack matrices, Vec3 cam,
             double x1, double y1, double z1, double x2, double y2, double z2, int color, float widthPx) {
         PoseStack.Pose pose = matrices.last();
         if (shaderActive()) {
+            // >=26.1: ワールドに描くと Iris に消されるため後段 HUD パスへ 2D 射影して描く (絶対表示)。 capture
+            //   未了時のみ従来 quad へフォールバック。 旧世代は projection Matrix4f を取れず HUD 経路無し＝常に quad。
+            //? if >=26.1 {
+            if (ShaderWireOverlay.addWorldSegment(pose, cam, x1, y1, z1, x2, y2, z2, color, widthPx)) {
+                return;
+            }
+            //?}
             quadSegment(quadBuf(bs), pose, cam, x1, y1, z1, x2, y2, z2, color, widthPx);
         } else {
             lineSegment(linesBuf(bs), pose, cam, x1, y1, z1, x2, y2, z2, color, widthPx);
         }
     }
 
-    /** AABB ワイヤフレーム。 非シェーダ=ShapeRenderer(従来と同一) / シェーダ=12 辺をクアッドで。 */
+    /** AABB ワイヤフレーム。 非シェーダ=ShapeRenderer / シェーダ= (>=26.1) HUD 2D 射影 / (旧世代) 12 辺クアッド。 */
     public static void box(MultiBufferSource.BufferSource bs, PoseStack matrices, Vec3 cam,
             AABB b, int color, float widthPx) {
         if (shaderActive()) {
+            // >=26.1: 12 辺を後段 HUD パスへ 2D 射影 (絶対表示)。 capture 未了時のみ従来 quad。 旧世代は常に quad。
+            //? if >=26.1 {
+            if (ShaderWireOverlay.addWorldBox(matrices.last(), cam, b, color, widthPx)) {
+                return;
+            }
+            //?}
             VertexConsumer vc = quadBuf(bs);
             PoseStack.Pose pose = matrices.last();
             boxEdges(vc, pose, cam, b, color, widthPx);
