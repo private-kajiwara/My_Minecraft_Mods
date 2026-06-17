@@ -114,7 +114,7 @@ public final class PortalLinkRenderer {
 
     // ── 描画ヘルパ ──────────────────────────────────────────────────────
 
-    /** world pos に小さな箱マーカーを描く (共有ヘルパ経由・非シェーダ=lines / シェーダ=細クアッド)。 */
+    /** world pos に小さな箱マーカーを描く (共有ヘルパ経由・lines()・Iris 時のみ描き先をレベルバッファへ)。 */
     private static void drawMarker(MultiBufferSource.BufferSource bs, PoseStack matrices,
             double wx, double wy, double wz, Vec3 camPos, int color) {
         AABB box = new AABB(wx - MARKER_HALF, wy - MARKER_HALF, wz - MARKER_HALF,
