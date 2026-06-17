@@ -1,10 +1,17 @@
 # VisualizeGate
 
-クライアント専用 Fabric Mod（ネザーゲート視覚化）。MyFabricMod モノレポ内の 2 つ目の
+クライアント専用 Fabric Mod（ネザーゲート視覚化）。MyMinecraftMod モノレポ内の 2 つ目の
 Stonecutter included build。modid=`visualizegate` / package `com.kajiwara.visualizegate`。
 
-対応ノード（5 版）: `1.21.10` / `1.21.11` / `26.1` / `26.1.1` / `26.1.2`
+対応ノード（buildable 5 版）: `1.21.10` / `1.21.11` / `26.1` / `26.1.1` / `26.1.2`
 （正本は [`mc-meta/versions.json`](mc-meta/versions.json)）。
+
+`26.2` は **保留（held / `buildable:false`）**。ツールチェーンは検証済み（loader `0.19.3` /
+fabric-api `0.152.1+26.2` / non-remap Loom）だが、26.2 はクライアント描画パイプラインが破壊的変更
+（`MultiBufferSource`/`Tesselator`/`ShapeRenderer` 削除 → submit/staged 描画系、`RenderPass`・
+`TextureTarget`・`GpuBufferSlice`・`setScreenAndShow` 等）のため、26.1 base からの一方向置換では
+橋渡し不能。版別 `//?` 実装の本格移植が完了するまで CI matrix / dist / default ビルドから除外。
+Stonecutter `:26.2` ノードは移植 iteration 用に存置（`:26.2:compileClientJava` で確認可）。
 
 ## 前提
 
@@ -25,7 +32,7 @@ C:\Users\ppapk\.jdks\jdk-25.0.3+9
 PowerShell:
 
 ```powershell
-cd C:\MyFabricMod\mods\visualizegate
+cd C:\MyMinecraftMod\mods\visualizegate
 $env:JAVA_HOME = 'C:\Users\ppapk\.jdks\jdk-25.0.3+9'
 .\gradlew.bat :26.1.2:runClient --console=plain
 ```
@@ -43,7 +50,7 @@ $env:JAVA_HOME = 'C:\Users\ppapk\.jdks\jdk-25.0.3+9'
 Git Bash の場合:
 
 ```bash
-cd /c/MyFabricMod/mods/visualizegate
+cd /c/MyMinecraftMod/mods/visualizegate
 export JAVA_HOME="/c/Users/ppapk/.jdks/jdk-25.0.3+9"
 export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew :26.1.2:runClient --console=plain
@@ -68,7 +75,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 ## ビルド
 
 ```powershell
-cd C:\MyFabricMod\mods\visualizegate
+cd C:\MyMinecraftMod\mods\visualizegate
 $env:JAVA_HOME = 'C:\Users\ppapk\.jdks\jdk-25.0.3+9'
 
 .\gradlew.bat :26.1.2:compileClientJava --console=plain   # 速い: 1 ノードのコンパイルのみ
@@ -78,7 +85,7 @@ $env:JAVA_HOME = 'C:\Users\ppapk\.jdks\jdk-25.0.3+9'
 5 ノードまとめてビルドし `dist/` に集約する場合は **リポジトリルート**から:
 
 ```powershell
-cd C:\MyFabricMod
+cd C:\MyMinecraftMod
 $env:JAVA_HOME = 'C:\Users\ppapk\.jdks\jdk-25.0.3+9'
 .\gradlew.bat visualizegateCollectDist --console=plain
 ```

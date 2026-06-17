@@ -28,7 +28,7 @@ import net.minecraft.world.phys.Vec3;
  * ㉕ `/vg back-calculate` の予測ワイヤーフレームを<b>在世界</b>描画する (水後ステージ・<b>Mixin 不使用</b>)。
  *
  * <p>{@link BackCalcStore} の要素のうち<b>現在ディメンションに属するもののみ</b>を、 既存ゲートマーカーと
- * 同じ {@link OverlayDraw#box} (非シェーダ=vanilla lines / Iris=細クアッド)・同じ線太さで描く。
+ * 同じ {@link OverlayDraw#box} (vanilla lines()・Iris 時のみ描き先をレベルバッファへ)・同じ線太さで描く。
  * 緑=建設推奨 / 赤=吸い込み警告 (色は要素が保持)。 自動消滅せず `/vg clean` でのみ消える。
  *
  * <p>フック・カメラ/行列取得は {@link PortalBoxRenderer} と同一 (現物踏襲)。

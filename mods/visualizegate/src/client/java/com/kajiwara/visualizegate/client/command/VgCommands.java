@@ -137,8 +137,10 @@ public final class VgCommands {
             return feedbackToggle(c, "visualizegate.cmd.names", on);
         }));
         // 競合解決: 赤(競合)ゲートに対し、 相手を専有できる<b>安全建設位置</b>を探して在世界表示する。
+        //          name サジェストは「いま競合中のゲートだけ」をライブ提案 (解消で自動的に候補から消える)。
         root.then(literal("resolving-conflict")
                 .then(argument("name", StringArgumentType.greedyString())
+                        .suggests((ctx, b) -> suggestConflictingGates(b))
                         .executes(c -> runResolveConflict(c, StringArgumentType.getString(c, "name")))));
 
         // ㊸A `/vg perf` は廃止 (perf はドック展開＝フルメニューで常時表示)。
@@ -221,6 +223,32 @@ public final class VgCommands {
         for (String s : pool) {
             if (s.toLowerCase(Locale.ROOT).startsWith(rem)) {
                 b.suggest(s);
+            }
+        }
+        return b.buildFuture();
+    }
+
+    /**
+     * resolving-conflict の name サジェスト: <b>いま競合中</b>のゲートの displayName のみをライブ提案。
+     * 競合集合は実行側と同一ソース ({@link GateConflictAnalyzer#analyze} の {@code states[i]==CONFLICT}・
+     * {@code gateNodes()} と添字一致) をサジェスト要求毎に算出するため、 ワールド側で競合が解消した瞬間に
+     * 候補から自動的に消える (解決済み状態は永続化しない)。 hidden ゲートも競合中なら出す (表示可視性と独立)。
+     * 前方一致・trim/大小無視・空白入り名・既定名 OW-/N-n は {@link #suggestOwnedGates} と同一挙動。
+     * 競合ゼロなら候補は空 (= 全部解消済み)。
+     */
+    private static CompletableFuture<Suggestions> suggestConflictingGates(SuggestionsBuilder b) {
+        List<GateNode> nodes = PortalMemory.get().gateNodes();
+        GateConflictAnalyzer.Result an = GateConflictAnalyzer.analyze(
+                nodes, NETHER_MIN_Y, NETHER_MAX_Y, OW_MIN_Y, OW_MAX_Y);
+        GateState[] states = an.states();
+        String rem = b.getRemaining().toLowerCase(Locale.ROOT);
+        for (int i = 0; i < nodes.size(); i++) {
+            if (states[i] != GateState.CONFLICT) {
+                continue;
+            }
+            String display = GateNameLabelRenderer.displayName(nodes.get(i));
+            if (display.toLowerCase(Locale.ROOT).startsWith(rem)) {
+                b.suggest(display);
             }
         }
         return b.buildFuture();

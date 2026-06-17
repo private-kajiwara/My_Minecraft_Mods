@@ -40,7 +40,7 @@ Windows PowerShell:
 
 ```powershell
 $env:JAVA_HOME = "C:\Users\ppapk\.jdks\jdk-25.0.3+9"
-cd C:\MyFabricMod\mods\omnichest
+cd C:\MyMinecraftMod\mods\omnichest
 .\gradlew.bat :26.1.2:runClient
 ```
 
@@ -54,7 +54,7 @@ cd C:\MyFabricMod\mods\omnichest
 
 ```powershell
 $env:JAVA_HOME = "C:\Users\ppapk\.jdks\jdk-25.0.3+9"
-cd C:\MyFabricMod\mods\omnichest
+cd C:\MyMinecraftMod\mods\omnichest
 .\gradlew.bat :1.21.11:build        # jar -> versions/1.21.11/build/libs/ (remapJar まで生成)
 .\gradlew.bat :26.1.2:build         # jar -> versions/26.1.2/build/libs/
 ```

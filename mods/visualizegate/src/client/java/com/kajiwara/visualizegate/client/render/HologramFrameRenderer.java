@@ -131,7 +131,7 @@ public final class HologramFrameRenderer {
             //?}
             drawInteriorFace(fill, pose, gx, gy, gz, dx, dy, dz, axisX, camPos);
 
-            // 金アウトライン (v1・線は面の上)。 共有ヘルパ (非シェーダ=lines / Iris シェーダ時=細クアッド)。
+            // 金アウトライン (v1・線は面の上)。 共有ヘルパ (lines()・Iris 時のみ描き先をレベルバッファへ)。
             OverlayDraw.box(bufferSource, matrices, camPos, ring, FRAME_ARGB, LINE_WIDTH);     // 黒曜石リング
             OverlayDraw.box(bufferSource, matrices, camPos, interior, FRAME_ARGB, LINE_WIDTH); // 内部面の輪郭
 

@@ -29,8 +29,8 @@ stonecutter {
         // mc-meta/versions.json の buildable な MC。 世代差は
         // stonecutter.gradle.kts の global replacements (current.parsed < "26.1") と
         // //? で吸収する (ソース基準名 = 26.1 非難読化)。
-        versions("1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2")
-        vcsVersion = "26.1.2"   // policy.default と一致
+        versions("1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2")
+        vcsVersion = "26.1.2"   // policy.default と一致 (active base = 一方向置換の生成元・26.2 追加でも不変)
     }
 }
 

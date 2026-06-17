@@ -7,6 +7,7 @@ import com.kajiwara.visualizegate.client.render.CornerIconRenderer;
 import com.kajiwara.visualizegate.client.render.GateGraphRenderer;
 import com.kajiwara.visualizegate.client.render.GateNameLabelRenderer;
 import com.kajiwara.visualizegate.client.render.HologramFrameRenderer;
+import com.kajiwara.visualizegate.client.render.OverlayDraw;
 import com.kajiwara.visualizegate.client.render.PortalBoxRenderer;
 import com.kajiwara.visualizegate.client.render.PortalInfoCardRenderer;
 import com.kajiwara.visualizegate.client.render.PointCloudHudRenderer;
@@ -49,6 +50,9 @@ public class VisualizeGateClient implements ClientModInitializer {
         // 地形カラム代表点の蓄積 (点群ポップアップの地形素材)。 PortalMemory の後に登録し、
         // world-id 確定後に CHUNK_LOAD でサンプリングする (描画はまだ無し＝蓄積基盤のみ)。
         TerrainStore.register();
+        // シェーダ (Iris) 時のワイヤー描き先＝レベル (Iris ラップ) バッファを毎フレーム capture する (>=26.1)。
+        //   OverlayDraw を使う各 wire レンダラより前に発火させたいので、 それらより先に register する。
+        OverlayDraw.register();
         PortalBoxRenderer.register();
         // 機能2: リンク状態ベクターライン (記憶された別次元ポータルへズレ線・緑/赤/灰)。
         PortalLinkRenderer.register();
