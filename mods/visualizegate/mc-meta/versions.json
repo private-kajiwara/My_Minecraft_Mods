@@ -58,7 +58,15 @@
       "stable": true,
       "recommended": true,
       "buildable": true,
-      "notes": "26.1 系最新安定版・非難読化版 (Java 25)。推奨ビルド。"
+      "notes": "26.1 系最新安定版・非難読化版 (Java 25)。推奨ビルド (active base = 一方向置換の生成元)。"
+    },
+    {
+      "minecraft": "26.2",
+      "properties": "26.2.properties",
+      "stable": true,
+      "recommended": false,
+      "buildable": false,
+      "notes": "保留 (held)。 ツールチェーンは authoritative 検証済み (loader 0.19.3 / fabric-api 0.152.1+26.2 / intermediary 解決可・validateVersions green・非remap Loom 1.16.3) だが、 26.2 はクライアント描画パイプラインが破壊的変更: MultiBufferSource/Tesselator/ShapeRenderer 削除→submit/staged 描画系へ、 RenderPass.draw/drawIndexed・TextureTarget(+GpuFormat)・GpuBuffer→GpuBufferSlice・VertexFormat.Mode 移動・RenderPipeline.withUniform(UniformType)・Minecraft.setScreen→setScreenAndShow・Minecraft.screen/Options.hideGui 改名。 26.1 base からの一方向置換では橋渡し不能 (アーキ差) のため版別 //? 実装の本格移植が必要。 移植完了まで buildable=false で保留 (CI matrix/dist/default から除外・Stonecutter :26.2 ノードは iteration 用に存置)。"
     }
   ],
 

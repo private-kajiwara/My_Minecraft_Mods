@@ -87,7 +87,7 @@ public final class PortalBoxRenderer {
             }
             MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
 
-            // 描画は共有ヘルパへ委譲 (非シェーダ=従来の lines / Iris シェーダ時=細クアッド)。
+            // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り。 Iris 時のみ描き先をレベルバッファへ)。
             for (PortalRecord rec : records) {
                 OverlayDraw.box(bufferSource, matrices, camPos, rec.aabb(), BOX_ARGB, LINE_WIDTH);
             }

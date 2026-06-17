@@ -94,7 +94,7 @@ public final class SearchDomeRenderer {
             }
             MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
 
-            // 描画は共有ヘルパへ委譲 (非シェーダ=従来の lines / Iris シェーダ時=細クアッド)。
+            // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り。 Iris 時のみ描き先をレベルバッファへ)。
             drawDome(bufferSource, matrices, cx, cy, cz, radius, camPos, nether);
             highlightCrosstalk(bufferSource, matrices, level, r, cx, cz, radius, camPos);
 

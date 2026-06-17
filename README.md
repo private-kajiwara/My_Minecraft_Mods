@@ -53,7 +53,7 @@ gradle wrapper) が Mod 固有名をハードコードせずに各 Mod をビル
 
 ### クイックスタート（そのままコピペで jar を生成）
 
-Windows PowerShell — リポジトリルート `MyFabricMod` で（先頭の `.\` が必須。
+Windows PowerShell — リポジトリルート `MyMinecraftMod` で（先頭の `.\` が必須。
 PowerShell はカレントディレクトリのコマンドを既定で実行しないため）:
 
 ```powershell
