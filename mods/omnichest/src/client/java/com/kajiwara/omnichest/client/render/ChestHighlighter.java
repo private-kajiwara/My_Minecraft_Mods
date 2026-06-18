@@ -1648,6 +1648,8 @@ public final class ChestHighlighter {
                 worldScale, camPos, camOri);
         if (hOrigin != null) {
             float pp = hOrigin[2];
+            // 背景: ヘッダ文字背後の黒帯 (= 旧 drawInBatch bg と同色 PIN_BG_ARGB)。
+            fillPinBg(g, hOrigin[0] - pp, hOrigin[1] - pp, (headerWidth + 2) * pp, lineHeight * pp);
             drawPinText(g, font, headerComp.getVisualOrderText(), hOrigin[0], hOrigin[1],
                     pp * PIN_TEXT_LOCAL_SCALE, 0xFF000000 | (themeRgb & 0xFFFFFF));
         }
@@ -1657,12 +1659,16 @@ public final class ChestHighlighter {
             int rowIndex = totalRows - 2 - i;
             float rowY = -(rowIndex + 1) * (float) rowSpacing + 1.0f;
             HighlightEntry e = entries.get(i);
+            int textW = font.width(entryTexts[i]);
             float[] origin = projectPinLocal(renderCx, renderCy, renderCz, entryBlockLeftX, rowY,
                     worldScale, camPos, camOri);
             if (origin == null) continue;
             float ox = origin[0];
             float oy = origin[1];
             float pp = origin[2];
+            // 背景: 行全体 (アイコン + gap + テキスト) を覆う黒帯 (= 旧 PIN_BG_ARGB・行全体)。
+            fillPinBg(g, ox - pp, oy - pp,
+                    (entryIconSize + entryIconGap + textW + 2) * pp, lineHeight * pp);
             // アイコン: 行頭。 画面サイズ = entryIconSize * pp (= 旧 computeIconScreenSize 経路と同値)。
             float iconSizePx = entryIconSize * pp;
             float iconCx = ox + (entryIconSize / 2.0f) * pp;
@@ -1690,6 +1696,12 @@ public final class ChestHighlighter {
         int lineHeight = Minecraft.getInstance().font.lineHeight;
         float rowScreenPx = computeIconScreenSize(wx, wy, wz, lineHeight * worldScale, camPos, camOri);
         return new float[] { screen[0], screen[1], rowScreenPx / lineHeight };
+    }
+
+    // 背景矩形 (= 旧 drawPinRowBgImmediate / drawInBatch bg と同色 PIN_BG_ARGB)。 GUI 空間 (identity pose) で塗る。
+    private void fillPinBg(GuiGraphicsExtractor g, float left, float top, float width, float height) {
+        g.fill(Math.round(left), Math.round(top), Math.round(left + width), Math.round(top + height),
+                PIN_BG_ARGB);
     }
 
     // アイコン 1 個を screen 左上 + サイズ px で描く (sub-pixel は pose.translate に委ねる)。
