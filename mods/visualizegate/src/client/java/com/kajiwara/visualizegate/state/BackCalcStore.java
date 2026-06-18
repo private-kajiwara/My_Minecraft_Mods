@@ -109,6 +109,20 @@ public final class BackCalcStore {
         return removed;
     }
 
+    //? if >=26.2 {
+    /*// 指定次元の (x,z) にラベル付きピン要素 (resolve-conflict 等・ゾーンは除く) があるか。 ゲート名ラベル(HUD)が
+    //   resolve-conflict ピンと名前を二重表示しないための抑制判定に使う (>=26.2 の HUD 経路からのみ呼ぶ・描画スレッド読み取り)。
+    public static boolean hasLabelPinAt(PortalDimension dim, double x, double z) {
+        for (Element e : ELEMENTS) {
+            if (e.label != null && e.squareHalf <= 0 && e.dim == dim
+                    && Math.abs(e.x - x) < 0.01 && Math.abs(e.z - z) < 0.01) {
+                return true;
+            }
+        }
+        return false;
+    }*/
+    //?}
+
     /** 指定 owner キーの要素が現在 store にあるか (サジェスト用)。 */
     public static boolean hasOwner(String ownerKey) {
         if (ownerKey == null) {
