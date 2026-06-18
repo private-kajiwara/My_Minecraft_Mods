@@ -2295,8 +2295,13 @@ public class PointCloudScreen extends Screen {
      */
     private void openRename(int row) {
         PortalDimension dim = (rowNether[row] != 0) ? PortalDimension.NETHER : PortalDimension.OVERWORLD;
+        //? if >=26.2 {
+        /*this.minecraft.setScreenAndShow(new GateRenameScreen(
+                this, dim, rowWx[row], rowWy[row], rowWz[row], rowNumber[row]));*/
+        //?} else {
         this.minecraft.setScreen(new GateRenameScreen(
                 this, dim, rowWx[row], rowWy[row], rowWz[row], rowNumber[row]));
+        //?}
     }
 
     private boolean inViewport(double mx, double my) {
@@ -2414,6 +2419,10 @@ public class PointCloudScreen extends Screen {
     @Override
     public void onClose() {
         GateConfigManager.save();
+        //? if >=26.2 {
+        /*this.minecraft.setScreenAndShow(this.parent);*/
+        //?} else {
         this.minecraft.setScreen(this.parent);
+        //?}
     }
 }

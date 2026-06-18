@@ -12,7 +12,9 @@ import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
+//? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//?}
 import com.mojang.blaze3d.vertex.PoseStack;
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -23,7 +25,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 //?}
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?} else {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -61,15 +67,21 @@ public final class GateGraphRenderer {
     private static final int NETHER_MIN_Y = 0;
     private static final int NETHER_MAX_Y = 127;
 
+    //? if <26.2 {
     private MultiBufferSource.BufferSource afterWaterBuffer;
+    //?}
 
     private GateGraphRenderer() {
     }
 
     public static void register() {
-        //? if >=26.1 {
+        //? if >=26.2 {
+        /*LevelRenderEvents.COLLECT_SUBMITS.register(ctx -> INSTANCE.onAfterWater(ctx));*/
+        //?}
+        //? if >=26.1 && <26.2 {
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> INSTANCE.onAfterWater(ctx));
-        //?} else {
+        //?}
+        //? if <26.1 {
         /*WorldRenderEvents.END_MAIN.register(ctx -> INSTANCE.onAfterWater(ctx));*/
         //?}
     }
@@ -84,7 +96,11 @@ public final class GateGraphRenderer {
             if (level == null) {
                 return;
             }
+            //? if >=26.2 {
+            /*if (mc.gui.hud.isHidden() || mc.getDebugOverlay().showDebugScreen()) {*/
+            //?} else {
             if (mc.options.hideGui || mc.getDebugOverlay().showDebugScreen()) {
+            //?}
                 return; // F1 / F3 尊重
             }
             PortalDimension cur = PortalMemory.dimOf(level.dimension().identifier().toString());
@@ -105,10 +121,15 @@ public final class GateGraphRenderer {
             }
             Vec3 camPos = camState.pos;
             PoseStack matrices = ctx.poseStack();
+            // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。
+            //? if >=26.2 {
+            /*SubmitNodeCollector target = ctx.submitNodeCollector();*/
+            //?} else {
             if (afterWaterBuffer == null) {
                 afterWaterBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(4096));
             }
-            MultiBufferSource.BufferSource bs = afterWaterBuffer;
+            MultiBufferSource.BufferSource target = afterWaterBuffer;
+            //?}
 
             int curMinY = (cur == PortalDimension.NETHER) ? NETHER_MIN_Y : OW_MIN_Y;
             int curMaxY = (cur == PortalDimension.NETHER) ? NETHER_MAX_Y : OW_MAX_Y;
@@ -147,7 +168,7 @@ public final class GateGraphRenderer {
                 double hw = axisX ? w * 0.5 : t * 0.5;
                 double ht = axisX ? t * 0.5 : w * 0.5;
                 AABB box = new AABB(cx - hw, here.y(), cz - ht, cx + hw, here.y() + h, cz + ht);
-                OverlayDraw.box(bs, matrices, camPos, box, color, FRAME_WIDTH);
+                OverlayDraw.box(target, matrices, camPos, box, color, FRAME_WIDTH);
                 drawn++;
             }
 
@@ -170,10 +191,12 @@ public final class GateGraphRenderer {
                     continue;
                 }
                 int color = fade(0xFF000000 | (GateColors.PC_LINK & 0xFFFFFF), mid);
-                OverlayDraw.segment(bs, matrices, camPos, ax, ay, az, bx, by, bz, color, LINK_WIDTH);
+                OverlayDraw.segment(target, matrices, camPos, ax, ay, az, bx, by, bz, color, LINK_WIDTH);
             }
 
-            bs.endBatch();
+            //? if <26.2 {
+            target.endBatch();
+            //?}
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] visualize render failed (continuing): {}", t.toString());
         }

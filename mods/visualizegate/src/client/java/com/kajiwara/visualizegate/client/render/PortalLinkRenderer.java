@@ -8,7 +8,9 @@ import com.kajiwara.visualizegate.domain.PortalCoordinateMapper;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.ui.GateColors;
 
+//? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//?}
 import com.mojang.blaze3d.vertex.PoseStack;
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -20,7 +22,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?} else {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -44,15 +50,21 @@ public final class PortalLinkRenderer {
     private static final float LINE_WIDTH = 2.5f;
     private static final double MARKER_HALF = 0.35;
 
+    //? if <26.2 {
     private MultiBufferSource.BufferSource afterWaterBuffer;
+    //?}
 
     private PortalLinkRenderer() {
     }
 
     public static void register() {
-        //? if >=26.1 {
+        //? if >=26.2 {
+        /*LevelRenderEvents.COLLECT_SUBMITS.register(ctx -> INSTANCE.onAfterWater(ctx));*/
+        //?}
+        //? if >=26.1 && <26.2 {
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> INSTANCE.onAfterWater(ctx));
-        //?} else {
+        //?}
+        //? if <26.1 {
         /*WorldRenderEvents.END_MAIN.register(ctx -> INSTANCE.onAfterWater(ctx));*/
         //?}
     }
@@ -86,10 +98,15 @@ public final class PortalLinkRenderer {
             }
             Vec3 camPos = camState.pos;
             PoseStack matrices = ctx.poseStack();
+            // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。
+            //? if >=26.2 {
+            /*SubmitNodeCollector target = ctx.submitNodeCollector();*/
+            //?} else {
             if (afterWaterBuffer == null) {
                 afterWaterBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(2048));
             }
-            MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
+            MultiBufferSource.BufferSource target = afterWaterBuffer;
+            //?}
 
             // 正常/ズレ＝接続先へライン (長さ＝ズレ量) ＋端マーカー。 競合/未接続/片側＝source に状態色マーカーのみ。
             if ((state == GateState.OK || state == GateState.OFFSET)
@@ -99,14 +116,16 @@ public final class PortalLinkRenderer {
                 double ex = endC.x() + 0.5;
                 double ey = endC.y() + 0.5;
                 double ez = endC.z() + 0.5;
-                OverlayDraw.segment(bufferSource, matrices, camPos,
+                OverlayDraw.segment(target, matrices, camPos,
                         srcX, srcY, srcZ, ex, ey, ez, color, LINE_WIDTH);
-                drawMarker(bufferSource, matrices, ex, ey, ez, camPos, color);
+                drawMarker(target, matrices, ex, ey, ez, camPos, color);
             } else {
-                drawMarker(bufferSource, matrices, srcX, srcY, srcZ, camPos, color);
+                drawMarker(target, matrices, srcX, srcY, srcZ, camPos, color);
             }
 
-            bufferSource.endBatch();
+            //? if <26.2 {
+            target.endBatch();
+            //?}
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] link render failed (continuing): {}", t.toString());
         }
@@ -114,9 +133,14 @@ public final class PortalLinkRenderer {
 
     // ── 描画ヘルパ ──────────────────────────────────────────────────────
 
-    /** world pos に小さな箱マーカーを描く (共有ヘルパ経由・lines()・Iris 時のみ描き先をレベルバッファへ)。 */
+    /** world pos に小さな箱マーカーを描く (共有ヘルパ経由・lines())。 描き先型のみ版別 (body の OverlayDraw.box は版別オーバーロードで解決)。 */
+    //? if >=26.2 {
+    /*private static void drawMarker(SubmitNodeCollector bs, PoseStack matrices,
+            double wx, double wy, double wz, Vec3 camPos, int color) {*/
+    //?} else {
     private static void drawMarker(MultiBufferSource.BufferSource bs, PoseStack matrices,
             double wx, double wy, double wz, Vec3 camPos, int color) {
+    //?}
         AABB box = new AABB(wx - MARKER_HALF, wy - MARKER_HALF, wz - MARKER_HALF,
                 wx + MARKER_HALF, wy + MARKER_HALF, wz + MARKER_HALF);
         OverlayDraw.box(bs, matrices, camPos, box, color, LINE_WIDTH);

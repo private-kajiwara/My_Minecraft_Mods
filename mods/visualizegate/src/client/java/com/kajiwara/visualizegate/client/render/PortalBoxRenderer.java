@@ -7,7 +7,9 @@ import com.kajiwara.visualizegate.scan.PortalIndex;
 import com.kajiwara.visualizegate.scan.PortalRecord;
 import com.kajiwara.visualizegate.state.GateMenuState;
 
+//? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//?}
 import com.mojang.blaze3d.vertex.PoseStack;
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -18,7 +20,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 //?}
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?} else {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
@@ -46,17 +52,23 @@ public final class PortalBoxRenderer {
     /** 線幅 (>=1.21.11 の renderShape が取る per-call line width)。 */
     private static final float LINE_WIDTH = 2.5f;
 
-    /** 水後ステージ用の自前 immediate バッファ (初回 lazy 構築・以後フレーム間で再利用)。 */
+    /** 水後ステージ用の自前 immediate バッファ (初回 lazy 構築・以後フレーム間で再利用)。 26.1.x のみ (>=26.2 は submit 経路)。 */
+    //? if <26.2 {
     private MultiBufferSource.BufferSource afterWaterBuffer;
+    //?}
 
     private PortalBoxRenderer() {
     }
 
     public static void register() {
         // 水 (半透明地形) の描画後に発火するステージに登録する (= 枠が水に上書きされない)。
-        //? if >=26.1 {
+        //? if >=26.2 {
+        /*LevelRenderEvents.COLLECT_SUBMITS.register(ctx -> INSTANCE.onAfterWater(ctx));*/
+        //?}
+        //? if >=26.1 && <26.2 {
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> INSTANCE.onAfterWater(ctx));
-        //?} else {
+        //?}
+        //? if <26.1 {
         /*WorldRenderEvents.END_MAIN.register(ctx -> INSTANCE.onAfterWater(ctx));*/
         //?}
     }
@@ -82,17 +94,24 @@ public final class PortalBoxRenderer {
             Vec3 camPos = camState.pos;
             PoseStack matrices = ctx.poseStack();
 
+            // 描き先 target: >=26.2 = submit collector (engine 描画・Iris ネイティブ捕捉)、 26.1.x = 自前 immediate。
+            //? if >=26.2 {
+            /*SubmitNodeCollector target = ctx.submitNodeCollector();*/
+            //?} else {
             if (afterWaterBuffer == null) {
                 afterWaterBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(2048));
             }
-            MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
+            MultiBufferSource.BufferSource target = afterWaterBuffer;
+            //?}
 
-            // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り。 Iris 時のみ描き先をレベルバッファへ)。
+            // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り)。 OverlayDraw.box は版別オーバーロードで解決。
             for (PortalRecord rec : records) {
-                OverlayDraw.box(bufferSource, matrices, camPos, rec.aabb(), BOX_ARGB, LINE_WIDTH);
+                OverlayDraw.box(target, matrices, camPos, rec.aabb(), BOX_ARGB, LINE_WIDTH);
             }
 
-            bufferSource.endBatch();
+            //? if <26.2 {
+            target.endBatch();
+            //?}
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] portal box render failed (continuing): {}", t.toString());
         }

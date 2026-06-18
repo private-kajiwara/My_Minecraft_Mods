@@ -72,9 +72,17 @@ public final class PortalInfoCardRenderer {
 
     private void onHudRender(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
+        //? if >=26.2 {
+        /*if (mc.gui.hud.isHidden())                   // F1
+        *///?} else {
         if (mc.options.hideGui)                       // F1
+        //?}
             return;
+        //? if >=26.2 {
+        /*if (mc.gui.screen() != null)                 // 他 Screen 表示中
+        *///?} else {
         if (mc.screen != null)                        // 他 Screen 表示中
+        //?}
             return;
         if (mc.getDebugOverlay().showDebugScreen())   // F3 デバッグ中
             return;

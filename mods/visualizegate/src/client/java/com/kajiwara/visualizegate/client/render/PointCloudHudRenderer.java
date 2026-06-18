@@ -68,7 +68,11 @@ public final class PointCloudHudRenderer {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
+        //? if >=26.2 {
+        /*if (mc.gui.hud.isHidden() || mc.gui.screen() != null || mc.getDebugOverlay().showDebugScreen()) {*/
+        //?} else {
         if (mc.options.hideGui || mc.screen != null || mc.getDebugOverlay().showDebugScreen()) {
+        //?}
             return;
         }
 

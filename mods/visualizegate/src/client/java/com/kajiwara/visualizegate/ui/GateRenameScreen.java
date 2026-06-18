@@ -122,12 +122,20 @@ public class GateRenameScreen extends Screen {
         if (!(wasDefault && v.equals(seed))) {
             PortalMemory.get().setName(dim, gx, gy, gz, v); // 空→null (既定名へ)
         }
+        //? if >=26.2 {
+        /*this.minecraft.setScreenAndShow(parent);*/
+        //?} else {
         this.minecraft.setScreen(parent);
+        //?}
     }
 
     @Override
     public void onClose() {
+        //? if >=26.2 {
+        /*this.minecraft.setScreenAndShow(parent); // 取消: 変更なし
+        *///?} else {
         this.minecraft.setScreen(parent); // 取消: 変更なし
+        //?}
     }
 
     @Override

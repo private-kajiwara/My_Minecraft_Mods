@@ -74,12 +74,20 @@ public class GateMenuScreen extends Screen {
         // 点群解析: その場のデータでスナップショットを組み (ワーカー)、 ポップアップを開く。
         addRenderableWidget(Button.builder(Component.translatable("visualizegate.menu.pointcloud"), b -> {
             PointCloudAnalysis.get().requestAnalysis();
+            //? if >=26.2 {
+            /*this.minecraft.setScreenAndShow(new PointCloudScreen(this));*/
+            //?} else {
             this.minecraft.setScreen(new PointCloudScreen(this));
+            //?}
         }).bounds(leftX, y, FULL_W, H).build());
         y += H + GAP;
         // 使い方: 初回ガイドをいつでも再表示 (閉じると本メニューへ戻る)。
         addRenderableWidget(Button.builder(Component.translatable("visualizegate.menu.guide"),
+                //? if >=26.2 {
+                /*b -> this.minecraft.setScreenAndShow(new GuideScreen(this)))*/
+                //?} else {
                 b -> this.minecraft.setScreen(new GuideScreen(this)))
+                //?}
                 .bounds(leftX, y, FULL_W, H).build());
         y += H + GROUP_GAP;
 

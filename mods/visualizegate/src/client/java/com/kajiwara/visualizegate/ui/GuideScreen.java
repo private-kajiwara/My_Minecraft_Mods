@@ -611,7 +611,11 @@ public class GuideScreen extends Screen {
 
     @Override
     public void onClose() {
+        //? if >=26.2 {
+        /*this.minecraft.setScreenAndShow(parent);*/
+        //?} else {
         this.minecraft.setScreen(parent);
+        //?}
     }
 
     @Override
