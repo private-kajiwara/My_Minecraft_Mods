@@ -22,6 +22,13 @@ public final class GateMenuState {
     // ゲート名ラベル (各ポータル上の在世界テキスト・状態色・SEE_THROUGH) 既定 ON。
     private static boolean gateNamesEnabled = true;
 
+    // ── ゲート可視化 (枠/線/ドーム) の最大表示距離 (m・水平) ──
+    // 設定値はここに保持し、 render 時に実効描画距離でクランプする (GateVisualRange)。
+    public static final float GATE_RENDER_DIST_MIN = 48f;
+    public static final float GATE_RENDER_DIST_MAX = 256f;
+    public static final float GATE_RENDER_DIST_DEFAULT = 128f;
+    private static float gateRenderDistanceM = GATE_RENDER_DIST_DEFAULT;
+
     private GateMenuState() {
     }
 
@@ -128,5 +135,18 @@ public final class GateMenuState {
     public static boolean toggleGateNames() {
         gateNamesEnabled = !gateNamesEnabled;
         return gateNamesEnabled;
+    }
+
+    // ── ゲート可視化の最大表示距離 (m・水平・[MIN,MAX] にクランプ) ──
+    public static float getGateRenderDistanceM() {
+        return gateRenderDistanceM;
+    }
+
+    public static void setGateRenderDistanceM(float v) {
+        if (Float.isNaN(v)) {
+            gateRenderDistanceM = GATE_RENDER_DIST_DEFAULT;
+            return;
+        }
+        gateRenderDistanceM = Math.max(GATE_RENDER_DIST_MIN, Math.min(GATE_RENDER_DIST_MAX, v));
     }
 }

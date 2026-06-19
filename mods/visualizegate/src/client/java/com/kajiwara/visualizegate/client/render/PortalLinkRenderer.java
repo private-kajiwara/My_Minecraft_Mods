@@ -97,6 +97,10 @@ public final class PortalLinkRenderer {
                 return;
             }
             Vec3 camPos = camState.pos;
+            // 最大表示距離 (設定・実効描画距離でクランプ) を超える source には描かない (水平距離・枠/ドームと同基準)。
+            if (!GateVisualRange.withinCap(camPos, srcX, srcZ, GateVisualRange.cap(mc))) {
+                return;
+            }
             PoseStack matrices = ctx.poseStack();
             // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。
             //? if >=26.2 {

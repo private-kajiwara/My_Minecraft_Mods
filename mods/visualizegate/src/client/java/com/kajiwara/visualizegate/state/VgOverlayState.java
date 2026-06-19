@@ -22,6 +22,12 @@ public final class VgOverlayState {
     //     点群サムネのみ pointCloud 連動で追加。 CpuSampler はこの展開中 (perf 表示中) だけ稼働する。
     private static boolean dockExpanded = false;
 
+    // ── パフォーマンス: CPU サンプラ制御 (config 永続・既定は従来挙動)。
+    //    既定 ON＝従来どおり dock 展開時に CpuSampler が稼働 (= 未操作なら挙動不変)。
+    private static boolean cpuSamplingEnabled = true;
+    private static float cpuSamplingHz = 1.0f;   // 0.5 / 1 / 2 Hz
+    private static boolean cpuGraphEnabled = true; // dock 展開時の CPU スパークライン表示
+
     private VgOverlayState() {
     }
 
@@ -88,11 +94,47 @@ public final class VgOverlayState {
             return;
         }
         dockExpanded = v;
-        if (v) {
+        reconcileSampler();
+    }
+
+    /**
+     * CpuSampler の稼働を現状態へ収束させる: <b>dock 展開中 かつ CPU サンプリング有効</b>のときだけ稼働。
+     * dock 展開トグル / config の cpuSamplingEnabled 変更 のどちらからでも呼べる単一の収束点。
+     */
+    private static void reconcileSampler() {
+        if (dockExpanded && cpuSamplingEnabled) {
+            CpuSampler.get().setHz(cpuSamplingHz);
             CpuSampler.get().start();
         } else {
             CpuSampler.get().stop();
         }
+    }
+
+    // ── CPU サンプラ制御 (config Save から反映・即収束) ──
+    public static boolean isCpuSamplingEnabled() {
+        return cpuSamplingEnabled;
+    }
+
+    public static void setCpuSamplingEnabled(boolean v) {
+        cpuSamplingEnabled = v;
+        reconcileSampler();
+    }
+
+    public static float getCpuSamplingHz() {
+        return cpuSamplingHz;
+    }
+
+    public static void setCpuSamplingHz(float v) {
+        cpuSamplingHz = v;
+        CpuSampler.get().setHz(v); // 稼働中でも次周回で反映
+    }
+
+    public static boolean isCpuGraphEnabled() {
+        return cpuGraphEnabled;
+    }
+
+    public static void setCpuGraphEnabled(boolean v) {
+        cpuGraphEnabled = v;
     }
 
     /** いずれかの `/vg` セクションが有効か (ドックの表示可否＝何か点いていれば畳バーを出す)。 ㊸A perf は廃止。 */

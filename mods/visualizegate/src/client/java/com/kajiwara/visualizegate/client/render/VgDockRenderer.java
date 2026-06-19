@@ -163,6 +163,7 @@ public final class VgDockRenderer {
 
     // セクション見出し (定数・グリフ非依存テキスト)。
     private static final Component T_PERF = Component.translatable("visualizegate.dock.perf");
+    private static final Component T_CPU_OFF = Component.translatable("visualizegate.perf.cpu.off");
     private static final Component T_STATUS = Component.translatable("visualizegate.dock.status");
     private static final Component T_NOTES = Component.translatable("visualizegate.dock.notes");
 
@@ -206,7 +207,12 @@ public final class VgDockRenderer {
 
     private int perfHeight() {
         // ㊹B タイトル + CPU(text+spark) のみ。 フレーム時間スパークライン/GPU% 注記は撤去 (fps はスリムバーに表示)。
-        return LINE + LINE + lSpark + 2;
+        // CPU サンプリング無効時は text のみ (spark 行を畳む)。 グラフ表示 OFF でも spark を畳む。
+        int h = LINE + LINE; // title + cpu text
+        if (VgOverlayState.isCpuSamplingEnabled() && VgOverlayState.isCpuGraphEnabled()) {
+            h += lSpark + 2;
+        }
+        return h;
     }
 
     private int statusHeight() {
@@ -227,12 +233,16 @@ public final class VgDockRenderer {
     private int drawPerf(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int w) {
         g.text(mc.font, T_PERF, x, y, GateColors.TEXT);
         y += LINE;
-        // CPU (CpuSampler の 1Hz リング・0..100%)。 fps はスリムバーのヘッダに常時あるためフレーム行は持たない。
-        g.text(mc.font, cpuLine(), x, y, GateColors.TEXT);
+        // CPU 行。 サンプリング無効なら計測値の代わりに "off" を出す (誤誘導しない)。 fps はスリムバーのヘッダに常時。
+        boolean sampling = VgOverlayState.isCpuSamplingEnabled();
+        g.text(mc.font, sampling ? cpuLine() : T_CPU_OFF, x, y, GateColors.TEXT);
         y += LINE;
-        CpuSampler s = CpuSampler.get();
-        drawSpark(g, x, y, w, lSpark, s.historyRef(), s.head(), s.count(), 100f, GateColors.PC_NETHER_HIGH);
-        y += lSpark + 2;
+        // CPU スパークライン: サンプリング有効 かつ グラフ表示 ON のときだけ (perfHeight と一致)。
+        if (sampling && VgOverlayState.isCpuGraphEnabled()) {
+            CpuSampler s = CpuSampler.get();
+            drawSpark(g, x, y, w, lSpark, s.historyRef(), s.head(), s.count(), 100f, GateColors.PC_NETHER_HIGH);
+            y += lSpark + 2;
+        }
         return y;
     }
 

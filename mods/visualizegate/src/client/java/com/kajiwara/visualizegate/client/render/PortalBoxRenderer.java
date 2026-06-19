@@ -105,8 +105,16 @@ public final class PortalBoxRenderer {
             //?}
 
             // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り)。 OverlayDraw.box は版別オーバーロードで解決。
+            // 最大表示距離 (設定・実効描画距離でクランプ) を超える遠方ポータルは間引く (per-portal・水平距離)。
+            double cap = GateVisualRange.cap(mc);
             for (PortalRecord rec : records) {
-                OverlayDraw.box(target, matrices, camPos, rec.aabb(), BOX_ARGB, LINE_WIDTH);
+                net.minecraft.world.phys.AABB bb = rec.aabb();
+                double cx = (bb.minX + bb.maxX) * 0.5;
+                double cz = (bb.minZ + bb.maxZ) * 0.5;
+                if (!GateVisualRange.withinCap(camPos, cx, cz, cap)) {
+                    continue;
+                }
+                OverlayDraw.box(target, matrices, camPos, bb, BOX_ARGB, LINE_WIDTH);
             }
 
             //? if <26.2 {

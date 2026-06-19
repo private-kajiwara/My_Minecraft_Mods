@@ -20,7 +20,12 @@ public final class CpuSampler {
     private static final CpuSampler INSTANCE = new CpuSampler();
 
     private static final int CAP = 90;            // スパークライン用リング長
-    private static final long PERIOD_MS = 1000;   // 1Hz サンプリング
+    private static final long PERIOD_MS_DEFAULT = 1000;   // 既定 1Hz サンプリング
+    private static final long PERIOD_MS_MIN = 250;        // 上限 4Hz (暴走保護)
+    private static final long PERIOD_MS_MAX = 4000;       // 下限 0.25Hz
+
+    // サンプリング周期 (ms・設定の 0.5/1/2Hz で可変)。 volatile＝loop スレッドが次周回で拾う。
+    private volatile long periodMs = PERIOD_MS_DEFAULT;
 
     // MXBean は 1 度だけ解決してキャッシュ (毎回 lookup しない)。
     private final com.sun.management.OperatingSystemMXBean osBean = resolveOsBean();
@@ -57,6 +62,12 @@ public final class CpuSampler {
 
     public boolean available() {
         return osBean != null;
+    }
+
+    /** サンプリング頻度 (Hz) を設定。 周期 ms は [{@value #PERIOD_MS_MIN}, {@value #PERIOD_MS_MAX}] にクランプ。 稼働中でも次周回で反映。 */
+    public void setHz(float hz) {
+        long ms = (hz > 0f) ? (long) (1000f / hz) : PERIOD_MS_DEFAULT;
+        periodMs = Math.max(PERIOD_MS_MIN, Math.min(PERIOD_MS_MAX, ms));
     }
 
     /** cpu-usage 有効化で起動 (多重起動なし・取得不可なら何もしない)。 */
@@ -97,13 +108,13 @@ public final class CpuSampler {
                 if (count < CAP) {
                     count++;
                 }
-                Thread.sleep(PERIOD_MS);
+                Thread.sleep(periodMs);
             } catch (InterruptedException ie) {
                 return; // stop() による割り込み＝終了
             } catch (Throwable t) {
                 // 一時的な取得失敗は無視して継続 (前回値を保持)。
                 try {
-                    Thread.sleep(PERIOD_MS);
+                    Thread.sleep(periodMs);
                 } catch (InterruptedException ie) {
                     return;
                 }
