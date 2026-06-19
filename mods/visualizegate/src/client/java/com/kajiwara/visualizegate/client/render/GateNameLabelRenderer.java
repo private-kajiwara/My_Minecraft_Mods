@@ -10,7 +10,9 @@ import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
+//? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//?}
 import com.mojang.blaze3d.vertex.PoseStack;
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -22,9 +24,22 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.multiplayer.ClientLevel;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?} else {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.world.phys.Vec3;
+//? if >=26.2 {
+/*// 26.2 HUD 2D 投影パス用 (シェーダ下でもテキストを出すため・world/Iris 後段の GUI 描画)。
+import com.kajiwara.visualizegate.state.BackCalcStore;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.Camera;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import org.joml.Matrix4f;*/
+//?}
 
 /**
  * ゲート名ラベル: 現次元に<b>実在する各ポータルの真上</b>に<b>ゲート名のみ</b>を在世界表示する
@@ -52,15 +67,25 @@ public final class GateNameLabelRenderer {
     private static final int NETHER_MIN_Y = 0;
     private static final int NETHER_MAX_Y = 127;
 
+    //? if <26.2 {
     private MultiBufferSource.BufferSource textBuffer;
+    //?}
 
     private GateNameLabelRenderer() {
     }
 
     public static void register() {
-        //? if >=26.1 {
+        //? if >=26.2 {
+        /*// 26.2: Iris シェーダ下では engine の feature dispatcher 経由テキスト (submitText/submitNameTag) のグリフが
+        //   捕捉されず消える (geometry=枠/リンク と entity 名札は生きる)。 そこでゲート名は HUD パス (world/Iris 後段) で
+        //   world→screen 投影し GUI テキストで描く＝シェーダ ON/OFF どちらでも可視 (点群ミニマップと同じ HUD 経路)。
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("visualizegate", "gate_names"),
+                (g, deltaTracker) -> INSTANCE.onHudRender(g));*/
+        //?}
+        //? if >=26.1 && <26.2 {
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> INSTANCE.onAfterWater(ctx));
-        //?} else {
+        //?}
+        //? if <26.1 {
         /*WorldRenderEvents.END_MAIN.register(ctx -> INSTANCE.onAfterWater(ctx));*/
         //?}
     }
@@ -75,7 +100,11 @@ public final class GateNameLabelRenderer {
             if (level == null) {
                 return;
             }
+            //? if >=26.2 {
+            /*if (mc.gui.hud.isHidden() || mc.getDebugOverlay().showDebugScreen()) {*/
+            //?} else {
             if (mc.options.hideGui || mc.getDebugOverlay().showDebugScreen()) {
+            //?}
                 return; // F1 / F3 尊重
             }
             PortalDimension cur = PortalMemory.dimOf(level.dimension().identifier().toString());
@@ -96,10 +125,15 @@ public final class GateNameLabelRenderer {
             }
             Vec3 camPos = camState.pos;
             PoseStack matrices = ctx.poseStack();
+            // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。
+            //? if >=26.2 {
+            /*SubmitNodeCollector target = ctx.submitNodeCollector();*/
+            //?} else {
             if (textBuffer == null) {
                 textBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(2048));
             }
-            MultiBufferSource.BufferSource bs = textBuffer;
+            MultiBufferSource.BufferSource target = textBuffer;
+            //?}
             Font font = mc.font;
             double maxRenderDist = WorldLabel.maxRenderDistance(mc);
 
@@ -129,16 +163,83 @@ public final class GateNameLabelRenderer {
 
                 int color = 0xFF000000 | (GateColors.forStateOrdinal(analysis.states()[i].ordinal()) & 0xFFFFFF);
                 String name = displayName(node);
-                WorldLabel.draw(bs, matrices, camState, font, cx, cz, baseY, camPos, name, color, maxRenderDist);
+                WorldLabel.draw(target, matrices, camState, font, cx, cz, baseY, camPos, name, color, maxRenderDist);
                 drewAny = true;
             }
+            //? if <26.2 {
             if (drewAny) {
-                bs.endBatch();
+                target.endBatch();
             }
+            //?}
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] gate-name render failed (continuing): {}", t.toString());
         }
     }
+
+    //? if >=26.2 {
+    /*// HUD 2D 投影レンダラ (>=26.2・シェーダ下対応)。 各ゲートの world 座標を camera の view×projection 行列で screen
+    //   座標へ投影し、GUI テキストで名前を描く (world/Iris パス後の HUD なので Iris に消されない)。 深度遮蔽は無し＝
+    //   従来 SEE_THROUGH の「壁越し常時可視」と同じ意図。 GUI 固定サイズ＝旧来の「画面サイズ一定」と同等。 距離/背後/画面外でカリング。
+    private void onHudRender(GuiGraphicsExtractor g) {
+        try {
+            if (!GateMenuState.isGateNamesEnabled()) {
+                return;
+            }
+            Minecraft mc = Minecraft.getInstance();
+            ClientLevel level = mc.level;
+            if (level == null) {
+                return;
+            }
+            if (mc.gui.hud.isHidden() || mc.gui.screen() != null || mc.getDebugOverlay().showDebugScreen()) {
+                return; // F1 / 他 Screen 表示中 / F3
+            }
+            PortalDimension cur = PortalMemory.dimOf(level.dimension().identifier().toString());
+            if (cur != PortalDimension.OVERWORLD && cur != PortalDimension.NETHER) {
+                return; // OW↔Nether のみ
+            }
+            List<GateNode> nodes = PortalMemory.get().gateNodes();
+            if (nodes.isEmpty()) {
+                return;
+            }
+            GateConflictAnalyzer.Result analysis = GateConflictAnalyzer.analyze(
+                    nodes, NETHER_MIN_Y, NETHER_MAX_Y, OW_MIN_Y, OW_MAX_Y);
+
+            Camera cam = mc.gameRenderer.mainCamera();
+            if (cam == null) {
+                return;
+            }
+            Vec3 camPos = cam.position();
+            // view 回転×projection (カメラ平行移動は含まない＝カメラ相対座標を渡す)。 reverse-Z でも screen X/Y は不変。
+            Matrix4f vp = cam.getViewRotationProjectionMatrix(new Matrix4f());
+            int gw = g.guiWidth();
+            int gh = g.guiHeight();
+            Font font = mc.font;
+
+            for (int i = 0; i < nodes.size(); i++) {
+                GateNode node = nodes.get(i);
+                if (node.dim() != cur) {
+                    continue; // 現次元の実ポータルのみ
+                }
+                if (PortalMemory.get().isHidden(cur, node.x(), node.y(), node.z())) {
+                    continue;
+                }
+                PortalMemory.FrameExtents ext = PortalMemory.get()
+                        .frameExtentsAt(cur, node.pos())
+                        .orElse(new PortalMemory.FrameExtents(2.0, 3.0, 1.0));
+                double cx = node.x() + 0.5;
+                double cz = node.z() + 0.5;
+                if (BackCalcStore.hasLabelPinAt(cur, cx, cz)) {
+                    continue; // resolve-conflict ピンが同じゲートの名前を出すので、二重表示を避けて常時ラベルは省略
+                }
+                double baseY = node.y() + ext.dy() + PIN_BASE_HEIGHT;
+                int color = 0xFF000000 | (GateColors.forStateOrdinal(analysis.states()[i].ordinal()) & 0xFFFFFF);
+                WorldLabel.drawHud(g, vp, camPos, gw, gh, font, cx, baseY, cz, displayName(node), color, MAX_DIST);
+            }
+        } catch (Throwable t) {
+            VisualizeGateMod.LOGGER.warn("[visualizegate] gate-name HUD render failed (continuing): {}", t.toString());
+        }
+    }*/
+    //?}
 
     /** ㉝B/点群画面と同ルール: ユーザー命名 > 既定名 {@code OW-/N-<番号>}。 resolve-conflict コマンドと共用。 */
     public static String displayName(GateNode node) {

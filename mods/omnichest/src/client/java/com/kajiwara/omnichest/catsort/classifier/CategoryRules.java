@@ -124,8 +124,13 @@ public final class CategoryRules {
         // ════════════════════════════════════════════════════════════════
         r.add(tagRule(ItemTags.SAPLINGS, ItemCategory.FARM));
         r.add(tagRule(ItemTags.VILLAGER_PLANTABLE_SEEDS, ItemCategory.FARM));
+        //? if >=26.2 {
+        /*r.add(tagRule(oc262$itemTag("flowers"), ItemCategory.FARM));
+        r.add(tagRule(oc262$itemTag("small_flowers"), ItemCategory.FARM));*/
+        //?} else {
         r.add(tagRule(ItemTags.FLOWERS, ItemCategory.FARM));
         r.add(tagRule(ItemTags.SMALL_FLOWERS, ItemCategory.FARM));
+        //?}
         r.add(tagRule(ItemTags.LEAVES, ItemCategory.FARM));
         r.add(pathContains("seed", ItemCategory.FARM));
         r.add(pathExact("bone_meal", ItemCategory.FARM));
@@ -152,7 +157,11 @@ public final class CategoryRules {
         r.add(pathExact("tripwire_hook", ItemCategory.REDSTONE));
         r.add(pathExact("target", ItemCategory.REDSTONE));
         r.add(pathExact("crafter", ItemCategory.REDSTONE));
+        //? if >=26.2 {
+        /*r.add(tagRule(oc262$itemTag("buttons"), ItemCategory.REDSTONE));*/
+        //?} else {
         r.add(tagRule(ItemTags.BUTTONS, ItemCategory.REDSTONE));
+        //?}
         r.add(tagRule(ItemTags.RAILS, ItemCategory.REDSTONE));
         r.add(pathContains("pressure_plate", ItemCategory.REDSTONE));
         r.add(pathContains("minecart", ItemCategory.REDSTONE));
@@ -304,8 +313,13 @@ public final class CategoryRules {
         //   STONE / WOOD の後、 「ブロックアイテム全般のフォールバック」 として最後に近い位置に置く。
         // ════════════════════════════════════════════════════════════════
         r.add(tagRule(ItemTags.STONE_BRICKS, ItemCategory.BUILDING));
+        //? if >=26.2 {
+        /*r.add(tagRule(oc262$itemTag("slabs"), ItemCategory.BUILDING));
+        r.add(tagRule(oc262$itemTag("stairs"), ItemCategory.BUILDING));*/
+        //?} else {
         r.add(tagRule(ItemTags.SLABS, ItemCategory.BUILDING));
         r.add(tagRule(ItemTags.STAIRS, ItemCategory.BUILDING));
+        //?}
         r.add(tagRule(ItemTags.WALLS, ItemCategory.BUILDING));
         r.add(tagRule(ItemTags.SAND, ItemCategory.BUILDING));
         r.add(tagRule(ItemTags.WOOL, ItemCategory.BUILDING));
@@ -337,6 +351,17 @@ public final class CategoryRules {
     public static CategoryRule tagRule(TagKey<Item> tag, ItemCategory category) {
         return stack -> stack.is(tag) ? Optional.of(category) : Optional.empty();
     }
+
+    //? if >=26.2 {
+    /*// 26.2: バニラの便利定数 ItemTags.FLOWERS/SMALL_FLOWERS/STAIRS/SLABS/BUTTONS は削除されたが、
+    //   データタグ (minecraft:flowers 等) は 26.2 jar に現存する。 同じ resource location から
+    //   TagKey を再構築すれば一致するアイテム集合は不変 (= 分類挙動を温存)。 26.1.x は定数を
+    //   そのまま使う (バイト一致維持) ため、 この helper は 26.2 でのみコンパイルされる。
+    static TagKey<Item> oc262$itemTag(String path) {
+        return TagKey.create(net.minecraft.core.registries.Registries.ITEM,
+                Identifier.withDefaultNamespace(path));
+    }*/
+    //?}
 
     /** Item Identifier の path が完全一致するならマッチ (namespace 不問)。 */
     public static CategoryRule pathExact(String exactPath, ItemCategory category) {

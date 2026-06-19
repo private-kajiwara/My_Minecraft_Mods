@@ -87,7 +87,11 @@ public final class DistributionScreen extends Screen {
     }
 
     public static void open(@Nullable Screen parent) {
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(new DistributionScreen(parent));*/
+        //?} else {
         Minecraft.getInstance().setScreen(new DistributionScreen(parent));
+        //?}
     }
 
     public static void open() {
@@ -611,7 +615,11 @@ public final class DistributionScreen extends Screen {
     @Override
     public void onClose() {
         Minecraft mc = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(parent);*/
+        //?} else {
         mc.setScreen(parent);
+        //?}
     }
 
     // ════════════════════════════════════════════════════════════════════

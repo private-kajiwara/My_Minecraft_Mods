@@ -123,7 +123,11 @@ public final class InventoryProtectionLayer {
             return false;
         // Creative インベントリのアイテムブラウザスロットはロック対象外
         // (= 無限供給スロットなので保護する意味が無く、誤って overlay が乗ると邪魔)。
+        //? if >=26.2 {
+        /*if (mc.gui.screen() instanceof CreativeModeInventoryScreen)*/
+        //?} else {
         if (mc.screen instanceof CreativeModeInventoryScreen)
+        //?}
             return false;
         return MenuSlotLockSession.get().isLocked(player.containerMenu.containerId, slot.index);
     }

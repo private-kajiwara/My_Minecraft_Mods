@@ -54,7 +54,13 @@ public abstract class MinecraftGuiScaleMixin {
     @Unique
     private boolean omnichest$adjustingScale;
 
+    // 26.2: Minecraft.setScreen は削除され setScreenAndShow へ統合 (screen フィールドも Gui へ移動)。
+    //   画面遷移の入口は setScreenAndShow なのでそこへリターゲットする (26.1.x は setScreen のまま)。
+    //? if >=26.2 {
+    /*@Inject(method = "setScreenAndShow", at = @At("TAIL"))*/
+    //?} else {
     @Inject(method = "setScreen", at = @At("TAIL"))
+    //?}
     private void omnichest$reapplyScaleForScreen(Screen newScreen, CallbackInfo ci) {
         if (this.omnichest$adjustingScale) {
             return;

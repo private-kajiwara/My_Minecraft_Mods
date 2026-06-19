@@ -189,7 +189,11 @@ public final class SetCategoryScreen extends Screen {
     /** 「登録済みカテゴリ」 一覧画面を開く (= 現在のナビゲーションパターンに従い、 戻ると本画面へ)。 */
     private void openExistingCategories() {
         Minecraft mc = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(new ExistingCategoriesScreen(this));*/
+        //?} else {
         mc.setScreen(new ExistingCategoriesScreen(this));
+        //?}
     }
 
     private void unregister() {
@@ -330,6 +334,10 @@ public final class SetCategoryScreen extends Screen {
     @Override
     public void onClose() {
         Minecraft mc = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(parent);*/
+        //?} else {
         mc.setScreen(parent);
+        //?}
     }
 }

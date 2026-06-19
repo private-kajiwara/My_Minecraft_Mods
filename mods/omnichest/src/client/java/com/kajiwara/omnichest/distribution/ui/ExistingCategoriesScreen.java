@@ -148,6 +148,10 @@ public final class ExistingCategoriesScreen extends Screen {
     @Override
     public void onClose() {
         Minecraft mc = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(parent);*/
+        //?} else {
         mc.setScreen(parent);
+        //?}
     }
 }

@@ -7,7 +7,9 @@ import com.kajiwara.visualizegate.scan.PortalIndex;
 import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
+//? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//?}
 import com.mojang.blaze3d.vertex.PoseStack;
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -18,7 +20,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 //?}
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?} else {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.AABB;
@@ -50,15 +56,21 @@ public final class SearchDomeRenderer {
     private static final int CIRCLE_SEG = 48;          // 緯度円の分割数 (丸み)
     private static final double CROSS_INFLATE = 0.2;    // 既存マゼンタ枠の外側に出すための膨張
 
+    //? if <26.2 {
     private MultiBufferSource.BufferSource afterWaterBuffer;
+    //?}
 
     private SearchDomeRenderer() {
     }
 
     public static void register() {
-        //? if >=26.1 {
+        //? if >=26.2 {
+        /*LevelRenderEvents.COLLECT_SUBMITS.register(ctx -> INSTANCE.onAfterWater(ctx));*/
+        //?}
+        //? if >=26.1 && <26.2 {
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> INSTANCE.onAfterWater(ctx));
-        //?} else {
+        //?}
+        //? if <26.1 {
         /*WorldRenderEvents.END_MAIN.register(ctx -> INSTANCE.onAfterWater(ctx));*/
         //?}
     }
@@ -89,16 +101,23 @@ public final class SearchDomeRenderer {
             Vec3 camPos = camState.pos;
             PoseStack matrices = ctx.poseStack();
 
+            // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。
+            //? if >=26.2 {
+            /*SubmitNodeCollector target = ctx.submitNodeCollector();*/
+            //?} else {
             if (afterWaterBuffer == null) {
                 afterWaterBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(2048));
             }
-            MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
+            MultiBufferSource.BufferSource target = afterWaterBuffer;
+            //?}
 
-            // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り。 Iris 時のみ描き先をレベルバッファへ)。
-            drawDome(bufferSource, matrices, cx, cy, cz, radius, camPos, nether);
-            highlightCrosstalk(bufferSource, matrices, level, r, cx, cz, radius, camPos);
+            // 描画は共有ヘルパへ委譲 (lines()・深度オクルージョン有り)。
+            drawDome(target, matrices, cx, cy, cz, radius, camPos, nether);
+            highlightCrosstalk(target, matrices, level, r, cx, cz, radius, camPos);
 
-            bufferSource.endBatch();
+            //? if <26.2 {
+            target.endBatch();
+            //?}
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] dome render failed (continuing): {}", t.toString());
         }
@@ -106,8 +125,13 @@ public final class SearchDomeRenderer {
 
     // ── ドーム (半球ワイヤフレーム) ──────────────────────────────────────
 
+    //? if >=26.2 {
+    /*private void drawDome(SubmitNodeCollector bs, PoseStack matrices,
+            double cx, double cy, double cz, double radius, Vec3 cam, boolean nether) {*/
+    //?} else {
     private void drawDome(MultiBufferSource.BufferSource bs, PoseStack matrices,
             double cx, double cy, double cz, double radius, Vec3 cam, boolean nether) {
+    //?}
         // 128 は巨大 → 薄く疎 (緯度リング少なめ); Nether=16 は密め。
         int latRings = nether ? 5 : 3;   // 赤道 (i=0) から上へ
         int meridians = nether ? 6 : 4;
@@ -142,8 +166,13 @@ public final class SearchDomeRenderer {
         }
     }
 
+    //? if >=26.2 {
+    /*private void drawHorizontalCircle(SubmitNodeCollector bs, PoseStack matrices,
+            double cx, double cy, double cz, double r, Vec3 cam) {*/
+    //?} else {
     private void drawHorizontalCircle(MultiBufferSource.BufferSource bs, PoseStack matrices,
             double cx, double cy, double cz, double r, Vec3 cam) {
+    //?}
         double prevX = cx + r;
         double prevZ = cz;
         for (int s = 1; s <= CIRCLE_SEG; s++) {
@@ -158,8 +187,13 @@ public final class SearchDomeRenderer {
 
     // ── 混線検出 (範囲内の他ゲートを強調) ────────────────────────────────
 
+    //? if >=26.2 {
+    /*private void highlightCrosstalk(SubmitNodeCollector bs, PoseStack matrices, ClientLevel level,
+            PortalGaze.Result r, double cx, double cz, double radius, Vec3 camPos) {*/
+    //?} else {
     private void highlightCrosstalk(MultiBufferSource.BufferSource bs, PoseStack matrices, ClientLevel level,
             PortalGaze.Result r, double cx, double cz, double radius, Vec3 camPos) {
+    //?}
         // 注視ポータル P 自身は除外 (火打石計画時は looked==null＝全件が「他ゲート」)。
         BlockPos selfAnchor = (r.portal() != null) ? r.portal().anchor() : null;
         double r2 = radius * radius;

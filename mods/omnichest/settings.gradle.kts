@@ -26,11 +26,13 @@ plugins {
 
 stonecutter {
     create(rootProject) {
-        // mc-meta/versions.json の buildable な MC。
+        // mc-meta/versions.json に登録した MC ノード。
         // Phase 2: 旧世代 1.21.11 (Mojmap) を追加。世代差は stonecutter.gradle.kts の
         // global replacements (current.parsed < "26.1") と //? で吸収する。
-        versions("1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2")
-        vcsVersion = "26.1.2"   // policy.default と一致
+        // 26.2 は held (versions.json buildable=false) だが、 ノードは登録して
+        // :omnichest:26.2:compileClientJava で移植を反復する (本格移植まで CI dist 非対象)。
+        versions("1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2")
+        vcsVersion = "26.1.2"   // policy.default と一致 (active base = 一方向置換の生成元・26.2 追加でも不変)
     }
 }
 

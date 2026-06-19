@@ -10,7 +10,9 @@ import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
+//? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//?}
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 //? if >=26.1 {
@@ -22,7 +24,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 //?}
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?} else {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 //? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 //?} else {
@@ -56,15 +62,21 @@ public final class HologramFrameRenderer {
     private static final double DEF_H = 3.0;
     private static final double DEF_T = 1.0;
 
+    //? if <26.2 {
     private MultiBufferSource.BufferSource afterWaterBuffer;
+    //?}
 
     private HologramFrameRenderer() {
     }
 
     public static void register() {
-        //? if >=26.1 {
+        //? if >=26.2 {
+        /*LevelRenderEvents.COLLECT_SUBMITS.register(ctx -> INSTANCE.onAfterWater(ctx));*/
+        //?}
+        //? if >=26.1 && <26.2 {
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> INSTANCE.onAfterWater(ctx));
-        //?} else {
+        //?}
+        //? if <26.1 {
         /*WorldRenderEvents.END_MAIN.register(ctx -> INSTANCE.onAfterWater(ctx));*/
         //?}
     }
@@ -114,28 +126,40 @@ public final class HologramFrameRenderer {
                 return;
             Vec3 camPos = camState.pos;
             PoseStack matrices = ctx.poseStack();
-            PoseStack.Pose pose = matrices.last();
 
+            // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。
+            //? if >=26.2 {
+            /*SubmitNodeCollector target = ctx.submitNodeCollector();*/
+            //?} else {
+            PoseStack.Pose pose = matrices.last();
             if (afterWaterBuffer == null) {
                 afterWaterBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(2048));
             }
-            MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
+            MultiBufferSource.BufferSource target = afterWaterBuffer;
+            //?}
 
             // v2: ポータル内部面の半透明な紫クアッド。 バニラ debugFilledBox = TRANSLUCENT 混合 ＋ 深度テスト
             //     LEQUAL (書込み無し) ＝地形に正しく遮蔽される (壁裏で透けっぱなしにしない)・<b>Mixin 不要</b>。
-            //     金枠より先に描き、 線を面の上へ。 型名は lines() と同じ版分岐 (RenderTypes/RenderType)。
-            //? if >=1.21.11 {
-            VertexConsumer fill = bufferSource.getBuffer(RenderTypes.debugFilledBox());
+            //     金枠より先に描き、 線を面の上へ。
+            //? if >=26.2 {
+            /*target.submitCustomGeometry(matrices, RenderTypes.debugFilledBox(),
+                    (cgPose, vc) -> drawInteriorFace(vc, cgPose, gx, gy, gz, dx, dy, dz, axisX, camPos));*/
             //?} else {
-            /*VertexConsumer fill = bufferSource.getBuffer(RenderType.debugFilledBox());*/
+            //? if >=1.21.11 {
+            VertexConsumer fill = target.getBuffer(RenderTypes.debugFilledBox());
+            //?} else {
+            /*VertexConsumer fill = target.getBuffer(RenderType.debugFilledBox());*/
             //?}
             drawInteriorFace(fill, pose, gx, gy, gz, dx, dy, dz, axisX, camPos);
+            //?}
 
-            // 金アウトライン (v1・線は面の上)。 共有ヘルパ (lines()・Iris 時のみ描き先をレベルバッファへ)。
-            OverlayDraw.box(bufferSource, matrices, camPos, ring, FRAME_ARGB, LINE_WIDTH);     // 黒曜石リング
-            OverlayDraw.box(bufferSource, matrices, camPos, interior, FRAME_ARGB, LINE_WIDTH); // 内部面の輪郭
+            // 金アウトライン (v1・線は面の上)。 共有ヘルパ (lines())。 OverlayDraw.box は版別オーバーロードで解決。
+            OverlayDraw.box(target, matrices, camPos, ring, FRAME_ARGB, LINE_WIDTH);     // 黒曜石リング
+            OverlayDraw.box(target, matrices, camPos, interior, FRAME_ARGB, LINE_WIDTH); // 内部面の輪郭
 
-            bufferSource.endBatch();
+            //? if <26.2 {
+            target.endBatch();
+            //?}
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] hologram render failed (continuing): {}", t.toString());
         }

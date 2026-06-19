@@ -177,6 +177,10 @@ public class GateConfigScreen extends Screen {
     @Override
     public void onClose() {
         GateConfigManager.save();
+        //? if >=26.2 {
+        /*this.minecraft.setScreenAndShow(this.parent);*/
+        //?} else {
         this.minecraft.setScreen(this.parent);
+        //?}
     }
 }

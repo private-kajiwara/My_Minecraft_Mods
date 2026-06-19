@@ -53,17 +53,29 @@ public final class GateKeyBindings {
         if (openMenu != null) {
             while (openMenu.consumeClick()) {
                 // 他の Screen が開いている時は抑止 (誤発火防止)。
+                //? if >=26.2 {
+                /*if (mc.gui.screen() == null) {*/
+                //?} else {
                 if (mc.screen == null) {
+                //?}
                     // ㉜C 初回の自動ガイド (4 枚カード) を撤去＝強制ポップアップ無し。 使い方はハブの「使い方」pull のみ。
                     // 学習は「一貫した言語＋その場のカード＋常設凡例」に委ねる (過剰なチュートリアル禁止)。
+                    //? if >=26.2 {
+                    /*mc.setScreenAndShow(new GateMenuScreen());*/
+                    //?} else {
                     mc.setScreen(new GateMenuScreen());
+                    //?}
                 }
             }
         }
         // ㊲ ドック展/畳トグル (ゲーム画面中のみ＝Screen 表示中は抑止・入力非干渉)。
         if (toggleDock != null) {
             while (toggleDock.consumeClick()) {
+                //? if >=26.2 {
+                /*if (mc.gui.screen() == null) {*/
+                //?} else {
                 if (mc.screen == null) {
+                //?}
                     VgOverlayState.toggleDock();
                 }
             }

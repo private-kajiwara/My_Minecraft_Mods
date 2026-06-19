@@ -3,6 +3,9 @@ package com.kajiwara.omnichest.client.render;
 import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.config.data.SearchConfig;
 import com.mojang.blaze3d.vertex.PoseStack;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?}
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -63,6 +66,7 @@ public final class BeaconEffectLayer {
      * @param highlightAlpha ハイライト全体のフェード量 (0..1、 = 消滅直前は小さくなる)
      * @param baseWorldY     ビーム下端のワールド Y (= ピンの一番真上)
      */
+    //? if <26.2 {
     public static void drawWorld(net.minecraft.client.renderer.MultiBufferSource.BufferSource bufferSource,
             PoseStack matrices, double cxWorld, double czWorld, Vec3 camPos, int themeRgb,
             float highlightAlpha, double baseWorldY) {
@@ -110,6 +114,53 @@ public final class BeaconEffectLayer {
         SearchBeaconRenderer.drawBeamImmediate(bufferSource, matrices, cx, cz, y0, y1,
                 themeRgb, bottomAlpha, topAlpha, width);
     }
+    //?}
+
+    //? if >=26.2 {
+    /*// 26.2: immediate (MultiBufferSource) 撤去版。 alpha/culling ロジックは drawWorld と同一で、
+    //   最終描画だけ SubmitNodeCollector への submit (バニラ beacon beam = Iris-safe) に替える。 engine が
+    //   translucent フェーズ (= 水後) に描くため、 旧「水後 immediate」 ステージは不要。
+    public static void drawWorldSubmit(SubmitNodeCollector queue,
+            PoseStack matrices, double cxWorld, double czWorld, Vec3 camPos, int themeRgb,
+            float highlightAlpha, double baseWorldY) {
+        if (highlightAlpha <= 0.001f) return;
+
+        SearchConfig cfg;
+        try {
+            cfg = ConfigManager.get().search;
+        } catch (Throwable t) {
+            return;
+        }
+        if (cfg == null || !cfg.enableBeacon) return;
+
+        double dx = cxWorld - camPos.x;
+        double dyToBase = baseWorldY - camPos.y;
+        double dz = czWorld - camPos.z;
+        double dist = Math.sqrt(dx * dx + dyToBase * dyToBase + dz * dz);
+        if (dist > CULL_DISTANCE) return;
+
+        float baseAlpha = clamp01(cfg.beaconOpacity / 100.0f) * clamp01(highlightAlpha);
+        if (cfg.beaconAnimation) {
+            baseAlpha *= pulse();
+        }
+        if (cfg.beaconDistanceFade) {
+            baseAlpha *= distanceFade(dist);
+        }
+        if (baseAlpha <= 0.004f) return;
+
+        float bottomAlpha = baseAlpha;
+        float topAlpha = 0.0f;
+        float width = (float) Math.max(0.05, Math.min(1.0, cfg.beaconWidth));
+
+        float cx = (float) (cxWorld - camPos.x);
+        float cz = (float) (czWorld - camPos.z);
+        float y0 = (float) (baseWorldY - camPos.y);
+        float y1 = (float) (baseWorldY + BEAM_HEIGHT - camPos.y);
+
+        SearchBeaconRenderer.submitBeam(queue, matrices, cx, cz, y0, y1,
+                themeRgb, bottomAlpha, topAlpha, width);
+    }*/
+    //?}
 
     /** ゆっくりした明滅倍率 (PULSE_MIN..1.0)。 時間ベースなので描画負荷に依らず一定速度。 */
     private static float pulse() {
