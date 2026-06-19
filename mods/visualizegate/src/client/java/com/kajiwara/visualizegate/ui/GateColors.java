@@ -53,6 +53,18 @@ public final class GateColors {
     /** HUD 隅アイコンの半透明背景 (BASE を ~75% alpha 化＝視界を塞がない)。 */
     public static final int HUD_BG = 0xC00F0A17;
 
+    // ── 設定画面 (OmniChest 風フラット) 専用 (視覚のみ) ──
+    /** 設定画面の暗スクリム (背後のゲーム/HUD を沈める・ほぼ不透明)。 */
+    public static final int SCRIM = 0xE60B0712;
+    /** 補助テキスト (説明文/サブラベル・暗め)。 */
+    public static final int SUBTEXT = 0xFF9A93A8;
+    /** セクション見出しの淡い藤色 (左サイドバー)。 */
+    public static final int SECTION = 0xFFB9A8D6;
+    /** 選択中タブの控えめな紫帯 (低 alpha の MAIN)。 */
+    public static final int SELECT_BAND = 0x558E3BE6;
+    /** ドロップダウン矩形のほぼ黒背景。 */
+    public static final int DROPDOWN_BG = 0xFF0A0710;
+
     /** 機能1 ホログラム v2: ポータル内部面の半透明な紫塗り (MAIN を低 alpha 化＝金枠を主張させる)。 */
     public static final int HOLO_FILL = 0x668E3BE6;
 
