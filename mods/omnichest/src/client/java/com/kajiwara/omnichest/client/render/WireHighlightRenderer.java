@@ -16,7 +16,9 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+//? if <26.2 {
 import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.SubmitNodeCollector;
 //? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderSetup;
@@ -112,6 +114,14 @@ public final class WireHighlightRenderer {
             float x1, float y1, float z1,
             int color, float lineWidth) {
 
+        //? if >=26.2 {
+        /*// 26.2: カスタム X-ray パイプライン (withUniform/VertexFormat.Mode) は API 削除で構築不可。 バニラ
+        //   RenderTypes.lines() を submit へ一本化する。 深度テスト有り (= 壁越し X-ray は失われる) になるが、
+        //   submit 経路は Iris がネイティブ捕捉する (= バニラのブロック選択枠と同経路) ので、 シェーダ ON でも
+        //   ワイヤーが出る。 シェーダ判定/pending/level バッファ flush は不要 (= 共通 1 経路)。
+        queue.submitCustomGeometry(matrices, RenderTypes.lines(),
+                (pose, consumer) -> addBoxEdges(consumer, pose, x0, y0, z0, x1, y1, z1, color, lineWidth));*/
+        //?} else {
         //? if >=26.1 {
         if (ShaderCompatManager.isShaderPackInUse()) {
             // shader 環境: カスタム pipeline は Iris キャプチャ外で消えるため使わない。 バニラ lines() を
@@ -122,12 +132,14 @@ public final class WireHighlightRenderer {
         //?}
         // 非 shader (および legacy 全環境): 既存の rendertype_lines (NO_DEPTH_TEST = X-ray) を submit。
         submitLineWireBox(queue, matrices, x0, y0, z0, x1, y1, z1, color, lineWidth);
+        //?}
     }
 
     // ════════════════════════════════════════════════════════════════════
     // (a) 非 shader 経路: 既存挙動と同一の rendertype_lines + setLineWidth
     // ════════════════════════════════════════════════════════════════════
 
+    //? if <26.2 {
     private static void submitLineWireBox(SubmitNodeCollector queue, PoseStack matrices,
             float x0, float y0, float z0,
             float x1, float y1, float z1,
@@ -136,6 +148,7 @@ public final class WireHighlightRenderer {
         queue.submitCustomGeometry(matrices, type, (pose, consumer) ->
                 addBoxEdges(consumer, pose, x0, y0, z0, x1, y1, z1, color, lineWidth));
     }
+    //?}
 
     /** AABB の 12 辺を {@code lines()} 頂点として {@code consumer} へ流す (submit / level バッファ共通)。 */
     private static void addBoxEdges(VertexConsumer consumer, PoseStack.Pose pose,
@@ -199,6 +212,7 @@ public final class WireHighlightRenderer {
      * 自前 endBatch すると Iris キャプチャ外で消えるため)。 水後ステージ ({@code AFTER_TRANSLUCENT_TERRAIN})
      * から呼ぶ。
      */
+    //? if <26.2 {
     public static void flushShaderWires(MultiBufferSource target, PoseStack matrices) {
         if (pendingShaderWires.isEmpty()) {
             return;
@@ -213,11 +227,13 @@ public final class WireHighlightRenderer {
             addBoxEdges(c, pose, w.x0(), w.y0(), w.z0(), w.x1(), w.y1(), w.z1(), w.color(), w.lineWidth());
         }
     }
+    //?}
 
     // ════════════════════════════════════════════════════════════════════
     // RenderType 構築 (lazy + double-checked locking)
     // ════════════════════════════════════════════════════════════════════
 
+    //? if <26.2 {
     private static RenderPipeline.Snippet uniformsSnippet() {
         RenderPipeline.Snippet cached = uniformsSnippetCache;
         if (cached != null) return cached;
@@ -232,8 +248,10 @@ public final class WireHighlightRenderer {
             return uniformsSnippetCache;
         }
     }
+    //?}
 
     /** 非 shader 用: rendertype_lines + NO_DEPTH_TEST。 既存 xrayLines と同一。 */
+    //? if <26.2 {
     private static RenderType linesRenderType() {
         RenderType cached = linesType;
         if (cached != null) return cached;
@@ -267,4 +285,5 @@ public final class WireHighlightRenderer {
             return linesType;
         }
     }
+    //?}
 }

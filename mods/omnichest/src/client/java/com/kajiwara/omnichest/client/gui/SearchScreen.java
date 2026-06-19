@@ -161,7 +161,11 @@ public class SearchScreen extends Screen {
     }
 
     public static void open(Screen parent) {
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(new SearchScreen(parent));*/
+        //?} else {
         Minecraft.getInstance().setScreen(new SearchScreen(parent));
+        //?}
     }
 
     public static void open() {
@@ -1260,7 +1264,11 @@ public class SearchScreen extends Screen {
         // (= 画面を閉じた後にプレビュー対象 1 個を残さない)。 識別比較専用の状態なので
         // 次回プレビューは初回描画と同じフェード挙動になり、 ユーザー可視挙動は変わらない。
         AltPreviewPopupRenderer.resetFadeTracking();
+        //? if >=26.2 {
+        /*if (this.minecraft != null) this.minecraft.setScreenAndShow(null);*/
+        //?} else {
         if (this.minecraft != null) this.minecraft.setScreen(null);
+        //?}
     }
 
     /** ソートモード。 */

@@ -441,7 +441,11 @@ public final class OmniChestSettingsScreen extends Screen {
                             this.width, this.height,
                             () -> {
                                 this.onReset.run();
+                                //? if >=26.2 {
+                                /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+                                //?} else {
                                 Minecraft.getInstance().setScreen(this.parent);
+                                //?}
                             });
                 }));
 
@@ -450,13 +454,21 @@ public final class OmniChestSettingsScreen extends Screen {
                 OmniChestLocale.get(Keys.BUTTON_SAVE, "Save"),
                 b -> {
                     saveAll();
+                    //? if >=26.2 {
+                    /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+                    //?} else {
                     Minecraft.getInstance().setScreen(this.parent);
+                    //?}
                 }));
 
         this.footerCancelBtn = addRenderableWidget(new NavyFooterButton(
                 startX + (btnW + gap) * 2, footerY, btnW, btnH,
                 OmniChestLocale.get(Keys.BUTTON_CANCEL, "Cancel"),
+                //? if >=26.2 {
+                /*b -> Minecraft.getInstance().setScreenAndShow(this.parent)));*/
+                //?} else {
                 b -> Minecraft.getInstance().setScreen(this.parent)));
+                //?}
 
         // 初期表示: 選択中以外のタブを隠す。
         applyTabVisibility();
@@ -1207,7 +1219,11 @@ public final class OmniChestSettingsScreen extends Screen {
             return true; // ポップアップ中は他のキーも通常画面へ渡さない。
         }
         if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+            //? if >=26.2 {
+            /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+            //?} else {
             Minecraft.getInstance().setScreen(this.parent);
+            //?}
             return true;
         }
         return super.keyPressed(event);

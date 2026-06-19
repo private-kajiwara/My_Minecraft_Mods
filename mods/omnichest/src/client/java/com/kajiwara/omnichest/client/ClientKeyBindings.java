@@ -137,7 +137,11 @@ public final class ClientKeyBindings {
         // 連打防止のため consumeClick で 1 押下につき 1 回だけ取り出す。
         while (openSearch.consumeClick()) {
             // 別の Screen が開いている時はオープンを抑止する (誤発火防止)。
+            //? if >=26.2 {
+            /*if (mc.gui.screen() == null) {*/
+            //?} else {
             if (mc.screen == null) {
+            //?}
                 SearchScreen.open();
             }
         }
@@ -145,7 +149,11 @@ public final class ClientKeyBindings {
         if (openDistribution != null) {
             while (openDistribution.consumeClick()) {
                 // 倉庫振り分けメニューもゲーム画面 (Screen 無し) からのみ開く。
+                //? if >=26.2 {
+                /*if (mc.gui.screen() == null) {*/
+                //?} else {
                 if (mc.screen == null) {
+                //?}
                     DistributionScreen.open();
                 }
             }
@@ -155,7 +163,11 @@ public final class ClientKeyBindings {
             while (smartDeposit.consumeClick()) {
                 // Smart Deposit はゲーム画面 (Screen 無し) のときだけ発火。
                 // GUI を開いた状態だと既存の Deposit ボタンが提供する機能と被るため抑止。
+                //? if >=26.2 {
+                /*if (mc.gui.screen() == null && mc.player != null) {*/
+                //?} else {
                 if (mc.screen == null && mc.player != null) {
+                //?}
                     AutoDepositManager.announceSummary(mc.player);
                 }
             }
@@ -165,7 +177,11 @@ public final class ClientKeyBindings {
             while (toggleSlotLock.consumeClick()) {
                 // インベントリ系の Screen で、ホバー中のスロットを toggle する。
                 // toggleSlotLock は ContainerScreen 外では何もしない (= 暴発防止)。
+                //? if >=26.2 {
+                /*if (mc.gui.screen() instanceof AbstractContainerScreen<?> acs) {*/
+                //?} else {
                 if (mc.screen instanceof AbstractContainerScreen<?> acs) {
+                //?}
                     Slot hovered = ((AbstractContainerScreenAccessor) acs).cits$getHoveredSlot();
                     if (hovered != null && hovered.container instanceof Inventory) {
                         int playerSlot = hovered.getContainerSlot();
@@ -202,7 +218,11 @@ public final class ClientKeyBindings {
                     || InputConstants.isKeyDown(win, InputConstants.KEY_RALT);
             boolean dDown = InputConstants.isKeyDown(win, GLFW.GLFW_KEY_D);
             boolean nowDown = altDown && dDown;
+            //? if >=26.2 {
+            /*if (nowDown && !lastAltDDown && mc.gui.screen() == null) {*/
+            //?} else {
             if (nowDown && !lastAltDDown && mc.screen == null) {
+            //?}
                 // 全ピン解除。 ChestHighlighter.clear() は active map を空にするだけで、
                 // 配下の ChestNetworkManager スナップショットや SearchIndex には触れない (= 検索状態は保持)。
                 com.kajiwara.omnichest.client.render.ChestHighlighter.get().clear();

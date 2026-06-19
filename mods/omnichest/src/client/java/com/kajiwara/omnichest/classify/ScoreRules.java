@@ -52,6 +52,17 @@ public final class ScoreRules {
     private static final int WEAK = 3;
     private static final int HINT = 1;
 
+    //? if >=26.2 {
+    /*// 26.2: バニラの便利定数 ItemTags.FLOWERS/SMALL_FLOWERS/STAIRS/SLABS/BUTTONS は削除されたが、
+    //   データタグ (minecraft:flowers 等) は 26.2 jar に現存する。 同じ resource location から
+    //   TagKey を再構築すれば一致するアイテム集合は不変 (= 分類挙動を温存)。 26.1.x は定数を
+    //   そのまま使う (バイト一致維持) ため、 この helper は 26.2 でのみコンパイルされる。
+    private static TagKey<Item> oc262$itemTag(String path) {
+        return TagKey.create(net.minecraft.core.registries.Registries.ITEM,
+                Identifier.withDefaultNamespace(path));
+    }*/
+    //?}
+
     /**
      * デフォルトルール一式 (immutable list)。
      * 並び順は基本的に独立 (= 互いに干渉しないルール) なので任意。
@@ -76,8 +87,13 @@ public final class ScoreRules {
         // ════════════════════════════════════════════════════════════════
         rules.add(tagRule(ItemTags.SAPLINGS, StorageCategory.FARM, STRONG));
         rules.add(tagRule(ItemTags.VILLAGER_PLANTABLE_SEEDS, StorageCategory.FARM, STRONG));
+        //? if >=26.2 {
+        /*rules.add(tagRule(oc262$itemTag("flowers"), StorageCategory.FARM, MEDIUM));
+        rules.add(tagRule(oc262$itemTag("small_flowers"), StorageCategory.FARM, MEDIUM));*/
+        //?} else {
         rules.add(tagRule(ItemTags.FLOWERS, StorageCategory.FARM, MEDIUM));
         rules.add(tagRule(ItemTags.SMALL_FLOWERS, StorageCategory.FARM, MEDIUM));
+        //?}
         rules.add(tagRule(ItemTags.LEAVES, StorageCategory.FARM, WEAK));
         rules.add(pathContainsRule("seed", StorageCategory.FARM, MEDIUM));
         rules.add(pathExactRule("bone_meal", StorageCategory.FARM, STRONG));
@@ -133,15 +149,24 @@ public final class ScoreRules {
         rules.add(pathContainsRule("dropper", StorageCategory.REDSTONE, MEDIUM));
         rules.add(pathContainsRule("hopper", StorageCategory.REDSTONE, MEDIUM));
         rules.add(pathContainsRule("lever", StorageCategory.REDSTONE, MEDIUM));
+        //? if >=26.2 {
+        /*rules.add(tagRule(oc262$itemTag("buttons"), StorageCategory.REDSTONE, WEAK));*/
+        //?} else {
         rules.add(tagRule(ItemTags.BUTTONS, StorageCategory.REDSTONE, WEAK));
+        //?}
         rules.add(tagRule(ItemTags.RAILS, StorageCategory.REDSTONE, MEDIUM));
 
         // ════════════════════════════════════════════════════════════════
         // BUILDING: 建築ブロック (石系/コンクリ/ガラス/羊毛/階段/塀)
         // ════════════════════════════════════════════════════════════════
         rules.add(tagRule(ItemTags.STONE_BRICKS, StorageCategory.BUILDING, STRONG));
+        //? if >=26.2 {
+        /*rules.add(tagRule(oc262$itemTag("slabs"), StorageCategory.BUILDING, MEDIUM));
+        rules.add(tagRule(oc262$itemTag("stairs"), StorageCategory.BUILDING, MEDIUM));*/
+        //?} else {
         rules.add(tagRule(ItemTags.SLABS, StorageCategory.BUILDING, MEDIUM));
         rules.add(tagRule(ItemTags.STAIRS, StorageCategory.BUILDING, MEDIUM));
+        //?}
         rules.add(tagRule(ItemTags.WALLS, StorageCategory.BUILDING, MEDIUM));
         rules.add(tagRule(ItemTags.SAND, StorageCategory.BUILDING, MEDIUM));
         rules.add(tagRule(ItemTags.WOOL, StorageCategory.BUILDING, MEDIUM));

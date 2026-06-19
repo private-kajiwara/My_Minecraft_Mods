@@ -106,7 +106,11 @@ public class TemplateManagerScreen extends Screen {
     }
 
     public static void open(Screen parent, @Nullable AbstractContainerMenu menu, int containerSlotCount) {
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(new TemplateManagerScreen(parent, menu, containerSlotCount));*/
+        //?} else {
         Minecraft.getInstance().setScreen(new TemplateManagerScreen(parent, menu, containerSlotCount));
+        //?}
     }
 
     private boolean canApply() {
@@ -244,8 +248,13 @@ public class TemplateManagerScreen extends Screen {
 
     private void openSave() {
         if (canApply()) {
+            //? if >=26.2 {
+            /*Minecraft.getInstance().setScreenAndShow(
+                    new TemplateSaveScreen(this, this.menu, this.containerSlotCount));*/
+            //?} else {
             Minecraft.getInstance().setScreen(
                     new TemplateSaveScreen(this, this.menu, this.containerSlotCount));
+            //?}
         }
     }
 
@@ -721,6 +730,10 @@ public class TemplateManagerScreen extends Screen {
     public void onClose() {
         // ALT プレビューのフェード追跡が最後のテンプレ参照を保持し続けないよう解放 (= 倉庫検索と同様)。
         AltPreviewPopupRenderer.resetFadeTracking();
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+        //?} else {
         Minecraft.getInstance().setScreen(this.parent);
+        //?}
     }
 }

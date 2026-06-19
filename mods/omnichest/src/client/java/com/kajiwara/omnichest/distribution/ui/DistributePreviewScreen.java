@@ -246,7 +246,11 @@ public final class DistributePreviewScreen extends Screen {
         Minecraft mc = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         // 先にチェストへ戻ってから実行する (= プレイヤーは元のチェスト画面で移動を見られる)。
         // チェストは開いたままなので active コンテキストは保たれ、 distributeFromOpen が正しく走る。
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(parent);*/
+        //?} else {
         mc.setScreen(parent);
+        //?}
         StorageDistributionManager.distributeFromOpen();
     }
 
@@ -528,6 +532,10 @@ public final class DistributePreviewScreen extends Screen {
     @Override
     public void onClose() {
         Minecraft mc = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(parent);*/
+        //?} else {
         mc.setScreen(parent);
+        //?}
     }
 }

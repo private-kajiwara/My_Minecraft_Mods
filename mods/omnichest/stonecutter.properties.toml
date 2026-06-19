@@ -79,3 +79,19 @@ mod.java = "25"
 mod.mc_compat = "~26.1"
 mod.stable = "true"
 mod.recommended = "true"
+
+# ---- MC 26.2 (非難読化版・Java25) — 保留 (HELD: versions.json buildable=false) ----
+#   実値は authoritative 確認済み (同一ツリー VisualizeGate 26.2 と同実値・MC 由来)。
+#   26.2 はクライアント描画パイプライン破壊的変更 (MultiBufferSource 削除→submit/staged 系・
+#   GUI 改名 mc.gui.* / setScreenAndShow 等) のため本格移植が完了するまで非ビルド。
+#   dev Iris/Sodium は 26.2 で入手可 (移植時に有効化): sodium mc26.2-0.9.0 / iris 1.11.1+26.2。
+["26.2"]
+deps.fabric_loader = "0.19.3"
+deps.fabric_api = "0.152.1+26.2"
+deps.mod_menu = "20.0.0-beta.2"
+deps.sodium = "mc26.2-0.9.0-fabric"      # dev-only (Iris 1.11.1 が要求・26.2 唯一の Sodium)
+deps.iris = "1.11.1+26.2-fabric"          # dev-only
+mod.java = "25"
+mod.mc_compat = "~26.2"
+mod.stable = "true"
+mod.recommended = "false"

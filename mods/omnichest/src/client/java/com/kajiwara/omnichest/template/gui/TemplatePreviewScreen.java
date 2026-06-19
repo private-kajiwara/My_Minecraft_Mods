@@ -65,8 +65,13 @@ public class TemplatePreviewScreen extends Screen {
             TemplateApplyEngine.planAndApply(Minecraft.getInstance(), menu, containerSlotCount, template);
             return;
         }
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(
+                new TemplatePreviewScreen(parent, menu, containerSlotCount, template));*/
+        //?} else {
         Minecraft.getInstance().setScreen(
                 new TemplatePreviewScreen(parent, menu, containerSlotCount, template));
+        //?}
     }
 
     @Override
@@ -81,15 +86,25 @@ public class TemplatePreviewScreen extends Screen {
         // 新規作成: このチェストから新しいテンプレートを作る画面 (= TemplateSaveScreen) へ。
         this.addRenderableWidget(Button.builder(
                 OmniChestLocale.get(Keys.BUTTON_CREATE_NEW, "Create New"),
+                //? if >=26.2 {
+                /*b -> Minecraft.getInstance().setScreenAndShow(
+                        new TemplateSaveScreen(this.parent, this.menu, this.containerSlotCount)))*/
+                //?} else {
                 b -> Minecraft.getInstance().setScreen(
                         new TemplateSaveScreen(this.parent, this.menu, this.containerSlotCount)))
+                //?}
                 .bounds(cx - 120, bottomY, 115, 20).build());
 
         // 戻る: テンプレート一覧 (= テンプレートメニュー) へ。
         this.addRenderableWidget(Button.builder(
                 OmniChestLocale.get(Keys.BUTTON_BACK, "Back"),
+                //? if >=26.2 {
+                /*b -> Minecraft.getInstance().setScreenAndShow(
+                        new TemplateManagerScreen(this.parent, this.menu, this.containerSlotCount)))*/
+                //?} else {
                 b -> Minecraft.getInstance().setScreen(
                         new TemplateManagerScreen(this.parent, this.menu, this.containerSlotCount)))
+                //?}
                 .bounds(cx + 5, bottomY, 115, 20).build());
     }
 
@@ -167,6 +182,10 @@ public class TemplatePreviewScreen extends Screen {
 
     @Override
     public void onClose() {
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+        //?} else {
         Minecraft.getInstance().setScreen(this.parent);
+        //?}
     }
 }
