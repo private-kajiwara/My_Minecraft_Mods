@@ -1,8 +1,19 @@
 package com.kajiwara.visualizegate.client.render;
 
-// ⑬ 真の GPU3D 点群レンダラ。 sampler/投影バッファ等は 26.1 新パイプライン専用で legacy(1.21.10/1.21.11)は
-// クラス/シグネチャが異なる (GpuSampler/SamplerCache/ProjectionMatrixBuffer が無い)。 よって <b>>=26.1 限定</b>、
-// legacy はスタブ (usable()=false → Screen が texbatch)。 legacy 版ブリッジは後段。
+// ⑬ 真の GPU3D 点群レンダラ。 <b>>=26.1 限定</b>。 legacy(1.21.10/1.21.11)はスタブ (usable()=false → Screen が texbatch)。
+//
+// 【>=26.1 限定の真因 (javap 実証・2026-06-20・layered Mojmap jar)】 GPU パイプライン自体は 1.21.11 にほぼ全部在る:
+//   GpuSampler/SamplerCache・TextureTarget(色+深度)・RenderPipelines.DEBUG_POINTS/DEBUG_QUADS・RenderPass・
+//   CommandEncoder(5引数 createRenderPass)・GpuBuffer.USAGE_VERTEX・DynamicUniforms.writeTransform・
+//   BufferBuilder.setLineWidth・Tesselator・getSequentialBuffer・ProjectionType は<b>同シグネチャで存在</b>。
+//   名前差も橋渡し可: ProjectionMatrixBuffer → PerspectiveProjectionMatrixBuffer(String)+getBuffer(Matrix4f) の
+//   1:1 替え玉、 DepthStencilState.DEFAULT/withDepthStencilState → withDepthTestFunction()+withDepthWrite()。
+//   ＝<b>オフスクリーン FBO 描画だけなら 1.21.11 でも実現可能</b>。
+//   真のブロッカーは <b>FBO 色を GUI へ合成する public API が legacy に無い</b>こと: g.blit(GpuTextureView, GpuSampler,…)
+//   は 26.1 GuiGraphicsExtractor では public だが、 1.21.11 GuiGraphics では private submitBlit のみで public 同等無し。
+//   texbatch が legacy でも動くのは別経路 (登録 DynamicTexture を g.blit(GUI_TEXTURED, 名前,…)＝全版 public) だから。
+//   ※ 旧コメントの「GpuSampler/SamplerCache/ProjectionMatrixBuffer が無い」は<b>事実誤り</b>だった (javap で否定)。
+//     1.21.11 で GPU3D を出すには Mixin 無しで FBO 合成 public 経路を解く必要があり、 別スコープの移植 (受容済み)。
 //? if >=26.1 {
 import java.util.OptionalDouble;
 //? if >=26.2 {
@@ -410,7 +421,7 @@ public final class PointCloudGpuRenderer {
     }
 
     public static boolean usable() {
-        return false; // legacy は GPU3D 未対応 (新パイプラインAPI差・後段でブリッジ) → texbatch
+        return false; // legacy は GPU3D 非採用 (GPU API は概ね在るが FBO→GUI 合成の public API 無し・上部 javadoc 参照) → texbatch
     }
 
     public static String lastError() {

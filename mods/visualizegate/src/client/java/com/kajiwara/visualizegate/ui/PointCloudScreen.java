@@ -872,7 +872,7 @@ public class PointCloudScreen extends Screen {
     //?} else {
     /*private boolean tryGpu3d(GuiGraphicsExtractor g, PointCloudSnapshot snap) {
         gpu3dReason = "legacy stub (no GPU3D on this gen)";
-        return false; // legacy は GPU3D 未対応 (新パイプライン版差) → texbatch
+        return false; // legacy は GPU3D 非採用 (GPU API は概ね在るが FBO→GUI 合成の public API 無し・PointCloudGpuRenderer javadoc 参照) → texbatch
     }*/
     //?}
 
