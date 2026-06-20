@@ -115,12 +115,18 @@ public class PointCloudScreen extends Screen {
     private float pitch = 0.32f;
     private float distance = 200f;
     private float focal = 400f;
+    // ㊽B 注視点パン (中ボタンドラッグ・頂点バッファ空間の look-at オフセット)。 既定 0=原点オービット
+    //     (= 従来挙動)。 yaw/pitch/distance と同流儀の instance 状態＝閉じたらリセット (config 永続なし)。
+    //     GPU3D は render の 8 引数 center 版へ、 software は project/projectXY/projectToScreen で減算。
+    private float panX = 0f;
+    private float panY = 0f;
+    private float panZ = 0f;
     /** distance を自動フレームした対象スナップショット (参照同一性で 1 回だけ枠合わせ)。 */
     private PointCloudSnapshot framedFor;
 
     // ── 入力ドラッグ ──
     private enum Drag {
-        NONE, ROTATE, SLIDER, DETAIL, POINTSIZE, SCALE_OW, SCALE_NETHER, LIST_SCROLL, SPLITTER
+        NONE, ROTATE, PAN, SLIDER, DETAIL, POINTSIZE, SCALE_OW, SCALE_NETHER, LIST_SCROLL, SPLITTER
     }
 
     private Drag drag = Drag.NONE;
@@ -561,7 +567,7 @@ public class PointCloudScreen extends Screen {
         }
     }
 
-    //? if >=26.1 {
+    //? if >=1.21.11 {
     private boolean tryGpu3d(GuiGraphicsExtractor g, PointCloudSnapshot snap) {
         if (!PointCloudGpuRenderer.usable()) {
             gpu3dReason = "usable=false err=" + PointCloudGpuRenderer.lastError();
@@ -574,22 +580,33 @@ public class PointCloudScreen extends Screen {
         // ㉞ スプリッタードラッグ中は vp 寸法が毎フレーム変わり FBO を resize するため SS=1 で安価に
         //    (回転中は vp 不変＝FBO resize 無し＝full SS のまま)。 確定後 settle で full SS に戻る。
         int ss = (drag == Drag.SPLITTER) ? 1 : supersample();
-        if (!PointCloudGpuRenderer.render(vpW * ss, vpH * ss, yaw, pitch, distance, GateColors.BASE)) {
+        if (!PointCloudGpuRenderer.render(vpW * ss, vpH * ss, yaw, pitch, distance,
+                panX, panY, panZ, GateColors.BASE)) {
             gpu3dReason = "render=false err=" + PointCloudGpuRenderer.lastError();
             return false;
         }
+        // FBO 色を GUI へ合成。 FBO(GL レンダーターゲット) は下原点なので V を反転 (v0=1 上 / v1=0 下) して GUI 上向きに。
+        //? if >=26.1 {
+        // >=26.1: GpuTextureView 直 blit (実績パス不変)。 g.fill(GUI_TEXTURED, TextureSetup,…) は UV0 を書かず
+        //   GUI_TEXTURED(UV0 必須) と不一致でクラッシュするため不可。 GpuTextureView を直接取る blit は UV0 付き
+        //   BlitRenderState を作る (内部で GUI_TEXTURED 使用・javap 確認) ＝正しい合成。
         GpuTextureView cv = PointCloudGpuRenderer.colorView();
         if (cv == null) {
             gpu3dReason = "colorView=null";
             return false;
         }
-        // FBO 色を合成。 g.fill(GUI_TEXTURED, TextureSetup,…) は ColoredRectangleRenderState (UV0 を書かない)
-        // を作り GUI_TEXTURED(UV0 必須) と不一致＝フレーム末の遅延 mesh 構築で IllegalStateException:
-        // "Missing elements in vertex: UV0" → try/catch 外でクラッシュ。 GpuTextureView を直接取る blit
-        // オーバーロードは UV0 付き BlitRenderState を作る (内部で GUI_TEXTURED 使用・javap 確認) ＝正しい合成。
-        // FBO(GL レンダーターゲット) は下原点なので V を反転 (v0=1 上 / v1=0 下) して GUI 上向きに。
         g.blit(cv, PointCloudGpuRenderer.sampler(),
                 vpX, vpY, vpX + vpW, vpY + vpH, 0f, 1f, 1f, 0f);
+        //?} else {
+        /*// <26.1 (1.21.11): GpuTextureView 直 blit は public 不在 → FBO color を登録テクスチャ化し全版 public な
+        //   Identifier-blit (GUI_TEXTURED 経由・UV0 付き) で合成 (Path A・runtime probe 実証)。
+        Identifier cid = PointCloudGpuRenderer.ensureCompositeTexture();
+        if (cid == null) {
+            gpu3dReason = "compositeId=null";
+            return false;
+        }
+        g.blit(cid, vpX, vpY, vpX + vpW, vpY + vpH, 0f, 1f, 1f, 0f);*/
+        //?}
         gpu3dActive = true;
         texSS = ss;
         lastFillCount = 1;
@@ -864,8 +881,8 @@ public class PointCloudScreen extends Screen {
     }
     //?} else {
     /*private boolean tryGpu3d(GuiGraphicsExtractor g, PointCloudSnapshot snap) {
-        gpu3dReason = "legacy stub (no GPU3D on this gen)";
-        return false; // legacy は GPU3D 未対応 (新パイプライン版差) → texbatch
+        gpu3dReason = "GPU3D not ported to 1.21.10";
+        return false; // 1.21.10 のみ GPU3D 未移植 (texbatch 据え置き・別フォローアップ。 1.21.11+ は移植済) → texbatch
     }*/
     //?}
 
@@ -1412,6 +1429,10 @@ public class PointCloudScreen extends Screen {
      */
     private int project(float x, float y, float z, int color,
             float cosY, float sinY, float cosP, float sinP, float cx, float cy, int total) {
+        // ㊽B 注視点パン: look-at オフセットを引いてからオービット (GPU3D 8 引数 center と同一空間・同符号)。
+        x -= panX;
+        y -= panY;
+        z -= panZ;
         float x1 = x * cosY + z * sinY;
         float z1 = -x * sinY + z * cosY;
         float y2 = y * cosP - z1 * sinP;
@@ -1468,6 +1489,10 @@ public class PointCloudScreen extends Screen {
     /** 投影して screen (x,y) だけ返す (depth cull のみ・サイズ不要)。 cull なら null。 */
     private float[] projectXY(float x, float y, float z,
             float cosY, float sinY, float cosP, float sinP, float cx, float cy) {
+        // ㊽B 注視点パン (project と同一)。
+        x -= panX;
+        y -= panY;
+        z -= panZ;
         float x1 = x * cosY + z * sinY;
         float z1 = -x * sinY + z * cosY;
         float y2 = y * cosP - z1 * sinP;
@@ -1957,7 +1982,9 @@ public class PointCloudScreen extends Screen {
         if (gpu3dActive) {
             float aspect = (float) vpW / (float) vpH;
             Matrix4f proj = new Matrix4f().perspective((float) Math.toRadians(70.0), aspect, 0.1f, 8000f, true);
-            Matrix4f view = new Matrix4f().translation(0f, 0f, -distance).rotateX(pitch).rotateY(yaw);
+            // ㊽B 注視点パン: GPU3D の view (T(0,0,-d)·Rx·Ry·T(-pan)) と一致させ、 ラベルもパンに追従。
+            Matrix4f view = new Matrix4f().translation(0f, 0f, -distance).rotateX(pitch).rotateY(yaw)
+                    .translate(-panX, -panY, -panZ);
             Vector4f clip = proj.mul(view, new Matrix4f()).transform(new Vector4f(vx, vy, vz, 1f));
             if (clip.w() <= 1e-4f) {
                 return null;
@@ -2177,6 +2204,16 @@ public class PointCloudScreen extends Screen {
             drag = Drag.ROTATE;
             return true;
         }
+        // ㊽B 中ボタン (index 2): ダブルクリックで recenter (pan=0)、 単押しで注視点パン開始。
+        if (event.button() == 2 && inViewport(mx, my)) {
+            if (doubleClick) {
+                recenterPan();
+            } else {
+                drag = Drag.PAN;
+            }
+            lastInputNanos = System.nanoTime(); // ⑨ 操作中 → SS=1
+            return true;
+        }
         return super.mouseClicked(event, doubleClick);
     }
 
@@ -2206,6 +2243,12 @@ public class PointCloudScreen extends Screen {
             yaw += (float) (dragX * DRAG_SENS);
             pitch += (float) (dragY * DRAG_SENS);
             pitch = Math.max(-1.5f, Math.min(1.5f, pitch));
+            lastInputNanos = System.nanoTime(); // ⑨ 動作中 → SS=1
+            return true;
+        }
+        // ㊽B 注視点パン: 画面 px デルタをカメラ right/up へ沿わせ look-at オフセットへ加算 (点群がカーソルに付いてくる)。
+        if (drag == Drag.PAN) {
+            panFromDrag(dragX, dragY);
             lastInputNanos = System.nanoTime(); // ⑨ 動作中 → SS=1
             return true;
         }
@@ -2263,11 +2306,54 @@ public class PointCloudScreen extends Screen {
         return super.mouseReleased(event);
     }
 
+    // ── ㊽B 注視点パン (中ボタンドラッグ) ──────────────────────────────────
+
+    /**
+     * 画面 px デルタ {@code (dx,dy)} をカメラの right/up ベクトルへ沿わせ look-at オフセットへ加算する。
+     * right = (cosY, 0, sinY) / up = (sinP·sinY, cosP, -sinP·cosY) (view = T·Rx·Ry の逆基底)。 符号は
+     * 「点群がカーソルに付いてくる」向き (ドラッグ右で注視点が左へ＝点群が右へ)。
+     */
+    private void panFromDrag(double dx, double dy) {
+        float wpp = worldPerPixel();
+        float cosY = (float) Math.cos(yaw);
+        float sinY = (float) Math.sin(yaw);
+        float cosP = (float) Math.cos(pitch);
+        float sinP = (float) Math.sin(pitch);
+        float rX = cosY, rY = 0f, rZ = sinY;               // camera right (world)
+        float uX = sinP * sinY, uY = cosP, uZ = -sinP * cosY; // camera up (world)
+        float sR = (float) (-dx * wpp);
+        float sU = (float) (dy * wpp);
+        panX += sR * rX + sU * uX;
+        panY += sR * rY + sU * uY;
+        panZ += sR * rZ + sU * uZ;
+    }
+
+    /**
+     * 1 画面 px あたりのワールド距離 (アクティブパスの投影に合わせ 1:1 追従)。 distance 比例＝ズーム非依存の速度。
+     * GPU3D は縦 FOV 70°、 software はピンホール focal/depth。
+     */
+    private float worldPerPixel() {
+        if (gpu3dActive) {
+            return (float) (distance * 2.0 * Math.tan(Math.toRadians(35.0)) / Math.max(1, vpH));
+        }
+        return distance / Math.max(1f, focal);
+    }
+
+    /** recenter: 注視点パンを 0 (= fit 中心=原点) へ戻す。 yaw/pitch/distance は保持。 中ボタンダブルクリック。 */
+    private void recenterPan() {
+        panX = 0f;
+        panY = 0f;
+        panZ = 0f;
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (inViewport(mouseX, mouseY)) {
             distance *= (float) Math.pow(0.88, scrollY);
-            float min = (framedFor != null) ? Math.max(framedFor.radius * 0.2f, 5f) : 5f;
+            // ㊽C 近接インスペクト: 最小到達距離を radius×0.2/床5 → radius×0.04/床2 へ下げ約5倍寄れる。
+            //     スプラットは両パスとも小径上限ありで巨大化せず、 寄ると点間に隙間が見える(点群本来の見え方)。
+            //     near クリップ(0.1)/fit 既定/recenter/maxDist は不変。
+            float min = (framedFor != null) ? Math.max(framedFor.radius * 0.04f, 2f) : 2f;
             float max = (framedFor != null) ? framedFor.radius * 12f + 200f : 5000f;
             distance = Math.max(min, Math.min(max, distance));
             lastInputNanos = System.nanoTime(); // ⑨ ズーム中 → SS=1 (settle で再ネイティブ)

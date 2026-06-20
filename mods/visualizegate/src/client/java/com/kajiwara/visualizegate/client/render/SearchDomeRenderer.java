@@ -99,6 +99,10 @@ public final class SearchDomeRenderer {
             if (camState == null || camState.pos == null)
                 return;
             Vec3 camPos = camState.pos;
+            // 最大表示距離 (設定・実効描画距離でクランプ) を超える注視ポータルには描かない (水平距離)。
+            if (!GateVisualRange.withinCap(camPos, cx, cz, GateVisualRange.cap(mc))) {
+                return;
+            }
             PoseStack matrices = ctx.poseStack();
 
             // 描き先 target: >=26.2 = submit collector、 26.1.x = 自前 immediate。

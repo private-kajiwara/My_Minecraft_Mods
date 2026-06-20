@@ -55,29 +55,7 @@ public final class GateConfigManager {
                 cfg = GateConfig.defaults();
                 writeAtomic(f, GSON.toJson(cfg)); // 雛形を作る
             }
-            GateMenuState.setBoxOverlayEnabled(cfg.boxOverlayEnabled);
-            GateMenuState.setHudIconEnabled(cfg.hudIconEnabled);
-            GateMenuState.setAdvancedMode(cfg.advancedMode);
-            GateMenuState.setLegendEnabled(cfg.legendEnabled);
-            GateMenuState.setFirstRunDone(cfg.firstRunDone);
-            GateMenuState.setHologramEnabled(cfg.hologramEnabled);
-            GateMenuState.setDomeEnabled(cfg.domeEnabled);
-            GateMenuState.setGateNamesEnabled(cfg.gateNamesEnabled);
-            PointCloudViewState.setShowOverworld(cfg.pcShowOverworld);
-            PointCloudViewState.setShowNether(cfg.pcShowNether);
-            PointCloudViewState.setShowLinks(cfg.pcShowLinks);
-            PointCloudViewState.setDimTint(cfg.pcDimTint);
-            PointCloudViewState.setDimensionSpacing(cfg.pcDimensionSpacing);
-            PointCloudViewState.setGpuDetail(cfg.pcGpuDetail);
-            PointCloudViewState.setPointSize(cfg.pcPointSize);
-            PointCloudViewState.setOwDisplayScale(cfg.pcOwDisplayScale);
-            PointCloudViewState.setNetherDisplayScale(cfg.pcNetherDisplayScale);
-            PointCloudViewState.setSidebarWidth(cfg.pcSidebarW); // ㉞ 生値 (画面 init で現ウィンドウへ再クランプ)
-            PointCloudViewState.setOverlayDetailRaw(cfg.pcOverlayDetail); // ⑤④/⑤⑤B 詳細度 (null=未設定→実効 詳細)
-            PointCloudViewState.setCloudOnly(cfg.pcCloudOnly); // ⑤⑤ 点群ソロ表示 (cloud-only)
-            // ⑤⑥ パネル可視の永続ミラーを反映し、 セッションの実描画ゲート (VgOverlayState.pointCloud) を seed。
-            PointCloudViewState.setPanelVisible(cfg.pcPanelVisible);
-            VgOverlayState.setPointCloud(cfg.pcPanelVisible);
+            applyToState(cfg);
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn(
                     "[visualizegate] config load failed (defaults kept): {}", t.toString());
@@ -87,32 +65,93 @@ public final class GateConfigManager {
     /** GateMenuState の現在値をディスクへ書き出す。 失敗してもログのみ (UI を巻き込まない)。 */
     public static synchronized void save() {
         try {
-            GateConfig cfg = new GateConfig();
-            cfg.boxOverlayEnabled = GateMenuState.isBoxOverlayEnabled();
-            cfg.hudIconEnabled = GateMenuState.isHudIconEnabled();
-            cfg.advancedMode = GateMenuState.isAdvancedMode();
-            cfg.legendEnabled = GateMenuState.isLegendEnabled();
-            cfg.firstRunDone = GateMenuState.isFirstRunDone();
-            cfg.hologramEnabled = GateMenuState.isHologramEnabled();
-            cfg.domeEnabled = GateMenuState.isDomeEnabled();
-            cfg.gateNamesEnabled = GateMenuState.isGateNamesEnabled();
-            cfg.pcShowOverworld = PointCloudViewState.isShowOverworld();
-            cfg.pcShowNether = PointCloudViewState.isShowNether();
-            cfg.pcShowLinks = PointCloudViewState.isShowLinks();
-            cfg.pcDimTint = PointCloudViewState.isDimTint();
-            cfg.pcDimensionSpacing = PointCloudViewState.getDimensionSpacing();
-            cfg.pcGpuDetail = PointCloudViewState.getGpuDetail();
-            cfg.pcPointSize = PointCloudViewState.getPointSize();
-            cfg.pcOwDisplayScale = PointCloudViewState.getOwDisplayScale();
-            cfg.pcNetherDisplayScale = PointCloudViewState.getNetherDisplayScale();
-            cfg.pcSidebarW = PointCloudViewState.getSidebarWidth(); // ㉞ サイドバー幅
-            cfg.pcOverlayDetail = PointCloudViewState.getOverlayDetailRaw(); // ⑤④/⑤⑤B 生値 (null=未設定→GSON 省略)
-            cfg.pcCloudOnly = PointCloudViewState.isCloudOnly(); // ⑤⑤ 点群ソロ表示 (cloud-only)
-            cfg.pcPanelVisible = PointCloudViewState.isPanelVisible(); // ⑤⑥ パネル可視の永続ミラー (deliberate 値)
-            writeAtomic(file(), GSON.toJson(cfg));
+            writeAtomic(file(), GSON.toJson(currentConfig()));
         } catch (Throwable t) {
             VisualizeGateMod.LOGGER.warn("[visualizegate] config save failed: {}", t.toString());
         }
+    }
+
+    /**
+     * 現在の live state からスナップショット POJO を作る (設定画面のステージング初期値用・副作用なし)。
+     * 設定画面は編集をこの draft 上で行い、 Save で {@link #apply(GateConfig)}、 Cancel で破棄する。
+     */
+    public static synchronized GateConfig snapshot() {
+        return currentConfig();
+    }
+
+    /**
+     * draft を live state へ反映しつつディスクへ書き出す (設定画面の Save)。 in-game 側 (レンダラ/ドック/
+     * /vg) と同じ state を共有するため、 反映は即座にゲームへ効く。 失敗はログのみ。
+     */
+    public static synchronized void apply(GateConfig cfg) {
+        try {
+            applyToState(cfg);
+            writeAtomic(file(), GSON.toJson(cfg));
+        } catch (Throwable t) {
+            VisualizeGateMod.LOGGER.warn("[visualizegate] config apply failed: {}", t.toString());
+        }
+    }
+
+    /** live state → POJO (save / snapshot の共通器)。 */
+    private static GateConfig currentConfig() {
+        GateConfig cfg = new GateConfig();
+        cfg.boxOverlayEnabled = GateMenuState.isBoxOverlayEnabled();
+        cfg.hudIconEnabled = GateMenuState.isHudIconEnabled();
+        cfg.advancedMode = GateMenuState.isAdvancedMode();
+        cfg.legendEnabled = GateMenuState.isLegendEnabled();
+        cfg.firstRunDone = GateMenuState.isFirstRunDone();
+        cfg.hologramEnabled = GateMenuState.isHologramEnabled();
+        cfg.domeEnabled = GateMenuState.isDomeEnabled();
+        cfg.gateNamesEnabled = GateMenuState.isGateNamesEnabled();
+        cfg.gateRenderDistanceM = GateMenuState.getGateRenderDistanceM();
+        cfg.cpuSamplingEnabled = VgOverlayState.isCpuSamplingEnabled();
+        cfg.cpuSamplingHz = VgOverlayState.getCpuSamplingHz();
+        cfg.cpuGraphEnabled = VgOverlayState.isCpuGraphEnabled();
+        cfg.pcShowOverworld = PointCloudViewState.isShowOverworld();
+        cfg.pcShowNether = PointCloudViewState.isShowNether();
+        cfg.pcShowLinks = PointCloudViewState.isShowLinks();
+        cfg.pcDimTint = PointCloudViewState.isDimTint();
+        cfg.pcDimensionSpacing = PointCloudViewState.getDimensionSpacing();
+        cfg.pcGpuDetail = PointCloudViewState.getGpuDetail();
+        cfg.pcPointSize = PointCloudViewState.getPointSize();
+        cfg.pcOwDisplayScale = PointCloudViewState.getOwDisplayScale();
+        cfg.pcNetherDisplayScale = PointCloudViewState.getNetherDisplayScale();
+        cfg.pcSidebarW = PointCloudViewState.getSidebarWidth(); // ㉞ サイドバー幅
+        cfg.pcOverlayDetail = PointCloudViewState.getOverlayDetailRaw(); // ⑤④/⑤⑤B 生値 (null=未設定→GSON 省略)
+        cfg.pcCloudOnly = PointCloudViewState.isCloudOnly(); // ⑤⑤ 点群ソロ表示 (cloud-only)
+        cfg.pcPanelVisible = PointCloudViewState.isPanelVisible(); // ⑤⑥ パネル可視の永続ミラー (deliberate 値)
+        return cfg;
+    }
+
+    /** POJO → live state (load / apply の共通器)。 */
+    private static void applyToState(GateConfig cfg) {
+        GateMenuState.setBoxOverlayEnabled(cfg.boxOverlayEnabled);
+        GateMenuState.setHudIconEnabled(cfg.hudIconEnabled);
+        GateMenuState.setAdvancedMode(cfg.advancedMode);
+        GateMenuState.setLegendEnabled(cfg.legendEnabled);
+        GateMenuState.setFirstRunDone(cfg.firstRunDone);
+        GateMenuState.setHologramEnabled(cfg.hologramEnabled);
+        GateMenuState.setDomeEnabled(cfg.domeEnabled);
+        GateMenuState.setGateNamesEnabled(cfg.gateNamesEnabled);
+        GateMenuState.setGateRenderDistanceM(cfg.gateRenderDistanceM);
+        VgOverlayState.setCpuSamplingHz(cfg.cpuSamplingHz);
+        VgOverlayState.setCpuGraphEnabled(cfg.cpuGraphEnabled);
+        VgOverlayState.setCpuSamplingEnabled(cfg.cpuSamplingEnabled); // 末尾＝最新 Hz/状態で sampler を収束
+        PointCloudViewState.setShowOverworld(cfg.pcShowOverworld);
+        PointCloudViewState.setShowNether(cfg.pcShowNether);
+        PointCloudViewState.setShowLinks(cfg.pcShowLinks);
+        PointCloudViewState.setDimTint(cfg.pcDimTint);
+        PointCloudViewState.setDimensionSpacing(cfg.pcDimensionSpacing);
+        PointCloudViewState.setGpuDetail(cfg.pcGpuDetail);
+        PointCloudViewState.setPointSize(cfg.pcPointSize);
+        PointCloudViewState.setOwDisplayScale(cfg.pcOwDisplayScale);
+        PointCloudViewState.setNetherDisplayScale(cfg.pcNetherDisplayScale);
+        PointCloudViewState.setSidebarWidth(cfg.pcSidebarW); // ㉞ 生値 (画面 init で現ウィンドウへ再クランプ)
+        PointCloudViewState.setOverlayDetailRaw(cfg.pcOverlayDetail); // ⑤④/⑤⑤B 詳細度 (null=未設定→実効 詳細)
+        PointCloudViewState.setCloudOnly(cfg.pcCloudOnly); // ⑤⑤ 点群ソロ表示 (cloud-only)
+        // ⑤⑥ パネル可視の永続ミラーを反映し、 セッションの実描画ゲート (VgOverlayState.pointCloud) を seed。
+        PointCloudViewState.setPanelVisible(cfg.pcPanelVisible);
+        VgOverlayState.setPointCloud(cfg.pcPanelVisible);
     }
 
     private static void writeAtomic(Path file, String content) throws IOException {

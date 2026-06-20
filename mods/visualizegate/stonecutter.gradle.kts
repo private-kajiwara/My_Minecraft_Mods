@@ -72,6 +72,21 @@ stonecutter parameters {
             replace("keymapping\\.v1\\.KeyMappingHelper", "keybinding.v1.KeyBindingHelper", noRev, noRev)
             replace("KeyMappingHelper\\.registerKeyMapping",
                     "KeyBindingHelper.registerKeyBinding", noRev, noRev)
+
+            // ─────────────────────────────────────────────────────────────
+            // (PC) GPU3D 点群を 1.21.11 へ移植 (>=1.21.11)。 PointCloudGpuRenderer の 26.1 base 名 → 旧世代 Mojmap。
+            //   実 API 名は 1.21.11 layered jar を javap で確認済み (現物)。 全て一方向 (forward=current<26.1 のみ・
+            //   reverse=noRev no-op) ＝26.1.x base は base 名のまま compile (パリティ保全)。 1.21.10 は GPU3D 非活性
+            //   (PointCloudGpuRenderer 全体が //? if >=1.21.11 の else=texbatch スタブ) ＝下記は実質 1.21.11 のみに効く。
+            // ─────────────────────────────────────────────────────────────
+            // 投影バッファ: 26.1 統合 ProjectionMatrixBuffer → 1.21.11 は Perspective 版 (getBuffer(Matrix4f) 同一)。
+            //   \b 境界で RenderSystem.getProjectionMatrixBuffer 等を巻き込まない。
+            replace("\\bProjectionMatrixBuffer\\b", "PerspectiveProjectionMatrixBuffer", noRev, noRev)
+            // 深度: 26.1 DepthStencilState.DEFAULT(=LESS_OR_EQUAL+write) → 1.21.11 は粒度別 builder。 import と呼出を橋渡し。
+            replace("import com\\.mojang\\.blaze3d\\.pipeline\\.DepthStencilState;",
+                    "import com.mojang.blaze3d.platform.DepthTestFunction;", noRev, noRev)
+            replace("\\.withDepthStencilState\\(DepthStencilState\\.DEFAULT\\)",
+                    ".withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST).withDepthWrite(true)", noRev, noRev)
         }
 
         // ─────────────────────────────────────────────────────────────

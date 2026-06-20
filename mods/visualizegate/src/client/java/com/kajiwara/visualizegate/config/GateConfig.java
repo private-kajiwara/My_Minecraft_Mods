@@ -20,6 +20,15 @@ public final class GateConfig {
     public boolean domeEnabled = true;
     public boolean gateNamesEnabled = true; // ゲート名ラベル (在世界・両次元) 既定 ON
 
+    // ゲート可視化 (枠/線/ドーム) の最大表示距離 (m・水平)。 実効描画距離で render 時にクランプ。
+    // 既定 128m＝従来は無制限だったが、 全ポータル枠の遠距離描画を抑える穏当な既定 (推奨 96–160)。
+    public float gateRenderDistanceM = 128f;
+
+    // ── パフォーマンス: CPU サンプラ制御 (dock 展開連動から分離・既定は従来挙動を保つ) ──
+    public boolean cpuSamplingEnabled = true; // 既定 ON＝従来どおり dock 展開時に CPU 計測が走る
+    public float cpuSamplingHz = 1.0f;        // サンプリング頻度 (0.5 / 1 / 2 Hz)
+    public boolean cpuGraphEnabled = true;    // dock 展開時の CPU スパークライン表示
+
     // 点群ポップアップの表示オプション (PointCloudViewState の器)。
     public boolean pcShowOverworld = true;
     public boolean pcShowNether = true;
