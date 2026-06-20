@@ -567,7 +567,7 @@ public class PointCloudScreen extends Screen {
         }
     }
 
-    //? if >=26.1 {
+    //? if >=1.21.11 {
     private boolean tryGpu3d(GuiGraphicsExtractor g, PointCloudSnapshot snap) {
         if (!PointCloudGpuRenderer.usable()) {
             gpu3dReason = "usable=false err=" + PointCloudGpuRenderer.lastError();
@@ -585,18 +585,28 @@ public class PointCloudScreen extends Screen {
             gpu3dReason = "render=false err=" + PointCloudGpuRenderer.lastError();
             return false;
         }
+        // FBO 色を GUI へ合成。 FBO(GL レンダーターゲット) は下原点なので V を反転 (v0=1 上 / v1=0 下) して GUI 上向きに。
+        //? if >=26.1 {
+        // >=26.1: GpuTextureView 直 blit (実績パス不変)。 g.fill(GUI_TEXTURED, TextureSetup,…) は UV0 を書かず
+        //   GUI_TEXTURED(UV0 必須) と不一致でクラッシュするため不可。 GpuTextureView を直接取る blit は UV0 付き
+        //   BlitRenderState を作る (内部で GUI_TEXTURED 使用・javap 確認) ＝正しい合成。
         GpuTextureView cv = PointCloudGpuRenderer.colorView();
         if (cv == null) {
             gpu3dReason = "colorView=null";
             return false;
         }
-        // FBO 色を合成。 g.fill(GUI_TEXTURED, TextureSetup,…) は ColoredRectangleRenderState (UV0 を書かない)
-        // を作り GUI_TEXTURED(UV0 必須) と不一致＝フレーム末の遅延 mesh 構築で IllegalStateException:
-        // "Missing elements in vertex: UV0" → try/catch 外でクラッシュ。 GpuTextureView を直接取る blit
-        // オーバーロードは UV0 付き BlitRenderState を作る (内部で GUI_TEXTURED 使用・javap 確認) ＝正しい合成。
-        // FBO(GL レンダーターゲット) は下原点なので V を反転 (v0=1 上 / v1=0 下) して GUI 上向きに。
         g.blit(cv, PointCloudGpuRenderer.sampler(),
                 vpX, vpY, vpX + vpW, vpY + vpH, 0f, 1f, 1f, 0f);
+        //?} else {
+        /*// <26.1 (1.21.11): GpuTextureView 直 blit は public 不在 → FBO color を登録テクスチャ化し全版 public な
+        //   Identifier-blit (GUI_TEXTURED 経由・UV0 付き) で合成 (Path A・runtime probe 実証)。
+        Identifier cid = PointCloudGpuRenderer.ensureCompositeTexture();
+        if (cid == null) {
+            gpu3dReason = "compositeId=null";
+            return false;
+        }
+        g.blit(cid, vpX, vpY, vpX + vpW, vpY + vpH, 0f, 1f, 1f, 0f);*/
+        //?}
         gpu3dActive = true;
         texSS = ss;
         lastFillCount = 1;
@@ -871,8 +881,8 @@ public class PointCloudScreen extends Screen {
     }
     //?} else {
     /*private boolean tryGpu3d(GuiGraphicsExtractor g, PointCloudSnapshot snap) {
-        gpu3dReason = "legacy stub (no GPU3D on this gen)";
-        return false; // legacy は GPU3D 非採用 (GPU API は概ね在るが FBO→GUI 合成の public API 無し・PointCloudGpuRenderer javadoc 参照) → texbatch
+        gpu3dReason = "GPU3D not ported to 1.21.10";
+        return false; // 1.21.10 のみ GPU3D 未移植 (texbatch 据え置き・別フォローアップ。 1.21.11+ は移植済) → texbatch
     }*/
     //?}
 

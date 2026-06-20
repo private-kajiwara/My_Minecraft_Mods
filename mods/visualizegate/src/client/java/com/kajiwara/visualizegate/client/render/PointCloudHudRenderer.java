@@ -3,12 +3,16 @@ package com.kajiwara.visualizegate.client.render;
 import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
 
-//? if >=26.1 {
+//? if >=1.21.11 {
+// GPU3D 点群プレビュー共通 (>=1.21.11)。 1.21.10 は HUD で点群を描かない (note のみ) ＝不要。
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.pointcloud.DockRadar;
 import com.kajiwara.visualizegate.pointcloud.PointCloudSnapshot;
 import com.kajiwara.visualizegate.state.PointCloudViewState;
+//?}
+//? if >=26.1 {
+// GpuTextureView 直 blit (>=26.1 合成) ／ HudElementRegistry (新 HUD 登録 API) ／ Identifier (新登録 API)。
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
@@ -29,8 +33,9 @@ import net.minecraft.network.chat.Component;
  * 任意の GUI 矩形へ縮小 blit する。 移したのは<b>描画先の矩形だけ</b> (÷8/per-dim 表示スケール/重心/spacing/
  * リンク端・各マーカーのアライメントは現状のまま)。
  *
- * <p><b>>=26.1 限定</b>で雲を描く (真の GPU3D)。 legacy(1.21.x) は元々 HUD で点群を描いておらず
- * (texbatch はフル画面 V メニュー専用)、 ここでも「GPU3D N/A」ノートを出すのみ＝現状の legacy 挙動を保存。
+ * <p><b>>=1.21.11</b>で雲を描く (真の GPU3D・1.21.11 移植済)。 合成は版分岐: >=26.1 は GpuTextureView 直 blit、
+ * <26.1(=1.21.11) は FBO color を登録テクスチャ化し Identifier-blit (Path A・{@link PointCloudGpuRenderer#ensureCompositeTexture()})。
+ * 1.21.10 のみ「GPU3D N/A」ノートを出す (texbatch はフル画面 V メニュー専用＝1.21.10 の HUD は点群非表示)。
  *
  * <p>表示条件: {@code /vg point-cloud} ON のときだけ (={@link VgOverlayState#isPointCloud()})。
  * F1(hideGui)/F3/他 Screen 表示中は非表示・入力は一切奪わない。
@@ -118,7 +123,7 @@ public final class PointCloudHudRenderer {
         int ix = px + PAD;
         int iy = py + PAD;
         g.fill(ix, iy, ix + previewW, iy + previewH, GateColors.BASE); // プレビュー背景
-        //? if >=26.1 {
+        //? if >=1.21.11 {
         drawCloud(g, mc, ix, iy, previewW, previewH);
         //?} else {
         /*note(g, mc, ix, iy, previewW, previewH, "visualizegate.pc.hud.legacy");*/
@@ -140,7 +145,7 @@ public final class PointCloudHudRenderer {
         g.text(mc.font, c, x + Math.max(0, (w - cw) / 2), y + h / 2 - 4, GateColors.LINK_GRAY);
     }
 
-    //? if >=26.1 {
+    //? if >=1.21.11 {
     // ── 点群プレビュー (VgDockRenderer から移設・描画経路/座標変換は不変)。 ──────────────────
     private static final float PITCH = 0.32f; // Vメニュー既定 pitch に合わせる (固定)
     private static final float YAW_EPS = 0.02f; // yaw 変化の再描画しきい値 (~1.1°)
@@ -235,11 +240,21 @@ public final class PointCloudHudRenderer {
                 pcRenderCy = cy;
                 pcRenderCz = cz;
             }
+            // FBO 色を合成 (下原点ゆえ V 反転 v0=1/v1=0)。 版で経路分岐 (Screen.tryGpu3d と同型)。
+            //? if >=26.1 {
             GpuTextureView cv = PointCloudGpuRenderer.colorView();
             if (cv != null) {
                 g.blit(cv, PointCloudGpuRenderer.sampler(), x, y, x + w, y + h, 0f, 1f, 1f, 0f);
                 drawOverlay(g, mc, x, y, w, h, snap); // ⑤④ ミニマップ風 四隅オーバーレイ (層別)
             }
+            //?} else {
+            /*// <26.1 (1.21.11): FBO color を登録テクスチャ化して全版 public な Identifier-blit (Path A)。
+            net.minecraft.resources.Identifier cv = PointCloudGpuRenderer.ensureCompositeTexture();
+            if (cv != null) {
+                g.blit(cv, x, y, x + w, y + h, 0f, 1f, 1f, 0f);
+                drawOverlay(g, mc, x, y, w, h, snap);
+            }*/
+            //?}
             pcWasVisible = true;
         } catch (Throwable t) {
             note(g, mc, x, y, w, h, "visualizegate.pc.hud.legacy");

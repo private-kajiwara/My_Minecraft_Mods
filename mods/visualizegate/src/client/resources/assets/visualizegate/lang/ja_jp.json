@@ -56,7 +56,7 @@
 	"visualizegate.config.gpu.dist.inline": "推奨 96–160",
 	"visualizegate.config.gpu.dist.tip": "ゲート可視化 (枠/線/ドーム) の最大描画距離。実効描画距離でクランプ。遠いほど GPU 負荷増。",
 	"visualizegate.config.gpu.quality.label": "点群品質",
-	"visualizegate.config.gpu.quality.tip": "スキャン解像度 (層あたり点数)。GPU3D は 26.1 以降のみ。",
+	"visualizegate.config.gpu.quality.tip": "スキャン解像度 (層あたり点数)。GPU3D は 1.21.11 以降 (1.21.10 は texbatch)。",
 	"visualizegate.config.gpu.quality.low": "Low · 8k",
 	"visualizegate.config.gpu.quality.medium": "Medium · 20k",
 	"visualizegate.config.gpu.quality.high": "High · 80k",

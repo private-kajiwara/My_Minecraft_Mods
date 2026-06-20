@@ -56,7 +56,7 @@
 	"visualizegate.config.gpu.dist.inline": "Recommended 96–160",
 	"visualizegate.config.gpu.dist.tip": "Max distance for gate visuals (frame/line/dome). Clamped to your render distance; higher costs more GPU.",
 	"visualizegate.config.gpu.quality.label": "Point Cloud Quality",
-	"visualizegate.config.gpu.quality.tip": "Scan resolution (points per layer). GPU3D 26.1+ only.",
+	"visualizegate.config.gpu.quality.tip": "Scan resolution (points per layer). GPU3D on 1.21.11+ (texbatch on 1.21.10).",
 	"visualizegate.config.gpu.quality.low": "Low · 8k",
 	"visualizegate.config.gpu.quality.medium": "Medium · 20k",
 	"visualizegate.config.gpu.quality.high": "High · 80k",

@@ -1,20 +1,24 @@
 package com.kajiwara.visualizegate.client.render;
 
-// ⑬ 真の GPU3D 点群レンダラ。 <b>>=26.1 限定</b>。 legacy(1.21.10/1.21.11)はスタブ (usable()=false → Screen が texbatch)。
+// ⑬ 真の GPU3D 点群レンダラ。 <b>>=1.21.11</b> (1.21.11 へ移植済・2026-06-20)。 1.21.10 のみスタブ (usable()=false →
+// Screen が texbatch)。 合成は版で分岐: >=26.1 は colorView()+GpuTextureView 直 blit (実績不変)、 <26.1(=1.21.11) は
+// FBO color を {@link #ensureCompositeTexture()} で登録テクスチャ化し Screen 側が Identifier-blit (下記)。
 //
-// 【>=26.1 限定の真因 (javap 実証・2026-06-20・layered Mojmap jar)】 GPU パイプライン自体は 1.21.11 にほぼ全部在る:
+// 【1.21.11 への移植根拠 (javap+decompile+実コンパイル+runtime probe 実証・2026-06-20・layered Mojmap jar)】
+//   GPU パイプライン自体は 1.21.11 にほぼ全部在る:
 //   GpuSampler/SamplerCache・TextureTarget(色+深度)・RenderPipelines.DEBUG_POINTS/DEBUG_QUADS・RenderPass・
 //   CommandEncoder(5引数 createRenderPass)・GpuBuffer.USAGE_VERTEX・DynamicUniforms.writeTransform・
 //   BufferBuilder.setLineWidth・Tesselator・getSequentialBuffer・ProjectionType は<b>同シグネチャで存在</b>。
 //   名前差も橋渡し可: ProjectionMatrixBuffer → PerspectiveProjectionMatrixBuffer(String)+getBuffer(Matrix4f) の
 //   1:1 替え玉、 DepthStencilState.DEFAULT/withDepthStencilState → withDepthTestFunction()+withDepthWrite()。
 //   ＝<b>オフスクリーン FBO 描画だけなら 1.21.11 でも実現可能</b>。
-//   真のブロッカーは <b>FBO 色を GUI へ合成する public API が legacy に無い</b>こと: g.blit(GpuTextureView, GpuSampler,…)
-//   は 26.1 GuiGraphicsExtractor では public だが、 1.21.11 GuiGraphics では private submitBlit のみで public 同等無し。
-//   texbatch が legacy でも動くのは別経路 (登録 DynamicTexture を g.blit(GUI_TEXTURED, 名前,…)＝全版 public) だから。
+//   合成の版差 (Path A・runtime probe 実証): g.blit(GpuTextureView, GpuSampler,…) は 26.1 GuiGraphicsExtractor では public
+//   だが 1.21.11 GuiGraphics では private (submitBlit) ＝ public 同等無し。 そこで <26.1 は FBO color を public
+//   {@link net.minecraft.client.renderer.texture.AbstractTexture} 派生 (textureView/sampler を FBO へ向け close() no-op)
+//   に包んで {@code textureManager.register(Identifier,…)} し、 全版 public な Identifier-blit (g.blit(GUI_TEXTURED 経由・
+//   v0=1,v1=0 で V 反転)) で合成する ({@link #ensureCompositeTexture()})。 CPU readback 無し・Mixin 無し・on-GPU。
 //   ※ 旧コメントの「GpuSampler/SamplerCache/ProjectionMatrixBuffer が無い」は<b>事実誤り</b>だった (javap で否定)。
-//     1.21.11 で GPU3D を出すには Mixin 無しで FBO 合成 public 経路を解く必要があり、 別スコープの移植 (受容済み)。
-//? if >=26.1 {
+//? if >=1.21.11 {
 import java.util.OptionalDouble;
 //? if >=26.2 {
 /*import java.util.Optional;*/
@@ -57,9 +61,15 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 
 import net.minecraft.client.renderer.ProjectionMatrixBuffer;
 import net.minecraft.client.renderer.RenderPipelines;
+//? if <26.1 {
+/*// <26.1 (1.21.11) のみ: Path A 合成 (FBO color を登録テクスチャ化して Identifier-blit) 用。
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.resources.Identifier;*/
+//?}
 
 /**
- * ⑬ 点群ポップアップを<b>真の GPU3D</b> で描く (Mixin 不使用・<b>>=26.1 限定</b>)。
+ * ⑬ 点群ポップアップを<b>真の GPU3D</b> で描く (Mixin 不使用・<b>>=1.21.11</b>)。
  *
  * <p>オフスクリーン {@link TextureTarget} (色+<b>深度</b>) へ、 <b>カメラ非依存の頂点バッファ</b>を自前オービット
  * 投影＋<b>GPU 深度テスト/書込み</b>で描き、 FBO 色を GUI ビューポートへ合成する。
@@ -414,6 +424,44 @@ public final class PointCloudGpuRenderer {
             fboH = h;
         }
     }
+
+    //? if <26.1 {
+    /*// ── <26.1 (1.21.11) 専用: Path A 合成 (FBO color → 登録テクスチャ → Identifier-blit)。 ──────────────
+    // 26.1 の g.blit(GpuTextureView,GpuSampler,…) が 1.21.11 GuiGraphics で private のため、 FBO color を public
+    // AbstractTexture 派生に包んで TextureManager へ登録し、 全版 public な Identifier-blit で合成する (runtime probe 実証)。
+    public static final Identifier COMPOSITE_ID =
+            Identifier.fromNamespaceAndPath("visualizegate", "pointcloud_gpu_fbo");
+
+    // FBO color を指す登録テクスチャ。 protected フィールド代入は subclass 内のみ可。 close() は no-op (FBO が資源所有)。
+    private static final class FboColorTexture extends AbstractTexture {
+        void point() {
+            this.texture = fbo.getColorTexture();
+            this.textureView = fbo.getColorTextureView();
+            this.sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+        }
+
+        @Override
+        public void close() {
+            // no-op: FBO(TextureTarget) が GPU 資源を所有。 登録テクスチャ破棄で FBO を閉じない。
+        }
+    }
+
+    private static FboColorTexture compositeTex;
+
+    // 現 FBO color を登録テクスチャへ毎フレーム向け直し (resize で view が変わるため)、 初回のみ register、 ID を返す。
+    // render() 成功後に呼ぶこと。 fbo 未生成/失敗時は null (呼び出し側が texbatch へ)。
+    public static Identifier ensureCompositeTexture() {
+        if (failed || fbo == null) {
+            return null;
+        }
+        if (compositeTex == null) {
+            compositeTex = new FboColorTexture();
+            Minecraft.getInstance().getTextureManager().register(COMPOSITE_ID, compositeTex);
+        }
+        compositeTex.point();
+        return COMPOSITE_ID;
+    }*/
+    //?}
 }
 //?} else {
 /*public final class PointCloudGpuRenderer {
@@ -421,11 +469,11 @@ public final class PointCloudGpuRenderer {
     }
 
     public static boolean usable() {
-        return false; // legacy は GPU3D 非採用 (GPU API は概ね在るが FBO→GUI 合成の public API 無し・上部 javadoc 参照) → texbatch
+        return false; // 1.21.10 は GPU3D 未移植 (texbatch 据え置き・別フォローアップ。 1.21.11+ は移植済) → texbatch
     }
 
     public static String lastError() {
-        return "legacy stub (no GPU3D on this gen)";
+        return "legacy stub (GPU3D not ported to 1.21.10)";
     }
 }*/
 //?}
