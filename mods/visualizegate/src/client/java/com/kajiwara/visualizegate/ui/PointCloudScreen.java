@@ -2340,7 +2340,10 @@ public class PointCloudScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (inViewport(mouseX, mouseY)) {
             distance *= (float) Math.pow(0.88, scrollY);
-            float min = (framedFor != null) ? Math.max(framedFor.radius * 0.2f, 5f) : 5f;
+            // ㊽C 近接インスペクト: 最小到達距離を radius×0.2/床5 → radius×0.04/床2 へ下げ約5倍寄れる。
+            //     スプラットは両パスとも小径上限ありで巨大化せず、 寄ると点間に隙間が見える(点群本来の見え方)。
+            //     near クリップ(0.1)/fit 既定/recenter/maxDist は不変。
+            float min = (framedFor != null) ? Math.max(framedFor.radius * 0.04f, 2f) : 2f;
             float max = (framedFor != null) ? framedFor.radius * 12f + 200f : 5000f;
             distance = Math.max(min, Math.min(max, distance));
             lastInputNanos = System.nanoTime(); // ⑨ ズーム中 → SS=1 (settle で再ネイティブ)
