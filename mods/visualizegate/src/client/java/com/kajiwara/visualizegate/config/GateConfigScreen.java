@@ -81,6 +81,11 @@ public class GateConfigScreen extends Screen {
     private final List<Row> rows = new ArrayList<>(); // 全タブの master list (Row.tab で表示を filter)
     private DropdownRow openDropdown; // 展開中ドロップダウン (null=なし)
 
+    // ホバーツールチップ (drawDetail で収集し extractRenderState の最後に自前ボックス描画)。
+    private Component pendingTip;
+    private int tipMx;
+    private int tipMy;
+
     // ── Reset 確認ポップアップ (modal overlay) ──
     private boolean confirmOpen = false;
     private final List<DiffEntry> diff = new ArrayList<>();
@@ -148,14 +153,14 @@ public class GateConfigScreen extends Screen {
         sidebar.clear();
         int y = detailTop();
         y = addSection(y, "visualizegate.config.section.performance");
-        y = addTab(y, Tab.CPU, "visualizegate.config.tab2.cpu", "visualizegate.config.tab2.cpu.sub");
-        y = addTab(y, Tab.GPU, "visualizegate.config.tab2.gpu", "visualizegate.config.tab2.gpu.sub");
+        y = addTab(y, Tab.CPU, "visualizegate.config.tab2.cpu");
+        y = addTab(y, Tab.GPU, "visualizegate.config.tab2.gpu");
         y += 8;
         y = addSection(y, "visualizegate.config.section.display");
-        y = addTab(y, Tab.GATE_VISUALS, "visualizegate.config.tab2.gatevis", "visualizegate.config.tab2.gatevis.sub");
-        y = addTab(y, Tab.POINT_CLOUD, "visualizegate.config.tab2.pointcloud", "visualizegate.config.tab2.pointcloud.sub");
-        y = addTab(y, Tab.DOCK_HUD, "visualizegate.config.tab2.dockhud", "visualizegate.config.tab2.dockhud.sub");
-        y = addTab(y, Tab.KEYBINDS, "visualizegate.config.tab2.keybinds", "visualizegate.config.tab2.keybinds.sub");
+        y = addTab(y, Tab.GATE_VISUALS, "visualizegate.config.tab2.gatevis");
+        y = addTab(y, Tab.POINT_CLOUD, "visualizegate.config.tab2.pointcloud");
+        y = addTab(y, Tab.DOCK_HUD, "visualizegate.config.tab2.dockhud");
+        y = addTab(y, Tab.KEYBINDS, "visualizegate.config.tab2.keybinds");
     }
 
     private int addSection(int y, String key) {
@@ -167,13 +172,12 @@ public class GateConfigScreen extends Screen {
         return y + e.h;
     }
 
-    private int addTab(int y, Tab tab, String enKey, String jaKey) {
+    private int addTab(int y, Tab tab, String labelKey) {
         SideEntry e = new SideEntry();
         e.tab = tab;
-        e.enKey = enKey;
-        e.jaKey = jaKey;
+        e.labelKey = labelKey;
         e.y = y;
-        e.h = 22;
+        e.h = 18; // 単一ラベル化で 1 行分に圧縮
         sidebar.add(e);
         return y + e.h;
     }
@@ -196,30 +200,28 @@ public class GateConfigScreen extends Screen {
     private void buildRows() {
         rows.clear();
         // ── CPU ──
-        add(Tab.CPU, new ToggleRow("visualizegate.config.cpu.sampling.desc",
-                "visualizegate.config.cpu.sampling.label", "visualizegate.config.cpu.sampling.sub",
+        add(Tab.CPU, new ToggleRow(null,
+                "visualizegate.config.cpu.sampling.label", "visualizegate.config.cpu.sampling.tip",
                 c -> c.cpuSamplingEnabled, v -> draft.cpuSamplingEnabled = v));
-        add(Tab.CPU, new DropdownRow("visualizegate.config.cpu.rate.desc",
-                "visualizegate.config.cpu.rate.label", "visualizegate.config.cpu.rate.sub", null,
+        add(Tab.CPU, new DropdownRow(null,
+                "visualizegate.config.cpu.rate.label", "visualizegate.config.cpu.rate.tip",
                 new Component[] {
                         Component.translatable("visualizegate.config.cpu.rate.05"),
                         Component.translatable("visualizegate.config.cpu.rate.1"),
                         Component.translatable("visualizegate.config.cpu.rate.2") },
                 c -> hzIndex(c.cpuSamplingHz), null,
                 i -> draft.cpuSamplingHz = HZ_VALUES[i]));
-        add(Tab.CPU, new ToggleRow("visualizegate.config.cpu.graph.desc",
-                "visualizegate.config.cpu.graph.label", "visualizegate.config.cpu.graph.sub",
+        add(Tab.CPU, new ToggleRow(null,
+                "visualizegate.config.cpu.graph.label", "visualizegate.config.cpu.graph.tip",
                 c -> c.cpuGraphEnabled, v -> draft.cpuGraphEnabled = v));
-        // ── GPU / Render ──
-        add(Tab.GPU, new SliderRow("visualizegate.config.gpu.dist.desc",
-                "visualizegate.config.gpu.dist.label", "visualizegate.config.gpu.dist.sub",
-                "visualizegate.config.gpu.dist.note",
+        // ── GPU / Render ── (Render Distance のみインライン 1 行を残す)
+        add(Tab.GPU, new SliderRow("visualizegate.config.gpu.dist.inline",
+                "visualizegate.config.gpu.dist.label", "visualizegate.config.gpu.dist.tip",
                 GateMenuState.GATE_RENDER_DIST_MIN, GateMenuState.GATE_RENDER_DIST_MAX, true,
                 c -> c.gateRenderDistanceM, v -> draft.gateRenderDistanceM = (float) v,
                 v -> String.format("%d m", Math.round(v))));
-        add(Tab.GPU, new DropdownRow("visualizegate.config.gpu.quality.desc",
-                "visualizegate.config.gpu.quality.label", "visualizegate.config.gpu.quality.sub",
-                gpu3dNoteKey(),
+        add(Tab.GPU, new DropdownRow(null,
+                "visualizegate.config.gpu.quality.label", "visualizegate.config.gpu.quality.tip",
                 new Component[] {
                         Component.translatable("visualizegate.config.gpu.quality.low"),
                         Component.translatable("visualizegate.config.gpu.quality.medium"),
@@ -227,20 +229,20 @@ public class GateConfigScreen extends Screen {
                 GateConfigScreen::qualityIndex, GateConfigScreen::qualityCurrentLabel,
                 this::applyQualityPreset));
         // ── Gate Visuals ──
-        add(Tab.GATE_VISUALS, new ToggleRow("visualizegate.config.gv.frame.desc",
-                "visualizegate.config.gv.frame.label", "visualizegate.config.gv.frame.sub",
+        add(Tab.GATE_VISUALS, new ToggleRow(null,
+                "visualizegate.config.gv.frame.label", "visualizegate.config.gv.frame.tip",
                 c -> c.boxOverlayEnabled, v -> draft.boxOverlayEnabled = v));
-        add(Tab.GATE_VISUALS, new ToggleRow("visualizegate.config.gv.dome.desc",
-                "visualizegate.config.gv.dome.label", "visualizegate.config.gv.dome.sub",
+        add(Tab.GATE_VISUALS, new ToggleRow(null,
+                "visualizegate.config.gv.dome.label", "visualizegate.config.gv.dome.tip",
                 c -> c.domeEnabled, v -> draft.domeEnabled = v));
-        add(Tab.GATE_VISUALS, new ToggleRow("visualizegate.config.gv.holo.desc",
-                "visualizegate.config.gv.holo.label", "visualizegate.config.gv.holo.sub",
+        add(Tab.GATE_VISUALS, new ToggleRow(null,
+                "visualizegate.config.gv.holo.label", "visualizegate.config.gv.holo.tip",
                 c -> c.hologramEnabled, v -> draft.hologramEnabled = v));
-        add(Tab.GATE_VISUALS, new ToggleRow("visualizegate.config.gv.names.desc",
-                "visualizegate.config.gv.names.label", "visualizegate.config.gv.names.sub",
+        add(Tab.GATE_VISUALS, new ToggleRow(null,
+                "visualizegate.config.gv.names.label", "visualizegate.config.gv.names.tip",
                 c -> c.gateNamesEnabled, v -> draft.gateNamesEnabled = v));
-        add(Tab.GATE_VISUALS, new DropdownRow("visualizegate.config.gv.mode.desc",
-                "visualizegate.config.gv.mode.label", "visualizegate.config.gv.mode.sub", null,
+        add(Tab.GATE_VISUALS, new DropdownRow(null,
+                "visualizegate.config.gv.mode.label", "visualizegate.config.gv.mode.tip",
                 new Component[] {
                         Component.translatable("visualizegate.mode.simple"),
                         Component.translatable("visualizegate.mode.advanced") },
@@ -249,56 +251,56 @@ public class GateConfigScreen extends Screen {
         // ── Point Cloud ──
         add(Tab.POINT_CLOUD, new HeaderRow("visualizegate.config.pc.group.visibility"));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
-                "visualizegate.config.pc.panel.label", "visualizegate.config.pc.panel.sub",
+                "visualizegate.config.pc.panel.label", "visualizegate.config.pc.panel.tip",
                 c -> c.pcPanelVisible, v -> draft.pcPanelVisible = v));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
-                "visualizegate.config.pc.ow.label", "visualizegate.config.pc.ow.sub",
+                "visualizegate.config.pc.ow.label", "visualizegate.config.pc.ow.tip",
                 c -> c.pcShowOverworld, v -> draft.pcShowOverworld = v));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
-                "visualizegate.config.pc.nether.label", "visualizegate.config.pc.nether.sub",
+                "visualizegate.config.pc.nether.label", "visualizegate.config.pc.nether.tip",
                 c -> c.pcShowNether, v -> draft.pcShowNether = v));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
-                "visualizegate.config.pc.links.label", "visualizegate.config.pc.links.sub",
+                "visualizegate.config.pc.links.label", "visualizegate.config.pc.links.tip",
                 c -> c.pcShowLinks, v -> draft.pcShowLinks = v));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
-                "visualizegate.config.pc.solo.label", "visualizegate.config.pc.solo.sub",
+                "visualizegate.config.pc.solo.label", "visualizegate.config.pc.solo.tip",
                 c -> c.pcCloudOnly, v -> draft.pcCloudOnly = v));
         add(Tab.POINT_CLOUD, new HeaderRow("visualizegate.config.pc.group.appearance"));
         add(Tab.POINT_CLOUD, new SliderRow(null,
-                "visualizegate.config.pc.size.label", "visualizegate.config.pc.size.sub", null,
+                "visualizegate.config.pc.size.label", "visualizegate.config.pc.size.tip",
                 PointCloudViewState.POINT_SIZE_MIN, PointCloudViewState.POINT_SIZE_MAX, true,
                 c -> c.pcPointSize, v -> draft.pcPointSize = (int) Math.round(v),
                 v -> String.format("%d px", Math.round(v))));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
-                "visualizegate.config.pc.tint.label", "visualizegate.config.pc.tint.sub",
+                "visualizegate.config.pc.tint.label", "visualizegate.config.pc.tint.tip",
                 c -> c.pcDimTint, v -> draft.pcDimTint = v));
         add(Tab.POINT_CLOUD, new DropdownRow(null,
-                "visualizegate.config.pc.detail.label", "visualizegate.config.pc.detail.sub", null,
+                "visualizegate.config.pc.detail.label", "visualizegate.config.pc.detail.tip",
                 new Component[] {
                         Component.translatable("visualizegate.config.pc.detail.full"),
                         Component.translatable("visualizegate.config.pc.detail.brief") },
                 c -> effectiveDetail(c) ? 0 : 1, null,
                 i -> draft.pcOverlayDetail = (i == 0)));
         add(Tab.POINT_CLOUD, new HeaderRow("visualizegate.config.pc.group.layout"));
-        add(Tab.POINT_CLOUD, new SliderRow("visualizegate.config.pc.spacing.desc",
-                "visualizegate.config.pc.spacing.label", "visualizegate.config.pc.spacing.sub", null,
+        add(Tab.POINT_CLOUD, new SliderRow(null,
+                "visualizegate.config.pc.spacing.label", "visualizegate.config.pc.spacing.tip",
                 PointCloudViewState.SPACING_MIN, PointCloudViewState.SPACING_MAX, true,
                 c -> c.pcDimensionSpacing, v -> draft.pcDimensionSpacing = (int) Math.round(v),
                 v -> String.valueOf(Math.round(v))));
         // ── Dock / HUD ──
-        add(Tab.DOCK_HUD, new ToggleRow("visualizegate.config.dh.icon.desc",
-                "visualizegate.config.dh.icon.label", "visualizegate.config.dh.icon.sub",
+        add(Tab.DOCK_HUD, new ToggleRow(null,
+                "visualizegate.config.dh.icon.label", "visualizegate.config.dh.icon.tip",
                 c -> c.hudIconEnabled, v -> draft.hudIconEnabled = v));
-        add(Tab.DOCK_HUD, new ToggleRow("visualizegate.config.dh.legend.desc",
-                "visualizegate.config.dh.legend.label", "visualizegate.config.dh.legend.sub",
+        add(Tab.DOCK_HUD, new ToggleRow(null,
+                "visualizegate.config.dh.legend.label", "visualizegate.config.dh.legend.tip",
                 c -> c.legendEnabled, v -> draft.legendEnabled = v));
-        add(Tab.DOCK_HUD, new InfoRow("visualizegate.config.dh.dockkey.label", "visualizegate.config.dh.dockkey.sub",
-                GateKeyBindings::dockKeyDisplay, "visualizegate.config.keys.note"));
+        add(Tab.DOCK_HUD, new InfoRow("visualizegate.config.dh.dockkey.label", "visualizegate.config.keys.note",
+                GateKeyBindings::dockKeyDisplay));
         // ── Keybinds (読み取り専用・diff 対象外) ──
-        add(Tab.KEYBINDS, new InfoRow("visualizegate.config.kb.openmenu.label", "visualizegate.config.kb.openmenu.sub",
-                GateKeyBindings::boundKeyDisplay, null));
-        add(Tab.KEYBINDS, new InfoRow("visualizegate.config.kb.dock.label", "visualizegate.config.kb.dock.sub",
-                GateKeyBindings::dockKeyDisplay, "visualizegate.config.keys.note"));
+        add(Tab.KEYBINDS, new InfoRow("visualizegate.config.kb.openmenu.label", "visualizegate.config.keys.note",
+                GateKeyBindings::boundKeyDisplay));
+        add(Tab.KEYBINDS, new InfoRow("visualizegate.config.kb.dock.label", "visualizegate.config.keys.note",
+                GateKeyBindings::dockKeyDisplay));
     }
 
     // ── CPU サンプリング頻度 (0.5 / 1 / 2 Hz) ──
@@ -347,15 +349,6 @@ public class GateConfigScreen extends Screen {
         draft.pcPointSize = Q_SIZE[i];
     }
 
-    /** legacy (<26.1) は GPU3D 不在＝点群は texbatch。 品質の注記キー (新版は null)。 */
-    private static String gpu3dNoteKey() {
-        //? if <26.1 {
-        /*return "visualizegate.config.gpu.quality.legacy";*/
-        //?} else {
-        return null;
-        //?}
-    }
-
     private static boolean effectiveDetail(GateConfig c) {
         return c.pcOverlayDetail != null ? c.pcOverlayDetail : true;
     }
@@ -375,9 +368,38 @@ public class GateConfigScreen extends Screen {
         drawDetail(g, mouseX, mouseY);
         drawFooter(g, mouseX, mouseY);
 
+        // ホバーツールチップ (ドロップダウン展開中/ポップアップ中は抑止)。
+        if (pendingTip != null && openDropdown == null && !confirmOpen) {
+            drawTooltipBox(g, pendingTip, tipMx, tipMy);
+        }
         if (confirmOpen) {
             drawConfirm(g, mouseX, mouseY);
         }
+    }
+
+    /** 自前ツールチップ (immediate・細枠ボックス・1 行・画面内へクランプ)。 */
+    private void drawTooltipBox(GuiGraphicsExtractor g, Component text, int mx, int my) {
+        int tw = this.font.width(text);
+        int pad = 4;
+        int boxW = tw + pad * 2;
+        int boxH = 9 + pad * 2;
+        int bx = mx + 12;
+        int by = my - 6;
+        if (bx + boxW > this.width - 2) {
+            bx = mx - 12 - boxW; // 右に入らなければ左へ
+        }
+        if (bx < 2) {
+            bx = 2;
+        }
+        if (by + boxH > this.height - 2) {
+            by = this.height - 2 - boxH;
+        }
+        if (by < 2) {
+            by = 2;
+        }
+        g.fill(bx, by, bx + boxW, by + boxH, GateColors.BASE);
+        thinBorder(g, bx, by, boxW, boxH, GateColors.MAIN_DIM);
+        g.text(this.font, text, bx + pad, by + pad, GateColors.TEXT);
     }
 
     private void drawTitleBar(GuiGraphicsExtractor g) {
@@ -402,9 +424,8 @@ public class GateConfigScreen extends Screen {
                     g.fill(0, e.y, SIDEBAR_W, e.y + e.h, GateColors.SELECT_BAND);
                     g.fill(0, e.y, 2, e.y + e.h, GateColors.MAIN);
                 }
-                g.text(this.font, Component.translatable(e.enKey), 12, e.y + 3,
+                g.text(this.font, Component.translatable(e.labelKey), 12, e.y + 5,
                         sel ? GateColors.ACCENT : GateColors.TEXT);
-                g.text(this.font, Component.translatable(e.jaKey), 12, e.y + 12, GateColors.SUBTEXT);
             }
         }
     }
@@ -418,6 +439,7 @@ public class GateConfigScreen extends Screen {
         int total = 0;
         DropdownRow toOverlay = null;
         int overlayY = 0;
+        pendingTip = null;
         for (Row r : rows) {
             if (r.tab != activeTab) {
                 continue;
@@ -426,6 +448,13 @@ public class GateConfigScreen extends Screen {
             if (r == openDropdown) {
                 toOverlay = openDropdown;
                 overlayY = y;
+            }
+            // ホバーツールチップ収集 (ビューポート内・ラベル行のみ)。
+            if (r instanceof ItemRow ir && mouseY >= top && mouseY <= bottom
+                    && ir.hoveredForTip(mouseX, mouseY, y)) {
+                pendingTip = Component.translatable(ir.tipKey);
+                tipMx = mouseX;
+                tipMy = mouseY;
             }
             int h = r.height();
             y += h;
@@ -491,7 +520,7 @@ public class GateConfigScreen extends Screen {
         diff.clear();
         for (Row r : rows) {
             if (r instanceof ItemRow ir && ir.resettable() && ir.changedFromDefault(draft, def)) {
-                diff.add(new DiffEntry(ir.tab, Component.translatable(ir.enKey),
+                diff.add(new DiffEntry(ir.tab, Component.translatable(ir.labelKey),
                         ir.value(draft), ir.value(def)));
             }
         }
@@ -773,8 +802,7 @@ public class GateConfigScreen extends Screen {
     private static final class SideEntry {
         String section; // null なら tab エントリ
         Tab tab;
-        String enKey;
-        String jaKey;
+        String labelKey; // 単一言語タブラベル
         int y;
         int h;
     }
@@ -836,55 +864,39 @@ public class GateConfigScreen extends Screen {
         }
     }
 
-    /** 説明→ラベル(EN/JA)→コントロール→補足 の共通枠 (Toggle/Slider/Dropdown/Info の基底)。 */
+    /** ラベル(単一言語)→コントロール→任意インライン補足 の共通枠 (Toggle/Slider/Dropdown/Info の基底)。
+     *  長い説明はホバーの {@link #tipKey} ツールチップへ退避 (本体テキストはコンパクトに保つ)。 */
     private abstract class ItemRow extends Row {
-        final String descKey;
-        final String enKey;
-        final String jaKey;
-        final String noteKey;
+        final String inlineKey; // 任意の 1 行インライン補足 (基本 null・Render Distance のみ)
+        final String labelKey;  // 単一言語ラベル (MC 言語追従・1 項目 1 キー)
+        final String tipKey;    // ホバーツールチップ (任意・詳細はここへ)
 
-        ItemRow(String descKey, String enKey, String jaKey, String noteKey) {
-            this.descKey = descKey;
-            this.enKey = enKey;
-            this.jaKey = jaKey;
-            this.noteKey = noteKey;
+        ItemRow(String inlineKey, String labelKey, String tipKey) {
+            this.inlineKey = inlineKey;
+            this.labelKey = labelKey;
+            this.tipKey = tipKey;
         }
 
-        int descH() {
-            return descKey != null ? LINE : 0;
-        }
-
-        int noteH() {
-            return noteKey != null ? LINE : 0;
+        int inlineH() {
+            return inlineKey != null ? LINE : 0;
         }
 
         @Override
         int height() {
-            return descH() + LABEL_LINE + noteH() + ROW_GAP;
+            return LABEL_LINE + inlineH() + ROW_GAP;
         }
 
-        /** ラベル＋コントロールが乗る行の screen Y。 */
+        /** ラベル＋コントロールが乗る行の screen Y (= 行頭)。 */
         int lineY(int sy) {
-            return sy + descH();
+            return sy;
         }
 
         @Override
         void draw(GuiGraphicsExtractor g, int sx, int sy, int mouseX, int mouseY) {
-            int y = sy;
-            if (descKey != null) {
-                g.text(font, Component.translatable(descKey), sx, y, GateColors.SUBTEXT);
-                y += LINE;
-            }
-            // ラベル (EN 主・JA 副)。
-            Component en = Component.translatable(enKey);
-            g.text(font, en, sx, y + 4, GateColors.TEXT);
-            if (jaKey != null) {
-                g.text(font, Component.translatable(jaKey), sx + font.width(en) + 6, y + 4, GateColors.SUBTEXT);
-            }
-            drawControl(g, y, mouseX, mouseY);
-            y += LABEL_LINE;
-            if (noteKey != null) {
-                g.text(font, Component.translatable(noteKey), sx, y, GateColors.SUBTEXT);
+            g.text(font, Component.translatable(labelKey), sx, sy + 4, GateColors.TEXT);
+            drawControl(g, sy, mouseX, mouseY);
+            if (inlineKey != null) {
+                g.text(font, Component.translatable(inlineKey), sx, sy + LABEL_LINE, GateColors.SUBTEXT);
             }
         }
 
@@ -895,6 +907,12 @@ public class GateConfigScreen extends Screen {
         boolean onLine(double my, int sy) {
             int ly = lineY(sy);
             return my >= ly && my <= ly + LABEL_LINE;
+        }
+
+        /** ツールチップを出すホバー帯か (ラベル行・詳細 x 範囲)。 */
+        boolean hoveredForTip(double mx, double my, int sy) {
+            return tipKey != null && mx >= detailX() && mx <= detailRight()
+                    && my >= sy && my <= sy + LABEL_LINE;
         }
 
         // ── diff / reset 用 (記述子を流用・二重定義なし) ──
@@ -923,9 +941,9 @@ public class GateConfigScreen extends Screen {
         private static final int TRACK_H = 12;
         private static final int HIT_W = 74;
 
-        ToggleRow(String descKey, String enKey, String jaKey,
+        ToggleRow(String inlineKey, String labelKey, String tipKey,
                 Function<GateConfig, Boolean> get, Consumer<Boolean> set) {
-            super(descKey, enKey, jaKey, null);
+            super(inlineKey, labelKey, tipKey);
             this.get = get;
             this.set = set;
         }
@@ -975,9 +993,9 @@ public class GateConfigScreen extends Screen {
         private boolean dragging;
         private int trackX; // 直近 draw の screen X (drag/click 用)
 
-        SliderRow(String descKey, String enKey, String jaKey, String noteKey, double min, double max,
+        SliderRow(String inlineKey, String labelKey, String tipKey, double min, double max,
                 boolean intStep, ToDoubleFunction<GateConfig> get, DoubleConsumer set, Function<Double, String> fmt) {
-            super(descKey, enKey, jaKey, noteKey);
+            super(inlineKey, labelKey, tipKey);
             this.min = min;
             this.max = max;
             this.intStep = intStep;
@@ -1055,9 +1073,9 @@ public class GateConfigScreen extends Screen {
         private int boxX;
         private int boxY; // 直近 draw の screen 座標 (展開/hit-test 用)
 
-        DropdownRow(String descKey, String enKey, String jaKey, String noteKey, Component[] options,
+        DropdownRow(String inlineKey, String labelKey, String tipKey, Component[] options,
                 ToIntFunction<GateConfig> selIdx, Function<GateConfig, Component> currentText, IntConsumer choose) {
-            super(descKey, enKey, jaKey, noteKey);
+            super(inlineKey, labelKey, tipKey);
             this.options = options;
             this.selIdx = selIdx;
             this.currentText = currentText;
@@ -1145,8 +1163,8 @@ public class GateConfigScreen extends Screen {
     private final class InfoRow extends ItemRow {
         private final java.util.function.Supplier<String> value;
 
-        InfoRow(String enKey, String jaKey, java.util.function.Supplier<String> value, String noteKey) {
-            super(null, enKey, jaKey, noteKey);
+        InfoRow(String labelKey, String tipKey, java.util.function.Supplier<String> value) {
+            super(null, labelKey, tipKey);
             this.value = value;
         }
 
