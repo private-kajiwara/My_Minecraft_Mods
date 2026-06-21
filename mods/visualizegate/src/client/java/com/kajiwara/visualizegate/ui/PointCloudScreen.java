@@ -166,6 +166,9 @@ public class PointCloudScreen extends Screen {
     private static final int TABBAR_H = 16;     // タブバー高
     private static final int ROW_H = 13;        // 一覧の 1 行高
     private static final int EYE_W = 11;        // ㉝C 行右端の表示/非表示トグル (目アイコン) 幅
+    // 一覧下端に確保する凡例 (5 状態色キー) の帯高。 行の描画下端 (drawGatesList/drawLinksList の bottom) と
+    // クリック判定域 (inListArea) の下端をこの分だけ listBottom から引く＝凡例は行の実 bounds 外＝非インタラクティブ。
+    private static final int LEGEND_RESERVE_H = 12;
     private Tab tab = Tab.VIEW;
     private int sbContentX;   // サイドバー左端 (= sbX)
     private int tabBarY;      // タブバー上端
@@ -1926,7 +1929,7 @@ public class PointCloudScreen extends Screen {
         int maxW = sidebarW - 2 * SIDE_PAD;
         g.text(this.font, Component.literal(fitWidth("Gates: " + n, maxW)), x, listTop, GateColors.TEXT); // ㉞ 幅追従省略
         int top = listTop + 12;
-        int bottom = listBottom - 12; // 凡例分を残す
+        int bottom = listBottom - LEGEND_RESERVE_H; // 凡例分を残す
         // ㉝A スクロール上限クランプ (空スクロール解消): 内容高がビュー高を超えた分だけ可動。
         gatesScroll = clampScroll(gatesScroll, n * ROW_H, bottom - top);
         ensureRowArrays(n);
@@ -1997,7 +2000,7 @@ public class PointCloudScreen extends Screen {
         g.text(this.font, Component.literal(fitWidth("Conflicts: " + conflicts.size()
                 + "  Links: " + m.linkOwNumber().length, maxW)), x, listTop, GateColors.TEXT); // ㉞ 幅追従省略
         int top = listTop + 12;
-        int bottom = listBottom - 12;
+        int bottom = listBottom - LEGEND_RESERVE_H;
         rowCount = 0; // Links タブの行クリックは未対応 (選択は Gates タブ)。 スクロールのみ。
         // ㉝A スクロール上限クランプ (内容高 = コンフリクト + 4px 区切り + 接続ペア)。
         int contentH = conflicts.size() * ROW_H + 4 + m.linkOwNumber().length * ROW_H;
@@ -2501,7 +2504,10 @@ public class PointCloudScreen extends Screen {
 
     /** ㉚ サイドバーの一覧領域 (タブバー下〜フッタ手前)。 */
     private boolean inListArea(double mx, double my) {
-        return mx >= sbContentX && mx <= sbContentX + sidebarW && my >= listTop && my <= listBottom;
+        // 下端は凡例帯を除いた行の実描画下端まで＝凡例 (および下端 chrome) のダブルクリックが行に解決して
+        // rename が誤って開く問題を防ぐ。 行は [listTop+12, listBottom-LEGEND_RESERVE_H] にしか描かれないので実行は不変。
+        return mx >= sbContentX && mx <= sbContentX + sidebarW
+                && my >= listTop && my <= listBottom - LEGEND_RESERVE_H;
     }
 
     private boolean inSlider(double mx, double my) {
