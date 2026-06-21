@@ -24,10 +24,17 @@ public final class GateConfig {
     // 既定 128m＝従来は無制限だったが、 全ポータル枠の遠距離描画を抑える穏当な既定 (推奨 96–160)。
     public float gateRenderDistanceM = 128f;
 
-    // ── パフォーマンス: CPU サンプラ制御 (dock 展開連動から分離・既定は従来挙動を保つ) ──
-    public boolean cpuSamplingEnabled = true; // 既定 ON＝従来どおり dock 展開時に CPU 計測が走る
+    // ── パフォーマンス: CPU サンプラ制御 (dock 展開連動から分離) ──
+    // v1: 既定 OFF。 CPU 計測は開発者向けで、 dock 展開中に JMX スレッドを起こすため、 一般ユーザーには既定で走らせない。
+    public boolean cpuSamplingEnabled = false;
     public float cpuSamplingHz = 1.0f;        // サンプリング頻度 (0.5 / 1 / 2 Hz)
     public boolean cpuGraphEnabled = true;    // dock 展開時の CPU スパークライン表示
+
+    // ── 点群データ収集 gate (v1: 既定 OFF) ──
+    // 地形カラムの蓄積 (config/visualizegate/tiles/ への書き出し) は、 この opt-in フラグの裏に gate する。
+    // 既定 OFF＝点群機能を使わない大多数のユーザーはディスク蓄積ゼロ。 ON にした「その時点から」蓄積が始まる。
+    // 既存タイルのロード/表示は本フラグに関係なく常に有効 (過去データは失わない)。
+    public boolean pcCaptureEnabled = false;
 
     // 点群ポップアップの表示オプション (PointCloudViewState の器)。
     public boolean pcShowOverworld = true;

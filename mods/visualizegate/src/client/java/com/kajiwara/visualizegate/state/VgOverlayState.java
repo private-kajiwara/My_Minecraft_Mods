@@ -22,9 +22,9 @@ public final class VgOverlayState {
     //     点群サムネのみ pointCloud 連動で追加。 CpuSampler はこの展開中 (perf 表示中) だけ稼働する。
     private static boolean dockExpanded = false;
 
-    // ── パフォーマンス: CPU サンプラ制御 (config 永続・既定は従来挙動)。
-    //    既定 ON＝従来どおり dock 展開時に CpuSampler が稼働 (= 未操作なら挙動不変)。
-    private static boolean cpuSamplingEnabled = true;
+    // ── パフォーマンス: CPU サンプラ制御 (config 永続)。
+    //    v1: 既定 OFF (開発者向け・dock 展開で JMX スレッドを起こすため)。 実値は load で config から収束。
+    private static boolean cpuSamplingEnabled = false;
     private static float cpuSamplingHz = 1.0f;   // 0.5 / 1 / 2 Hz
     private static boolean cpuGraphEnabled = true; // dock 展開時の CPU スパークライン表示
 

@@ -135,6 +135,7 @@
 	"visualizegate.dock.notes": "Notes",
 	"visualizegate.dock.pointcloud": "Point cloud",
 	"visualizegate.cmd.pointcloud": "Point cloud (dock): %s",
+	"visualizegate.cmd.pointcloud.capture": "Point-cloud terrain capture: %s",
 	"visualizegate.cmd.only": "Point-cloud panel: %s",
 	"visualizegate.cmd.visualize": "Gate-relations wireframe: %s",
 	"visualizegate.cmd.names": "Gate name labels: %s",

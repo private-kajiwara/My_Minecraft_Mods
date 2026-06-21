@@ -135,6 +135,7 @@
 	"visualizegate.dock.notes": "注記",
 	"visualizegate.dock.pointcloud": "点群",
 	"visualizegate.cmd.pointcloud": "点群 (ドック): %s",
+	"visualizegate.cmd.pointcloud.capture": "点群の地形収集: %s",
 	"visualizegate.cmd.only": "点群パネル: %s",
 	"visualizegate.cmd.visualize": "ゲート関係ワイヤーフレーム: %s",
 	"visualizegate.cmd.names": "ゲート名ラベル: %s",

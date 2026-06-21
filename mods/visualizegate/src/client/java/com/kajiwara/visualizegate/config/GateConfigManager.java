@@ -107,6 +107,7 @@ public final class GateConfigManager {
         cfg.cpuSamplingEnabled = VgOverlayState.isCpuSamplingEnabled();
         cfg.cpuSamplingHz = VgOverlayState.getCpuSamplingHz();
         cfg.cpuGraphEnabled = VgOverlayState.isCpuGraphEnabled();
+        cfg.pcCaptureEnabled = PointCloudViewState.isCaptureEnabled(); // v1 点群データ収集 gate (既定 OFF)
         cfg.pcShowOverworld = PointCloudViewState.isShowOverworld();
         cfg.pcShowNether = PointCloudViewState.isShowNether();
         cfg.pcShowLinks = PointCloudViewState.isShowLinks();
@@ -137,6 +138,7 @@ public final class GateConfigManager {
         VgOverlayState.setCpuSamplingHz(cfg.cpuSamplingHz);
         VgOverlayState.setCpuGraphEnabled(cfg.cpuGraphEnabled);
         VgOverlayState.setCpuSamplingEnabled(cfg.cpuSamplingEnabled); // 末尾＝最新 Hz/状態で sampler を収束
+        PointCloudViewState.setCaptureEnabled(cfg.pcCaptureEnabled); // v1 点群データ収集 gate (既定 OFF)
         PointCloudViewState.setShowOverworld(cfg.pcShowOverworld);
         PointCloudViewState.setShowNether(cfg.pcShowNether);
         PointCloudViewState.setShowLinks(cfg.pcShowLinks);

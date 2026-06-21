@@ -11,6 +11,7 @@ import java.util.Set;
 import com.kajiwara.visualizegate.VisualizeGateMod;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
+import com.kajiwara.visualizegate.state.PointCloudViewState;
 import com.kajiwara.visualizegate.tile.Tile;
 import com.kajiwara.visualizegate.tile.TileIo;
 import com.kajiwara.visualizegate.tile.TileKey;
@@ -74,6 +75,11 @@ public final class TerrainStore {
 
     private void onChunkLoad(ClientLevel level, LevelChunk chunk) {
         try {
+            // v1 gate: 点群データ収集が OFF の間は新規キャプチャを一切行わない (= ディスク蓄積ゼロ)。
+            // 既存タイルのロード/表示はクエリ側 (snapshot*/surfaceYAt) が独立に ensureLoaded するので影響しない。
+            if (!PointCloudViewState.isCaptureEnabled()) {
+                return;
+            }
             String worldId = PortalMemory.get().currentWorldId();
             if (worldId == null) {
                 return; // world-id 未確定 (PortalMemory が JOIN/CHUNK_LOAD で先に確定する)
@@ -118,6 +124,11 @@ public final class TerrainStore {
      */
     public void resampleLoaded(ClientLevel level, int centerBlockX, int centerBlockZ, int radiusChunks) {
         try {
+            // v1 gate: 収集 OFF の間は Re-analyze の再採取 (新規キャプチャ) もしない。 既存タイルの表示は
+            // snapshotColumns 側 (ungated) が担うので、 OFF でも過去に集めた地形は点群に出る。
+            if (!PointCloudViewState.isCaptureEnabled()) {
+                return;
+            }
             String worldId = PortalMemory.get().currentWorldId();
             if (worldId == null) {
                 return;

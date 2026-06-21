@@ -13,16 +13,14 @@
 		"issues": "https://github.com/private-kajiwara/My_Minecraft_Mods/issues"
 	},
 	"license": "CC0-1.0",
-	"environment": "*",
+	"icon": "assets/visualizegate/icon.png",
+	"environment": "client",
 	"entrypoints": {
 		"main": [
 			"com.kajiwara.visualizegate.VisualizeGateMod"
 		],
 		"client": [
 			"com.kajiwara.visualizegate.VisualizeGateClient"
-		],
-		"server": [
-			"com.kajiwara.visualizegate.server.VisualizeGateServer"
 		],
 		"modmenu": [
 			"com.kajiwara.visualizegate.config.modmenu.GateModMenuApi"

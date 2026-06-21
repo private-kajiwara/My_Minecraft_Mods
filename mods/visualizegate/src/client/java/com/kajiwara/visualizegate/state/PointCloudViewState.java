@@ -82,8 +82,29 @@ public final class PointCloudViewState {
      * (only/show/clean) だけがこれを set＆save する (切断のセッションリセットでは書かない＝設定を消さない)。
      */
     private static boolean panelVisible = false;
+    /**
+     * v1 点群データ収集 gate (既定 OFF・config 永続)。 ON のときだけ {@link com.kajiwara.visualizegate.terrain.TerrainStore}
+     * が地形カラムを新規キャプチャ (passive chunk-load 蓄積＋Re-analyze 再採取) しディスクへ書く。 OFF では
+     * 新規キャプチャを一切行わない (= 大多数のユーザーはディスク蓄積ゼロ)。 既存タイルのロード/表示は本フラグに
+     * 関係なく常に有効 (過去データは失わない)。 ON にした「その時点から」蓄積が始まる挙動。
+     */
+    private static boolean captureEnabled = false;
 
     private PointCloudViewState() {
+    }
+
+    /** v1 点群データ収集 gate (新規キャプチャの可否)。 OFF=ディスク蓄積ゼロ・ロード/表示は不変。 */
+    public static boolean isCaptureEnabled() {
+        return captureEnabled;
+    }
+
+    public static void setCaptureEnabled(boolean v) {
+        captureEnabled = v;
+    }
+
+    public static boolean toggleCaptureEnabled() {
+        captureEnabled = !captureEnabled;
+        return captureEnabled;
     }
 
     /** ⑤⑥ 点群パネル可視の永続ミラー (実描画ゲートは VgOverlayState.isPointCloud)。 */

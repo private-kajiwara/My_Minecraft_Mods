@@ -118,6 +118,12 @@ public final class VgCommands {
                 .then(literal("off").executes(VgCommands::onlyOff)));
         // ⑤⑥ show: パネル表示＋ソロ解除 (パネル＋ドック通常＝両表示に復帰)。
         pc.then(literal("show").executes(VgCommands::show));
+        // v1 capture <on|off>: 点群データ収集 gate (地形タイル蓄積)。 既定 OFF＝ディスク蓄積ゼロ。
+        //   ON にした「その時点から」蓄積開始。 既存タイルのロード/表示は本フラグに関係なく常に有効。 GateConfig 永続。
+        pc.then(literal("capture")
+                .executes(c -> setCapture(c, !PointCloudViewState.isCaptureEnabled()))
+                .then(literal("on").executes(c -> setCapture(c, true)))
+                .then(literal("off").executes(c -> setCapture(c, false))));
         root.then(pc);
         root.then(literal("visualize").executes(
                 c -> feedbackToggle(c, "visualizegate.cmd.visualize", VgOverlayState.toggleVisualize())));
@@ -701,6 +707,13 @@ public final class VgCommands {
         VgOverlayState.setPointCloud(false);
         PointCloudViewState.setPanelVisible(false);
         PointCloudViewState.setCloudOnly(false);
+    }
+
+    /** v1 点群データ収集 gate を設定し永続化 (ON でこの時点から地形蓄積開始・既存タイルは不変)。 */
+    private static int setCapture(CommandContext<FabricClientCommandSource> c, boolean on) {
+        PointCloudViewState.setCaptureEnabled(on);
+        GateConfigManager.save();
+        return feedbackToggle(c, "visualizegate.cmd.pointcloud.capture", on);
     }
 
     /** ⑤⑥ 現在の点群パネル・モードをチャット表示 (off / show / only:detail / only:compact)。 */
