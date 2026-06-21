@@ -13,7 +13,7 @@
 		"issues": "https://github.com/private-kajiwara/My_Minecraft_Mods/issues"
 	},
 	"license": "CC0-1.0",
-	"icon": "assets/visualizegate/icon.png",
+	"icon": { "128": "assets/visualizegate/icon.png", "512": "assets/visualizegate/icon@512.png" },
 	"environment": "client",
 	"entrypoints": {
 		"main": [
