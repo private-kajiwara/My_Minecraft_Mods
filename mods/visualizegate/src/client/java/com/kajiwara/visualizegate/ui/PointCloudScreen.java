@@ -180,8 +180,13 @@ public class PointCloudScreen extends Screen {
     private int selWz;
     private boolean selNether;
     private boolean showLabels = true; // ㉚C 3D 番号ラベルの表示トグル
-    // View タブのトグルボタン参照 (タブ切替で表示/非表示)。
+    // View タブのトグルボタン参照 (タブ切替で表示/非表示)。 末尾に Capture トグルを含む。
     private final java.util.List<Button> viewWidgets = new java.util.ArrayList<>();
+    // 空状態 (capture OFF) の中央 [キャプチャを有効化] ボタン。 viewWidgets とは別管理＝可視は描画パスで
+    // 現在の解析状態 (空 && capture OFF) から毎フレーム算出 (タブ非依存・vp 中央に出す)。
+    private Button captureEnableBtn;
+    // ディスク蓄積の透明性: 初回有効化時に 1 度だけログ通知 (セッション単位・非永続)。
+    private static boolean captureNoticeLogged = false;
     // ㉛ 一覧の行 hit 矩形 (クリック選択用・描画時に確定)。 行→ゲートの<b>ワールド anchor</b>+dim+y を平行配列で。
     private int[] rowWx = new int[0];
     private int[] rowWy = new int[0];
@@ -325,6 +330,19 @@ public class PointCloudScreen extends Screen {
             b.setMessage(tintLabel());
             GateConfigManager.save();
         }).bounds(0, 0, 10, 20).build()));
+        // 点群データ収集の恒常 ON/OFF (コマンド /vg point-cloud capture と同一 state を共有)。 OFF へ戻す導線も兼ねる。
+        viewWidgets.add(addRenderableWidget(Button.builder(captureLabel(), b -> {
+            PointCloudViewState.toggleCaptureEnabled();
+            b.setMessage(captureLabel());
+            GateConfigManager.save();
+        }).bounds(0, 0, 10, 20).build()));
+
+        // 空状態 (capture OFF) の中央ワンクリック有効化ボタン。 enable→永続→即 Re-analyze で今いる周辺地形をその場で出す
+        // (onChunkLoad は既ロード分に発火しないため、 有効化だけでは空のまま。 resample で即時反映するのが要点)。
+        captureEnableBtn = addRenderableWidget(Button.builder(
+                Component.translatable("visualizegate.pc.enableCapture"), b -> enableCaptureAndFill())
+                .bounds(0, 0, 160, 20).build());
+        captureEnableBtn.visible = false;
 
         // フッタ: Re-analyze / Done (width 基準・サイドバー幅に非依存)。
         int fy = this.height - FOOTER_H + 7;
@@ -366,19 +384,29 @@ public class PointCloudScreen extends Screen {
         listBottom = this.height - FOOTER_H - 4;
         int y = listTop;
 
-        // View トグル 4 ボタンを 2×2 で再配置 (sidebarW 依存)。
+        // View トグルを 2×2 ([OW][Nether]/[Gate links][Dim tint]) ＋ 5 個目 [Capture] を 1 行で再配置 (sidebarW 依存)。
         int colGap = 4;
         int halfW = (sbW - colGap) / 2;
         int col2X = sbX + halfW + colGap;
-        if (viewWidgets.size() == 4) {
+        if (viewWidgets.size() == 5) {
             positionBtn(viewWidgets.get(0), sbX, y, halfW);
             positionBtn(viewWidgets.get(1), col2X, y, halfW);
             y += 24;
             positionBtn(viewWidgets.get(2), sbX, y, halfW);
             positionBtn(viewWidgets.get(3), col2X, y, halfW);
+            y += 24;
+            positionBtn(viewWidgets.get(4), sbX, y, sbW); // Capture トグル (1 行・サイドバー全幅)
             y += 26;
         } else {
-            y += 24 + 26; // ボタン未生成でもスライダ基準 Y を一致
+            y += 24 + 24 + 26; // ボタン未生成でもスライダ基準 Y を一致
+        }
+
+        // 空状態の中央 [キャプチャを有効化] ボタンを vp 中央 (ヒント直下) に配置。
+        if (captureEnableBtn != null) {
+            int bw = Math.min(160, Math.max(80, vpW - 16));
+            captureEnableBtn.setWidth(bw);
+            captureEnableBtn.setX(vpX + (vpW - bw) / 2);
+            captureEnableBtn.setY(vpY + vpH / 2 + 8);
         }
 
         // スライダ群 (手動描画・手動入力)。 ⑧ パネル内へインセット。
@@ -440,8 +468,35 @@ public class PointCloudScreen extends Screen {
         return Component.literal("Dim tint: " + onOff(PointCloudViewState.isDimTint()));
     }
 
+    /** Capture トグルのラベル (新規＝最初から lang 化・ON/OFF は既存 state.on/off を再利用)。 */
+    private static Component captureLabel() {
+        return Component.translatable("visualizegate.pc.capture", Component.translatable(
+                PointCloudViewState.isCaptureEnabled()
+                        ? "visualizegate.state.on" : "visualizegate.state.off"));
+    }
+
     private static String onOff(boolean b) {
         return b ? "ON" : "OFF";
+    }
+
+    /**
+     * 空状態の [キャプチャを有効化]: capture を ON にし永続＋即 Re-analyze で今ロード中チャンクの地形をその場で出す。
+     * 順序が肝＝gate を先に開けてから {@link PointCloudAnalysis#requestAnalysis()} (内部 {@code resampleLoaded}) を呼ぶ。
+     */
+    private void enableCaptureAndFill() {
+        PointCloudViewState.setCaptureEnabled(true);
+        GateConfigManager.save();
+        // View タブの Capture トグルのラベルも同期 (5 個目)。
+        if (viewWidgets.size() == 5) {
+            viewWidgets.get(4).setMessage(captureLabel());
+        }
+        if (!captureNoticeLogged) {
+            captureNoticeLogged = true;
+            VisualizeGateMod.LOGGER.info(
+                    "[visualizegate] point-cloud terrain capture enabled — terrain will now accumulate to disk "
+                            + "(config/visualizegate/tiles/). Disable via View tab or /vg point-cloud capture off.");
+        }
+        PointCloudAnalysis.get().requestAnalysis();
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -462,6 +517,19 @@ public class PointCloudScreen extends Screen {
 
         drawSplitter(g, mouseX, mouseY); // ㉞ vp⇔サイドバー境界の可動グリップ
 
+        PointCloudAnalysis analysis = PointCloudAnalysis.get();
+        PointCloudAnalysis.State st = analysis.state();
+        PointCloudSnapshot snap = analysis.snapshot();
+
+        // 中央 [キャプチャを有効化] ボタンの可視: 空 && capture OFF && 解析中でない とき (タブ非依存)。
+        // super.extractRenderState (widget 描画) の前に確定する。
+        boolean emptyCaptureOff = st != PointCloudAnalysis.State.ANALYZING
+                && snap.isEmpty() && !PointCloudViewState.isCaptureEnabled();
+        if (captureEnableBtn != null) {
+            captureEnableBtn.visible = emptyCaptureOff;
+            captureEnableBtn.active = emptyCaptureOff;
+        }
+
         super.extractRenderState(g, mouseX, mouseY, partialTick); // widgets (toggles/footer)
 
         // タイトル + スケール表記。
@@ -472,14 +540,16 @@ public class PointCloudScreen extends Screen {
         g.text(this.font, Component.literal(fitWidth(scaleHud, sidebarW + MARGIN)),
                 this.width - sidebarW - MARGIN, 10, GateColors.TEXT);
 
-        PointCloudAnalysis analysis = PointCloudAnalysis.get();
-        PointCloudAnalysis.State st = analysis.state();
-        PointCloudSnapshot snap = analysis.snapshot();
-
         if (st == PointCloudAnalysis.State.ANALYZING) {
             centerText(g, "Analyzing…", GateColors.TEXT);
         } else if (snap.isEmpty()) {
-            centerText(g, "No data — explore to observe terrain, then Re-analyze", GateColors.LINK_GRAY);
+            // capture OFF: 「壊れている」誤認を避け、 ヒント＋直下の [有効化] ボタン (上で可視化済) で導線を出す。
+            // capture ON: 既存どおり「探索して Re-analyze」(正しい状態＝まだ歩いていないだけ)。
+            if (!PointCloudViewState.isCaptureEnabled()) {
+                centerText(g, Component.translatable("visualizegate.pc.empty.captureOff"), GateColors.LINK_GRAY);
+            } else {
+                centerText(g, "No data — explore to observe terrain, then Re-analyze", GateColors.LINK_GRAY);
+            }
         } else {
             frameIfNeeded(snap);
             gpu3dActive = false;
@@ -512,7 +582,10 @@ public class PointCloudScreen extends Screen {
     }
 
     private void centerText(GuiGraphicsExtractor g, String msg, int color) {
-        Component c = Component.literal(msg);
+        centerText(g, Component.literal(msg), color);
+    }
+
+    private void centerText(GuiGraphicsExtractor g, Component c, int color) {
         int tx = vpX + vpW / 2 - this.font.width(c) / 2;
         int ty = vpY + vpH / 2 - 4;
         g.text(this.font, c, tx, ty, color);
@@ -2199,6 +2272,11 @@ public class PointCloudScreen extends Screen {
             drag = Drag.SCALE_NETHER;
             setNetherScaleFromMouse(mx);
             return true;
+        }
+        // 中央 [キャプチャを有効化] ボタンが出ているときは vp 内でもボタンを優先 (回転より先に widget へ委譲)。
+        if (event.button() == 0 && captureEnableBtn != null && captureEnableBtn.visible
+                && captureEnableBtn.isMouseOver(mx, my)) {
+            return super.mouseClicked(event, doubleClick);
         }
         if (event.button() == 0 && inViewport(mx, my)) {
             drag = Drag.ROTATE;
