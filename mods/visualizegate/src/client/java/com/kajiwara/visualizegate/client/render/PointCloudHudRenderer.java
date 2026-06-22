@@ -2,6 +2,7 @@ package com.kajiwara.visualizegate.client.render;
 
 import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
+import com.kajiwara.visualizegate.ui.TextFit;
 
 //? if >=1.21.11 {
 // GPU3D 点群プレビュー共通 (>=1.21.11)。 1.21.10 は HUD で点群を描かない (note のみ) ＝不要。
@@ -313,24 +314,29 @@ public final class PointCloudHudRenderer {
         if (detail && h >= 78) {
             int dy = top + 11;
             scrimLine(g, x, dy, w, SCRIM_LIGHT);
+            // ㊽ B-P2: 左→右連結は right を超えたら以降を省く＝長訳でも右端からはみ出さない (簡略表示)。
             int dx = left;
-            dx = field(g, mc, dx, dy, "visualizegate.pc.panel.range", Integer.toString(range));
-            dx = field(g, mc, dx, dy, "visualizegate.pc.panel.spacing", Integer.toString(spacing));
-            field(g, mc, dx, dy, "visualizegate.pc.panel.point", pointSz + "px");
+            dx = field(g, mc, dx, dy, right, "visualizegate.pc.panel.range", Integer.toString(range));
+            dx = field(g, mc, dx, dy, right, "visualizegate.pc.panel.spacing", Integer.toString(spacing));
+            field(g, mc, dx, dy, right, "visualizegate.pc.panel.point", pointSz + "px");
             dy += 10;
             scrimLine(g, x, dy, w, SCRIM_LIGHT);
-            g.text(mc.font, Component.translatable("visualizegate.pc.hud.gpu",
-                    fmtCount(totalN), fmtCount(sampledN)), left, dy, GateColors.LINK_GRAY);
+            // perDim は右寄せ・gpu は左。 gpu を perDim の左端手前まで実測クリップ＝両者が重ならない。
             Component perDim = Component.translatable("visualizegate.pc.hud.perDim",
                     fmtCount(owN), fmtCount(neN));
-            g.text(mc.font, perDim, right - mc.font.width(perDim), dy, GateColors.LINK_GRAY);
+            int perDimX = right - mc.font.width(perDim);
+            String gpu = Component.translatable("visualizegate.pc.hud.gpu",
+                    fmtCount(totalN), fmtCount(sampledN)).getString();
+            g.text(mc.font, Component.literal(TextFit.clip(mc.font, gpu, perDimX - 4 - left)),
+                    left, dy, GateColors.LINK_GRAY);
+            g.text(mc.font, perDim, perDimX, dy, GateColors.LINK_GRAY);
             dy += 10;
             scrimLine(g, x, dy, w, SCRIM_LIGHT); // 配色凡例 (OW=teal / Ne=橙 / リンク=紫)
-            int lx = legendDot(g, mc, left, dy, DIM_TINT_OW,
+            int lx = legendDot(g, mc, left, dy, right, DIM_TINT_OW,
                     Component.translatable("visualizegate.pc.hud.ow").getString());
-            lx = legendDot(g, mc, lx, dy, DIM_TINT_NETHER,
+            lx = legendDot(g, mc, lx, dy, right, DIM_TINT_NETHER,
                     Component.translatable("visualizegate.pc.hud.ne").getString());
-            legendDot(g, mc, lx, dy, GateColors.PC_LINK,
+            legendDot(g, mc, lx, dy, right, GateColors.PC_LINK,
                     Component.translatable("visualizegate.legend.link_line").getString());
         }
 
@@ -352,21 +358,27 @@ public final class PointCloudHudRenderer {
         g.fill(x, y - 1, x + w, y + 9, argb);
     }
 
-    /** label(灰) + value(白) を描き次の x を返す。 */
-    private int field(GuiGraphicsExtractor g, Minecraft mc, int x, int y, String labelKey, String val) {
+    /** label(灰) + value(白) を描き次の x を返す。 {@code right} を超える分は描かず x 据え置き (はみ出し防止)。 */
+    private int field(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int right, String labelKey, String val) {
         Component l = Component.translatable(labelKey);
+        Component v = Component.literal(val);
+        if (x + mc.font.width(l) + 2 + mc.font.width(v) > right) {
+            return x; // 入り切らない＝この field を省く
+        }
         g.text(mc.font, l, x, y, GateColors.LINK_GRAY);
         x += mc.font.width(l) + 2;
-        Component v = Component.literal(val);
         g.text(mc.font, v, x, y, GateColors.TEXT);
         return x + mc.font.width(v) + 6;
     }
 
-    /** 色ドット + ラベル (灰) を描き次の x を返す。 */
-    private int legendDot(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int color, String label) {
+    /** 色ドット + ラベル (灰) を描き次の x を返す。 {@code right} を超える分は描かず x 据え置き (はみ出し防止)。 */
+    private int legendDot(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int right, int color, String label) {
+        Component c = Component.literal(label);
+        if (x + 7 + mc.font.width(c) > right) {
+            return x; // 入り切らない＝この凡例ドットを省く
+        }
         g.fill(x, y + 1, x + 5, y + 6, color);
         x += 7;
-        Component c = Component.literal(label);
         g.text(mc.font, c, x, y, GateColors.LINK_GRAY);
         return x + mc.font.width(c) + 6;
     }
