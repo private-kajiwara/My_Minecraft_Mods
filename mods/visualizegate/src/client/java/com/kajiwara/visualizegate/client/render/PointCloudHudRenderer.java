@@ -300,8 +300,8 @@ public final class PointCloudHudRenderer {
         double pz = mc.player != null ? mc.player.getZ() : 0;
 
         // ── 第2層: 上ストリップ (現次元 + 総点群数 / 右端=簡略・詳細状態)。 ──
-        Component dimC = Component.literal(neth ? "Ne" : "OW");
-        Component cntC = Component.literal(fmtCount(totalN) + " pts");
+        Component dimC = Component.translatable(neth ? "visualizegate.pc.hud.ne" : "visualizegate.pc.hud.ow");
+        Component cntC = Component.translatable("visualizegate.pc.hud.pts", fmtCount(totalN));
         scrimLine(g, x, top, w, SCRIM_LIGHT);
         g.text(mc.font, dimC, left, top, neth ? DIM_TINT_NETHER : DIM_TINT_OW);
         g.text(mc.font, cntC, left + mc.font.width(dimC) + 6, top, GateColors.TEXT);
@@ -319,20 +319,23 @@ public final class PointCloudHudRenderer {
             field(g, mc, dx, dy, "visualizegate.pc.panel.point", pointSz + "px");
             dy += 10;
             scrimLine(g, x, dy, w, SCRIM_LIGHT);
-            g.text(mc.font, Component.literal("GPU " + fmtCount(totalN) + "/" + fmtCount(sampledN)),
-                    left, dy, GateColors.LINK_GRAY);
-            Component perDim = Component.literal("OW " + fmtCount(owN) + "  Ne " + fmtCount(neN));
+            g.text(mc.font, Component.translatable("visualizegate.pc.hud.gpu",
+                    fmtCount(totalN), fmtCount(sampledN)), left, dy, GateColors.LINK_GRAY);
+            Component perDim = Component.translatable("visualizegate.pc.hud.perDim",
+                    fmtCount(owN), fmtCount(neN));
             g.text(mc.font, perDim, right - mc.font.width(perDim), dy, GateColors.LINK_GRAY);
             dy += 10;
             scrimLine(g, x, dy, w, SCRIM_LIGHT); // 配色凡例 (OW=teal / Ne=橙 / リンク=紫)
-            int lx = legendDot(g, mc, left, dy, DIM_TINT_OW, "OW");
-            lx = legendDot(g, mc, lx, dy, DIM_TINT_NETHER, "Ne");
+            int lx = legendDot(g, mc, left, dy, DIM_TINT_OW,
+                    Component.translatable("visualizegate.pc.hud.ow").getString());
+            lx = legendDot(g, mc, lx, dy, DIM_TINT_NETHER,
+                    Component.translatable("visualizegate.pc.hud.ne").getString());
             legendDot(g, mc, lx, dy, GateColors.PC_LINK,
                     Component.translatable("visualizegate.legend.link_line").getString());
         }
 
         // ── 第2層: 表示スケール (座標の 1 行上・右端)。 ──
-        Component scaleC = Component.literal("OW" + fmt1(owSc) + " Ne" + fmt1(neSc));
+        Component scaleC = Component.translatable("visualizegate.pc.hud.scale", fmt1(owSc), fmt1(neSc));
         int scY = bottomLine - 10;
         g.fill(right - mc.font.width(scaleC) - 2, scY - 1, right + 1, scY + 9, SCRIM_LIGHT);
         g.text(mc.font, scaleC, right - mc.font.width(scaleC), scY, GateColors.LINK_GRAY);

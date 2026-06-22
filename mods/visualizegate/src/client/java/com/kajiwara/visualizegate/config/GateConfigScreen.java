@@ -219,7 +219,7 @@ public class GateConfigScreen extends Screen {
                 "visualizegate.config.gpu.dist.label", "visualizegate.config.gpu.dist.tip",
                 GateMenuState.GATE_RENDER_DIST_MIN, GateMenuState.GATE_RENDER_DIST_MAX, true,
                 c -> c.gateRenderDistanceM, v -> draft.gateRenderDistanceM = (float) v,
-                v -> String.format("%d m", Math.round(v))));
+                v -> Component.translatable("visualizegate.unit.meters", Math.round(v)).getString()));
         add(Tab.GPU, new DropdownRow(null,
                 "visualizegate.config.gpu.quality.label", "visualizegate.config.gpu.quality.tip",
                 new Component[] {
@@ -270,7 +270,7 @@ public class GateConfigScreen extends Screen {
                 "visualizegate.config.pc.size.label", "visualizegate.config.pc.size.tip",
                 PointCloudViewState.POINT_SIZE_MIN, PointCloudViewState.POINT_SIZE_MAX, true,
                 c -> c.pcPointSize, v -> draft.pcPointSize = (int) Math.round(v),
-                v -> String.format("%d px", Math.round(v))));
+                v -> Component.translatable("visualizegate.unit.pixels", Math.round(v)).getString()));
         add(Tab.POINT_CLOUD, new ToggleRow(null,
                 "visualizegate.config.pc.tint.label", "visualizegate.config.pc.tint.tip",
                 c -> c.pcDimTint, v -> draft.pcDimTint = v));

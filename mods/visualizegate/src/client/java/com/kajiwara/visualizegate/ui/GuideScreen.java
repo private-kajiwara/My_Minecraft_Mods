@@ -333,7 +333,9 @@ public class GuideScreen extends Screen {
         int bw = Math.min(iw, CONTENT_W);
         int bx = ix + (iw - bw) / 2;
         // 畳: 1 行スリムバー (■ + 本文 + ▶)。
-        Component sample = Component.literal("VisualizeGate · overworld · 60fps");
+        // ドックスリムバーのモック (固定オーバーワールド・60fps 例示)。 dim は localize 表示。
+        Component sample = Component.translatable("visualizegate.dock.header",
+                Component.translatable("visualizegate.dim.overworld"), 60);
         int sq = 7;
         int barW = Math.min(bw, 6 + sq + 4 + this.font.width(sample) + 6 + 7 + 6);
         int barX = ix + (iw - barW) / 2;

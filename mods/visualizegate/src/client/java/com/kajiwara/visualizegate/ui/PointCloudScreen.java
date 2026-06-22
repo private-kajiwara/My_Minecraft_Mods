@@ -305,7 +305,7 @@ public class PointCloudScreen extends Screen {
     private int sigVpH;
 
     public PointCloudScreen(Screen parent) {
-        super(Component.literal("VisualizeGate — Point Cloud"));
+        super(Component.translatable("visualizegate.pc.title"));
         this.parent = parent;
     }
 
@@ -349,10 +349,10 @@ public class PointCloudScreen extends Screen {
 
         // フッタ: Re-analyze / Done (width 基準・サイドバー幅に非依存)。
         int fy = this.height - FOOTER_H + 7;
-        addRenderableWidget(Button.builder(Component.literal("Re-analyze"),
+        addRenderableWidget(Button.builder(Component.translatable("visualizegate.pc.reanalyze"),
                 b -> PointCloudAnalysis.get().requestAnalysis())
                 .bounds(MARGIN, fy, 120, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Done"), b -> this.onClose())
+        addRenderableWidget(Button.builder(Component.translatable("visualizegate.pc.done"), b -> this.onClose())
                 .bounds(this.width - MARGIN - 120, fy, 120, 20).build());
 
         recomputeLayout(); // ㉞ 全レイアウトを sidebarW から算出 (init / スプリッタードラッグ / リサイズ 共通)
@@ -456,30 +456,29 @@ public class PointCloudScreen extends Screen {
     }
 
     private static Component owLabel() {
-        return Component.literal("Overworld: " + onOff(PointCloudViewState.isShowOverworld()));
+        return Component.translatable("visualizegate.pc.toggle.overworld", onOff(PointCloudViewState.isShowOverworld()));
     }
 
     private static Component netherLabel() {
-        return Component.literal("Nether: " + onOff(PointCloudViewState.isShowNether()));
+        return Component.translatable("visualizegate.pc.toggle.nether", onOff(PointCloudViewState.isShowNether()));
     }
 
     private static Component linksLabel() {
-        return Component.literal("Gate links: " + onOff(PointCloudViewState.isShowLinks()));
+        return Component.translatable("visualizegate.pc.toggle.links", onOff(PointCloudViewState.isShowLinks()));
     }
 
     private static Component tintLabel() {
-        return Component.literal("Dim tint: " + onOff(PointCloudViewState.isDimTint()));
+        return Component.translatable("visualizegate.pc.toggle.tint", onOff(PointCloudViewState.isDimTint()));
     }
 
-    /** Capture トグルのラベル (新規＝最初から lang 化・ON/OFF は既存 state.on/off を再利用)。 */
+    /** Capture トグルのラベル (ON/OFF は既存 state.on/off を再利用)。 */
     private static Component captureLabel() {
-        return Component.translatable("visualizegate.pc.capture", Component.translatable(
-                PointCloudViewState.isCaptureEnabled()
-                        ? "visualizegate.state.on" : "visualizegate.state.off"));
+        return Component.translatable("visualizegate.pc.capture", onOff(PointCloudViewState.isCaptureEnabled()));
     }
 
-    private static String onOff(boolean b) {
-        return b ? "ON" : "OFF";
+    /** ON/OFF を既存 state.on/off キーで返す (全トグルラベル共有)。 */
+    private static Component onOff(boolean b) {
+        return Component.translatable(b ? "visualizegate.state.on" : "visualizegate.state.off");
     }
 
     /**
@@ -538,20 +537,21 @@ public class PointCloudScreen extends Screen {
         // タイトル + スケール表記。
         g.text(this.font, this.title, MARGIN, 10, GateColors.ACCENT);
         // ㉓ 基準形 (1:1 / 1:8) ＋ 現在の表示スケール倍率を併記。 既定 1/1 では実質「1:1 / 1:8」のまま。
-        String scaleHud = "OW 1:1 ×" + fmtScale(PointCloudViewState.getOwDisplayScale())
-                + "   Nether 1:8 ×" + fmtScale(PointCloudViewState.getNetherDisplayScale());
+        String scaleHud = Component.translatable("visualizegate.pc.scaleHud",
+                fmtScale(PointCloudViewState.getOwDisplayScale()),
+                fmtScale(PointCloudViewState.getNetherDisplayScale())).getString();
         g.text(this.font, Component.literal(fitWidth(scaleHud, sidebarW + MARGIN)),
                 this.width - sidebarW - MARGIN, 10, GateColors.TEXT);
 
         if (st == PointCloudAnalysis.State.ANALYZING) {
-            centerText(g, "Analyzing…", GateColors.TEXT);
+            centerText(g, Component.translatable("visualizegate.pc.analyzing"), GateColors.TEXT);
         } else if (snap.isEmpty()) {
             // capture OFF: 「壊れている」誤認を避け、 ヒント＋直下の [有効化] ボタン (上で可視化済) で導線を出す。
             // capture ON: 既存どおり「探索して Re-analyze」(正しい状態＝まだ歩いていないだけ)。
             if (!PointCloudViewState.isCaptureEnabled()) {
                 centerText(g, Component.translatable("visualizegate.pc.empty.captureOff"), GateColors.LINK_GRAY);
             } else {
-                centerText(g, "No data — explore to observe terrain, then Re-analyze", GateColors.LINK_GRAY);
+                centerText(g, Component.translatable("visualizegate.pc.empty.explore"), GateColors.LINK_GRAY);
             }
         } else {
             frameIfNeeded(snap);
@@ -615,15 +615,16 @@ public class PointCloudScreen extends Screen {
      */
     /** ビューポート上部に描画経路を大きく表示 (ログを掘らず一目で確認・スクショ可)。 */
     private void drawRouteBanner(GuiGraphicsExtractor g) {
-        String txt;
+        String mode; // モード識別子は据置 (GPU3D / TEX — …)。 ラベル "RENDER:" のみ外部化。
         int col;
         if (gpu3dActive) {
-            txt = "RENDER: GPU3D";
+            mode = "GPU3D";
             col = GateColors.PC_OW_HIGH;          // 青緑＝成功
         } else {
-            txt = "RENDER: TEX — " + (texFailed ? "fill (texbatch failed)" : gpu3dReason);
+            mode = "TEX — " + (texFailed ? "fill (texbatch failed)" : gpu3dReason);
             col = GateColors.PC_NETHER_HIGH;      // 橙＝フォールバック
         }
+        String txt = Component.translatable("visualizegate.pc.render", mode).getString();
         int top = vpY + 2;
         g.fill(vpX, top, vpX + vpW, top + 13, 0xC0000000); // 帯背景
         g.fill(vpX, top, vpX + vpW, top + 1, GateColors.MAIN);
@@ -1690,24 +1691,26 @@ public class PointCloudScreen extends Screen {
         // ㉓ 表示スケール群 (2 カラム 1 行): OW / Nether。 基準形 (1:1 / 1:8) に重ねる倍率＝既定 1.0/1.0 で現状一致。
         float ow = PointCloudViewState.getOwDisplayScale();
         float nether = PointCloudViewState.getNetherDisplayScale();
-        drawHalfTrack(g, "OW ×" + fmtScale(ow), slScaleOwX, slScaleHalfW, slScaleY,
+        drawHalfTrack(g, Component.translatable("visualizegate.pc.scale.ow", fmtScale(ow)).getString(),
+                slScaleOwX, slScaleHalfW, slScaleY,
                 scaleToFrac(ow, PointCloudViewState.OW_SCALE_MIN, PointCloudViewState.OW_SCALE_MAX));
-        drawHalfTrack(g, "Nether ×" + fmtScale(nether), slScaleNX, slScaleHalfW, slScaleY,
+        drawHalfTrack(g, Component.translatable("visualizegate.pc.scale.nether", fmtScale(nether)).getString(),
+                slScaleNX, slScaleHalfW, slScaleY,
                 scaleToFrac(nether, PointCloudViewState.NETHER_SCALE_MIN, PointCloudViewState.NETHER_SCALE_MAX));
 
         int spacing = PointCloudViewState.getDimensionSpacing();
-        drawTrack(g, "Dimension spacing: " + spacing, slY,
+        drawTrack(g, Component.translatable("visualizegate.pc.spacing", spacing).getString(), slY,
                 (float) (spacing - PointCloudViewState.SPACING_MIN)
                         / (PointCloudViewState.SPACING_MAX - PointCloudViewState.SPACING_MIN));
         // ⑭/㉒B GPU detail (1 層の最大描画点数)。 スライダ実効上限は現 stock に追従＝全域が密度に効く (死に区間なし)。
         int detail = PointCloudViewState.getGpuDetail();
         int stockMax = gpuStockMax();
-        drawTrack(g, "GPU detail: " + detail + " / stock " + stockMax, sl2Y,
+        drawTrack(g, Component.translatable("visualizegate.pc.gpuDetail", detail, stockMax).getString(), sl2Y,
                 (float) (detail - PointCloudViewState.DETAIL_MIN)
                         / Math.max(1, stockMax - PointCloudViewState.DETAIL_MIN));
         // ⑯ 点サイズ (px)。 小さく＝密で滑らか。
         int ps = PointCloudViewState.getPointSize();
-        drawTrack(g, "Point size: " + ps + " px", sl3Y,
+        drawTrack(g, Component.translatable("visualizegate.pc.pointSize", ps).getString(), sl3Y,
                 (float) (ps - PointCloudViewState.POINT_SIZE_MIN)
                         / (PointCloudViewState.POINT_SIZE_MAX - PointCloudViewState.POINT_SIZE_MIN));
     }
@@ -1772,30 +1775,37 @@ public class PointCloudScreen extends Screen {
             int owInv = snap.owX.length;
             int nInv = snap.nX.length;
             int detail = PointCloudViewState.getGpuDetail();
-            y = statLine(g, "OW pts " + gpuOwPts + " / " + owInv, x, y, maxW, bottom, GateColors.PC_OW_HIGH);
-            y = statLine(g, "Nether pts " + gpuNPts + " / " + nInv, x, y, maxW, bottom,
+            y = statLine(g, tr("visualizegate.pc.stat.owPts", gpuOwPts + " / " + owInv),
+                    x, y, maxW, bottom, GateColors.PC_OW_HIGH);
+            y = statLine(g, tr("visualizegate.pc.stat.netherPts", gpuNPts + " / " + nInv), x, y, maxW, bottom,
                     GateColors.PC_NETHER_HIGH);
-            String cap = (detail >= Math.max(owInv, nInv)) ? " (stock-capped)" : "";
-            y = statLine(g, "Shown " + (gpuOwPts + gpuNPts) + " / stock " + (owInv + nInv)
-                    + " · detail " + detail + cap, x, y, maxW, bottom, GateColors.TEXT);
+            String cap = (detail >= Math.max(owInv, nInv))
+                    ? tr("visualizegate.pc.stat.stockCapped") : "";
+            y = statLine(g, tr("visualizegate.pc.stat.shown",
+                    (gpuOwPts + gpuNPts), (owInv + nInv), detail, cap), x, y, maxW, bottom, GateColors.TEXT);
         } else {
-            y = statLine(g, "OW pts " + snap.owDrawn + "/" + snap.owSampled, x, y, maxW, bottom,
-                    GateColors.PC_OW_HIGH);
-            y = statLine(g, "Nether pts " + snap.netherDrawn + "/" + snap.netherSampled, x, y, maxW, bottom,
-                    GateColors.PC_NETHER_HIGH);
+            y = statLine(g, tr("visualizegate.pc.stat.owPts", snap.owDrawn + "/" + snap.owSampled),
+                    x, y, maxW, bottom, GateColors.PC_OW_HIGH);
+            y = statLine(g, tr("visualizegate.pc.stat.netherPts", snap.netherDrawn + "/" + snap.netherSampled),
+                    x, y, maxW, bottom, GateColors.PC_NETHER_HIGH);
         }
-        y = statLine(g, "Links " + snap.linkCount(), x, y, maxW, bottom, GateColors.PC_LINK);
+        y = statLine(g, tr("visualizegate.pc.stat.links", snap.linkCount()), x, y, maxW, bottom, GateColors.PC_LINK);
         if (snap.hasMarker) {
-            y = statLine(g, "+ = you (at analysis)", x, y, maxW, bottom, GateColors.ACCENT);
+            y = statLine(g, tr("visualizegate.pc.stat.you"), x, y, maxW, bottom, GateColors.ACCENT);
         }
-        // ⑱ snapshot 構築 (解析ワーカー) 所要＝高密度時の構築コスト確認用。
-        y = statLine(g, String.format(java.util.Locale.ROOT, "Snap build %.1f ms",
-                PointCloudAnalysis.get().lastBuildNanos() / 1.0e6), x, y, maxW, bottom, GateColors.LINK_GRAY);
-        y = statLine(g, String.format(java.util.Locale.ROOT, "Rebuild %.2f ms (idle cached)",
-                lastBuildNanos / 1.0e6), x, y, maxW, bottom, GateColors.LINK_GRAY);
-        y = statLine(g, String.format(java.util.Locale.ROOT, "Draw %.2f ms / %d dc (%s)",
-                lastDrawNanos / 1.0e6, lastFillCount, mode), x, y, maxW, bottom, GateColors.LINK_GRAY);
-        statLine(g, "Drag rotate / wheel zoom", x, y, maxW, bottom, GateColors.LINK_GRAY);
+        // ⑱ snapshot 構築 (解析ワーカー) 所要＝高密度時の構築コスト確認用。 数値は言語非依存で format 済を arg 渡し。
+        y = statLine(g, tr("visualizegate.pc.stat.snapBuild", String.format(java.util.Locale.ROOT, "%.1f",
+                PointCloudAnalysis.get().lastBuildNanos() / 1.0e6)), x, y, maxW, bottom, GateColors.LINK_GRAY);
+        y = statLine(g, tr("visualizegate.pc.stat.rebuild", String.format(java.util.Locale.ROOT, "%.2f",
+                lastBuildNanos / 1.0e6)), x, y, maxW, bottom, GateColors.LINK_GRAY);
+        y = statLine(g, tr("visualizegate.pc.stat.draw", String.format(java.util.Locale.ROOT, "%.2f",
+                lastDrawNanos / 1.0e6), lastFillCount, mode), x, y, maxW, bottom, GateColors.LINK_GRAY);
+        statLine(g, tr("visualizegate.pc.stat.help"), x, y, maxW, bottom, GateColors.LINK_GRAY);
+    }
+
+    /** translatable を現在言語で String 解決 (fitWidth/statLine は String を扱うため・既存 idiom)。 */
+    private static String tr(String key, Object... args) {
+        return Component.translatable(key, args).getString();
     }
 
     /** 1 行: フッタ手前なら幅に収めて描き次の y を返す。 入るなら描かず y 据え置き (重なり防止)。 */
@@ -1831,7 +1841,13 @@ public class PointCloudScreen extends Screen {
     // ════════════════════════════════════════════════════════════════════
 
     /** ㉜ GateState ordinal → 色は {@link GateColors} に一本化 (世界 UX と共有)。 ラベルは画面凡例用に保持。 */
-    private static final String[] STATE_LABEL_JA = { "正常", "片側", "ズレ", "未接続", "競合" };
+    // ㉚ タブ名と5状態凡例ラベルの翻訳キー (en/ja 解決)。 凡例は従来 STATE_LABEL_JA で全言語日本語固定だったのを
+    //    既存 state5.* (en=英語・ja=日本語) へ寄せて是正。 順序は GateState ordinal と一致 (ok/orphan/offset/will_create/conflict)。
+    private static final String[] TAB_KEYS = {
+            "visualizegate.pc.tab.view", "visualizegate.pc.tab.gates", "visualizegate.pc.tab.links" };
+    private static final String[] STATE5_KEYS = {
+            "visualizegate.state5.ok", "visualizegate.state5.orphan", "visualizegate.state5.offset",
+            "visualizegate.state5.will_create", "visualizegate.state5.conflict" };
 
     private static int stateColor(int ord) {
         return GateColors.forStateOrdinal(ord);
@@ -1847,7 +1863,7 @@ public class PointCloudScreen extends Screen {
     private static String gateLabel(boolean nether, int number, int wx, int wy, int wz) {
         String name = PortalMemory.get().nameAt(
                 nether ? PortalDimension.NETHER : PortalDimension.OVERWORLD, wx, wy, wz);
-        return (name != null) ? name : ((nether ? "N-" : "OW-") + number);
+        return (name != null) ? name : GateLabels.defaultName(nether, number);
     }
 
     /** ㉝C 指定 anchor のゲートが非表示か (PortalMemory を live 参照＝トグル即反映)。 */
@@ -1895,7 +1911,6 @@ public class PointCloudScreen extends Screen {
     }
 
     private void drawTabBar(GuiGraphicsExtractor g) {
-        String[] names = { "View", "Gates", "Links" };
         int tw = sidebarW / 3;
         for (int i = 0; i < 3; i++) {
             int tx = sbContentX + i * tw;
@@ -1903,19 +1918,19 @@ public class PointCloudScreen extends Screen {
             boolean active = tab.ordinal() == i;
             g.fill(tx, tabBarY, tx2, tabBarY + TABBAR_H, active ? GateColors.MAIN_DIM : GateColors.PANEL);
             g.fill(tx, tabBarY, tx2, tabBarY + 1, active ? GateColors.MAIN : GateColors.MAIN_DIM);
-            Component c = Component.literal(names[i]);
+            Component c = Component.translatable(TAB_KEYS[i]);
             g.text(this.font, c, tx + (tx2 - tx) / 2 - this.font.width(c) / 2, tabBarY + 4,
                     active ? GateColors.ACCENT : GateColors.TEXT);
         }
     }
 
-    /** ㉚ 色キー (素の日本語) をサイドバー最下部に 1 行で。 初見向け。 */
+    /** ㉚ 5 状態の色キー (en/ja 解決) をサイドバー最下部に 1 行で。 初見向け。 */
     private void drawLegend(GuiGraphicsExtractor g) {
         int ly = this.height - FOOTER_H - 10;
         int x = sbContentX + SIDE_PAD;
-        for (int i = 0; i < STATE_LABEL_JA.length; i++) {
+        for (int i = 0; i < STATE5_KEYS.length; i++) {
             g.fill(x, ly + 1, x + 6, ly + 7, GateColors.forStateOrdinal(i));
-            Component c = Component.literal(STATE_LABEL_JA[i]);
+            Component c = Component.translatable(STATE5_KEYS[i]);
             g.text(this.font, c, x + 8, ly, GateColors.TEXT);
             x += 8 + this.font.width(c) + 6;
         }
@@ -1927,7 +1942,8 @@ public class PointCloudScreen extends Screen {
         int n = m.gateNumber().length;
         int x = sbContentX + SIDE_PAD;
         int maxW = sidebarW - 2 * SIDE_PAD;
-        g.text(this.font, Component.literal(fitWidth("Gates: " + n, maxW)), x, listTop, GateColors.TEXT); // ㉞ 幅追従省略
+        g.text(this.font, Component.literal(fitWidth(tr("visualizegate.pc.heading.gates", n), maxW)),
+                x, listTop, GateColors.TEXT); // ㉞ 幅追従省略
         int top = listTop + 12;
         int bottom = listBottom - LEGEND_RESERVE_H; // 凡例分を残す
         // ㉝A スクロール上限クランプ (空スクロール解消): 内容高がビュー高を超えた分だけ可動。
@@ -1997,8 +2013,8 @@ public class PointCloudScreen extends Screen {
         int x = sbContentX + SIDE_PAD;
         int maxW = sidebarW - 2 * SIDE_PAD;
         List<GateConflict> conflicts = m.conflicts();
-        g.text(this.font, Component.literal(fitWidth("Conflicts: " + conflicts.size()
-                + "  Links: " + m.linkOwNumber().length, maxW)), x, listTop, GateColors.TEXT); // ㉞ 幅追従省略
+        g.text(this.font, Component.literal(fitWidth(tr("visualizegate.pc.heading.conflictsLinks",
+                conflicts.size(), m.linkOwNumber().length), maxW)), x, listTop, GateColors.TEXT); // ㉞ 幅追従省略
         int top = listTop + 12;
         int bottom = listBottom - LEGEND_RESERVE_H;
         rowCount = 0; // Links タブの行クリックは未対応 (選択は Gates タブ)。 スクロールのみ。
@@ -2019,7 +2035,8 @@ public class PointCloudScreen extends Screen {
         y += 4;
         for (int i = 0; i < m.linkOwNumber().length; i++) {
             if (y + ROW_H >= top && y <= bottom) {
-                String s = "OW-" + m.linkOwNumber()[i] + " ↔ N-" + m.linkNNumber()[i];
+                String s = GateLabels.OW_PREFIX + m.linkOwNumber()[i]
+                        + " ↔ " + GateLabels.N_PREFIX + m.linkNNumber()[i];
                 g.fill(x, y + 1, x + 6, y + 8, GateColors.STATE_OK);
                 g.text(this.font, Component.literal(fitWidth(s, maxW - 10)), x + 9, y, GateColors.LINK_GRAY);
             }

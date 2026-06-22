@@ -9,6 +9,7 @@ import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.ui.GateColors;
+import com.kajiwara.visualizegate.ui.GateLabels;
 
 //? if <26.2 {
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
@@ -247,6 +248,6 @@ public final class GateNameLabelRenderer {
         if (name != null) {
             return name;
         }
-        return (node.dim() == PortalDimension.NETHER ? "N-" : "OW-") + node.number();
+        return GateLabels.defaultName(node.dim() == PortalDimension.NETHER, node.number());
     }
 }

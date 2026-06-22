@@ -6,6 +6,7 @@ import java.util.Locale;
 import com.kajiwara.visualizegate.domain.GateConflictAnalyzer;
 import com.kajiwara.visualizegate.domain.GateNode;
 import com.kajiwara.visualizegate.domain.GateState;
+import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.state.CpuSampler;
 import com.kajiwara.visualizegate.state.VgOverlayState;
@@ -350,16 +351,32 @@ public final class VgDockRenderer {
         }
     }
 
-    /** ヘッダ/スリムバー本文 {@code VisualizeGate · <dim> · <fps>} (キャッシュ・fps 整数/次元変化時のみ再生成)。 */
+    /** ヘッダ/スリムバー本文 {@code VisualizeGate · <dim> · <fps>fps} (キャッシュ・fps 整数/次元変化時のみ再生成)。
+     *  次元は生パスでなく localize 表示 (dim.*)。 キャッシュは生パス文字列で判定し、 本文は translatable
+     *  (言語切替時も再解決) を保持する。 */
     private Component header(Minecraft mc) {
         int fps = Math.round(fpsNow());
         String dim = currentDimPath(mc);
         if (fps != hdrFps || !dim.equals(hdrDim)) {
             hdrFps = fps;
             hdrDim = dim;
-            hdrText = Component.literal("VisualizeGate · " + dim + " · " + fps + "fps");
+            hdrText = Component.translatable("visualizegate.dock.header", dimName(mc), fps);
         }
         return hdrText;
+    }
+
+    /** 現次元の localize 名 (OW/Nether 以外は「他次元」・GateMenuScreen と同 idiom)。 */
+    private static Component dimName(Minecraft mc) {
+        if (mc.level != null) {
+            PortalDimension d = PortalMemory.dimOf(mc.level.dimension().identifier().toString());
+            if (d == PortalDimension.OVERWORLD) {
+                return Component.translatable("visualizegate.dim.overworld");
+            }
+            if (d == PortalDimension.NETHER) {
+                return Component.translatable("visualizegate.dim.nether");
+            }
+        }
+        return Component.translatable("visualizegate.dim.other");
     }
 
     // ── データ ─────────────────────────────────────────────────────────────

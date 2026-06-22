@@ -62,7 +62,7 @@ public class GateRenameScreen extends Screen {
         String userName = PortalMemory.get().nameAt(dim, x, y, z);
         this.wasDefault = (userName == null);
         this.seed = (userName != null) ? userName
-                : ((dim == PortalDimension.NETHER ? "N-" : "OW-") + number);
+                : GateLabels.defaultName(dim == PortalDimension.NETHER, number);
     }
 
     /** レイアウト確定案を算出 (init・描画で共用)。 パネルは画面中央・内容は contentX 起点・幅 {@value #CONTENT_W} に整列。 */
