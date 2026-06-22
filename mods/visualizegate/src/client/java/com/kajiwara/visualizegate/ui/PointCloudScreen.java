@@ -73,19 +73,22 @@ public class PointCloudScreen extends Screen {
      * よって「px 基準で極小＋距離フェード＋丸近似」でドットグリッド感を最小化する。
      */
     private static final int POINT_SIZE_EXTRA = 1;
-    /** ⑲ GPU3D リンク線 (角柱) の半幅＝雲半径×比。 細く＝点群を邪魔しない (4K でも見える最小限)。 太さ調整はここ。 */
-    private static final float GPU_LINK_W_FRAC = 0.0016f;
+    /** ⑲ GPU3D リンク線 (角柱) の半幅＝雲半径×比。 細い<b>ワイヤー</b>＝重なっても不透明な塊にならず個々を見分けられる
+     *  (旧 0.0016＝太いソリッドバーで重なると判別不能だった)。 太さ調整はここ。 */
+    private static final float GPU_LINK_W_FRAC = 0.0006f;
     // ㉔ ゲートマーカー＝<b>黒曜石ネザーポータルの形</b> (縦長の中空矩形フレーム・X–Y 平面の固定軸既定向き・法線 Z)。
     // 外形 幅:高さ ≈ 4:5 (黒曜石枠 4×5 のシルエット)。 サイズは<b>雲半径相対の固定マーカーサイズ</b>＝ズーム/÷8 でも
     // 消えない (位置のみ ÷8＋per-dim 表示スケールに追従)。 後微調整はこの 3 定数で。
-    /** ㉔/㉙ GPU3D ゲートフレーム外形の<b>半高</b>＝雲半径×比 (縦長・㉙ 存在感↑ 0.016→0.022)。 */
-    private static final float GPU_GATE_FRAME_HALF_H_FRAC = 0.022f;
+    // ㊽ ゲートマーカー縮小＋細線ワイヤー化: クラスタ (多ゲートが重なる) でも各ゲートを見分けられるよう、
+    //    外形を小さく・バー/格子を細く (旧 solid 寄り 0.022/0.0176/0.0026/0.0014 → 約 0.6 倍)。 外形 4:5・色/格子本数は不変。
+    /** ㉔/㉙ GPU3D ゲートフレーム外形の<b>半高</b>＝雲半径×比 (縦長)。 */
+    private static final float GPU_GATE_FRAME_HALF_H_FRAC = 0.013f;
     /** ㉔/㉙ GPU3D ゲートフレーム外形の<b>半幅</b>＝雲半径×比 (= 半高 ×0.8 ＝外形 4:5)。 */
-    private static final float GPU_GATE_FRAME_HALF_W_FRAC = 0.0176f;
-    /** ㉔/㉙ GPU3D ゲートフレームの<b>枠バー半幅</b>＝雲半径×比 (㉙ 太く 0.0018→0.0026)。 */
-    private static final float GPU_GATE_BAR_W_FRAC = 0.0026f;
+    private static final float GPU_GATE_FRAME_HALF_W_FRAC = 0.0104f;
+    /** ㉔/㉙ GPU3D ゲートフレームの<b>枠バー半幅</b>＝雲半径×比 (細線ワイヤー)。 */
+    private static final float GPU_GATE_BAR_W_FRAC = 0.0013f;
     /** ㉙ GPU3D ゲート内側格子バーの半幅＝雲半径×比 (枠より細く・ポータル面の手がかり)。 */
-    private static final float GPU_GATE_GRID_W_FRAC = 0.0014f;
+    private static final float GPU_GATE_GRID_W_FRAC = 0.0009f;
     /** ㉙ ゲートマーカーの色 (PC_LINK より明るい紫＝一目でゲートと分かる・枠+内側格子に使用)。 */
     private static final int GATE_FRAME_COLOR = 0xFFB57BFF;
     /** ⑲ GPU3D 現在地マーカー (金ワイヤー十字) の腕長＝雲半径×比。 */
@@ -98,9 +101,10 @@ public class PointCloudScreen extends Screen {
     private static final int DIM_TINT_OW = GateColors.PC_OW_HIGH;
     private static final int DIM_TINT_NETHER = GateColors.PC_NETHER_HIGH;
     private static final float DIM_TINT_FRAC = 0.15f;
-    /** ㉔/㉙ ゲートマーカー (黒曜石ポータル枠) の<b>半幅/半高</b> (論理px・×SSでネイティブ・㉙ 存在感↑)。 縦長 4:5。 */
-    private static final float GATE_FRAME_HALF_W = 3.5f; // 外形幅 ≈7px
-    private static final float GATE_FRAME_HALF_H = 5.0f; // 外形高 ≈10px (縦長)
+    /** ㉔/㉙/㊽ ゲートマーカー (黒曜石ポータル枠) の<b>半幅/半高</b> (論理px・×SSでネイティブ)。 縦長 4:5。
+     *  ㊽ GPU3D の縮小に合わせ texbatch も小さく (旧 3.5/5.0)＝両経路で同等の小型マーカー。 */
+    private static final float GATE_FRAME_HALF_W = 2.5f; // 外形幅 ≈5px
+    private static final float GATE_FRAME_HALF_H = 3.5f; // 外形高 ≈7px (縦長)
     /** ㉙ texbatch ゲート内側のポータル面フィルのアルファ (低め＝地形/点を透かす控えめα)。 */
     private static final int GATE_FILL_ALPHA = 0x4D; // ~30%
     /** ⑫ リンク線の太さ (固定ネイティブpx・SSに乗算しない)。 最細で鮮明＝1。 */
@@ -780,11 +784,11 @@ public class PointCloudScreen extends Screen {
         // ── マーカー類 (⑲ 中空ワイヤー＋細線・QUADS): リンク=細角柱 / ㉔ゲート=黒曜石ポータル枠 / 現在地=細ワイヤー十字 ──
         // 中空ワイヤーで点群を透かし、 点群を隠さずマーカーは明確に。 太さは FRAC 定数 (雲半径×比) で微調整可
         // (ワールド寸＝透視で解像度比例に見える＝4K でも視認・カメラ非依存)。
-        float linkW = Math.max(0.08f, snap.radius * GPU_LINK_W_FRAC);        // リンク角柱の半幅 (細く)
-        float gateHalfH = Math.max(1.2f, snap.radius * GPU_GATE_FRAME_HALF_H_FRAC); // ㉔ ゲート枠の半高 (縦長)
-        float gateHalfW = Math.max(0.9f, snap.radius * GPU_GATE_FRAME_HALF_W_FRAC); // ㉔ ゲート枠の半幅 (4:5)
-        float gateBarW = Math.max(0.08f, snap.radius * GPU_GATE_BAR_W_FRAC);  // ㉔ ゲート枠バーの半幅
-        float gateGridW = Math.max(0.06f, snap.radius * GPU_GATE_GRID_W_FRAC); // ㉙ ゲート内側格子バーの半幅
+        float linkW = Math.max(0.035f, snap.radius * GPU_LINK_W_FRAC);       // リンク角柱の半幅 (細線ワイヤー)
+        float gateHalfH = Math.max(0.8f, snap.radius * GPU_GATE_FRAME_HALF_H_FRAC); // ㉔ ゲート枠の半高 (縦長)
+        float gateHalfW = Math.max(0.6f, snap.radius * GPU_GATE_FRAME_HALF_W_FRAC); // ㉔ ゲート枠の半幅 (4:5)
+        float gateBarW = Math.max(0.05f, snap.radius * GPU_GATE_BAR_W_FRAC);  // ㉔ ゲート枠バーの半幅
+        float gateGridW = Math.max(0.04f, snap.radius * GPU_GATE_GRID_W_FRAC); // ㉙ ゲート内側格子バーの半幅
         float markArm = Math.max(2f, snap.radius * GPU_MARKER_ARM_FRAC);     // 現在地十字の腕長
         float markW = Math.max(0.1f, snap.radius * GPU_MARKER_W_FRAC);       // 現在地十字の半幅 (細く)
 
