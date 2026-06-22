@@ -1829,23 +1829,9 @@ public class PointCloudScreen extends Screen {
         return y + 11;
     }
 
-    /** 文字列を maxW(px) 以内へ。 超過は末尾を切って「…」を付す (フォント幅実測)。 */
+    /** 文字列を maxW(px) 以内へ。 超過は末尾を切って「…」を付す (フォント幅実測・共有 {@link TextFit})。 */
     private String fitWidth(String s, int maxW) {
-        if (this.font.width(Component.literal(s)) <= maxW) {
-            return s;
-        }
-        int ew = this.font.width(Component.literal("…"));
-        StringBuilder sb = new StringBuilder();
-        int w = 0;
-        for (int i = 0; i < s.length(); i++) {
-            int cw = this.font.width(Component.literal(String.valueOf(s.charAt(i))));
-            if (w + cw + ew > maxW) {
-                break;
-            }
-            sb.append(s.charAt(i));
-            w += cw;
-        }
-        return sb.append("…").toString();
+        return TextFit.clip(this.font, s, maxW);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -1930,7 +1916,8 @@ public class PointCloudScreen extends Screen {
             boolean active = tab.ordinal() == i;
             g.fill(tx, tabBarY, tx2, tabBarY + TABBAR_H, active ? GateColors.MAIN_DIM : GateColors.PANEL);
             g.fill(tx, tabBarY, tx2, tabBarY + 1, active ? GateColors.MAIN : GateColors.MAIN_DIM);
-            Component c = Component.translatable(TAB_KEYS[i]);
+            // ㊽ B-P2: タブ幅 (内側 -4px) に実測クリップ＝長訳が隣タブへはみ出さない。
+            Component c = Component.literal(fitWidth(Component.translatable(TAB_KEYS[i]).getString(), tx2 - tx - 4));
             g.text(this.font, c, tx + (tx2 - tx) / 2 - this.font.width(c) / 2, tabBarY + 4,
                     active ? GateColors.ACCENT : GateColors.TEXT);
         }

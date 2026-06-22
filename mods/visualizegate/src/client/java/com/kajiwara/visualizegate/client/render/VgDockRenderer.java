@@ -11,6 +11,7 @@ import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.state.CpuSampler;
 import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
+import com.kajiwara.visualizegate.ui.TextFit;
 
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -184,7 +185,7 @@ public final class VgDockRenderer {
         int innerX = x + PAD;
         int innerW = dockW - PAD * 2;
 
-        int h = hSections() + PAD;
+        int h = hSections(innerW) + PAD;
 
         g.fill(x, y, x + dockW, y + h, BG_EXPANDED);
         drawHeaderRow(g, mc, x, y, dockW, header(mc), true);
@@ -199,10 +200,10 @@ public final class VgDockRenderer {
     }
 
     /** 固定セクション高 (ヘッダ + perf + 状態 + 注記・最終 PAD 前まで)。 レイアウト値 (lRow/lSpark/lDiv) で算出。 */
-    private int hSections() {
+    private int hSections(int innerW) {
         int h = PAD + LINE; // top pad + header row
         h += lDiv + perfHeight();
-        h += lDiv + statusHeight() + GAP + notesHeight();
+        h += lDiv + statusHeight(innerW) + GAP + notesHeight(innerW);
         return h;
     }
 
@@ -216,12 +217,12 @@ public final class VgDockRenderer {
         return h;
     }
 
-    private int statusHeight() {
-        return LINE + 3 * lRow; // title + 5 entries in 2 cols (3 rows)
+    private int statusHeight(int innerW) {
+        return LINE + rows(STATE_KEYS.length, cols(innerW)) * lRow; // title + 状態行 (動的列)
     }
 
-    private int notesHeight() {
-        return LINE + 2 * lRow; // title + 4 entries in 2 cols (2 rows)
+    private int notesHeight(int innerW) {
+        return LINE + rows(NOTE_KEYS.length, cols(innerW)) * lRow; // title + 注記行 (動的列)
     }
 
     /** ヘアライン区切りを描き、 次の Y を返す。 ドック実幅 {@code dockW} 内に収める。 */
@@ -255,34 +256,60 @@ public final class VgDockRenderer {
             "visualizegate.state5.ok", "visualizegate.state5.orphan", "visualizegate.state5.offset",
             "visualizegate.state5.will_create", "visualizegate.state5.conflict" };
 
+    // ㊽ B-P2: 2 列前提の固定オフセットを是正。 セル内テキストは実測で fitWidth＝長語/幅広CJKが隣列へ重ならない。
+    //    列数も幅から動的化 (極小窓でセルが MIN_CELL_TEXT 未満なら 1 列へ)。 高さ helper と列数を共有 (statusRows/notesRows)。
+    private static final int MIN_CELL_TEXT = 24; // セル内テキストの最小確保幅 (これ未満なら 1 列フォールバック)
+    private static final boolean[] NOTE_FRAME = { false, true, false, true };
+    private static final int[] NOTE_COLORS = {
+            GateColors.MAIN, GateColors.ACCENT, GateColors.DOME, GateColors.CROSSTALK };
+    private static final String[] NOTE_KEYS = {
+            "visualizegate.legend.link_line", "visualizegate.legend.ghost",
+            "visualizegate.legend.dome", "visualizegate.legend.crosstalk" };
+
+    /** セクションの列数を内容幅から決定 (セル内テキストが確保できなければ 1 列)。 高さ計算と描画で共有。 */
+    private int cols(int w) {
+        int cellText = w / 2 - (SW + 4) - GAP;
+        return cellText >= MIN_CELL_TEXT ? 2 : 1;
+    }
+
     private int drawStatus(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int w) {
         g.text(mc.font, T_STATUS, x, y, GateColors.TEXT);
         y += LINE;
-        int colW = w / 2;
+        int cols = cols(w);
+        int colW = w / cols;
+        int cellText = colW - (SW + 4) - GAP; // ラベルに使える実幅 (スウォッチ+隙間+右余白を除く)
         for (int i = 0; i < STATE_KEYS.length; i++) {
-            int sx = x + (i % 2) * colW;
-            int sy = y + (i / 2) * lRow;
+            int sx = x + (i % cols) * colW;
+            int sy = y + (i / cols) * lRow;
             g.fill(sx, sy + 1, sx + SW, sy + 1 + SW, STATE_COLORS[i]); // FILL スウォッチ
-            g.text(mc.font, Component.translatable(STATE_KEYS[i]), sx + SW + 4, sy, GateColors.TEXT);
+            String label = TextFit.clip(mc.font, Component.translatable(STATE_KEYS[i]).getString(), cellText);
+            g.text(mc.font, Component.literal(label), sx + SW + 4, sy, GateColors.TEXT);
         }
-        return y + 3 * lRow;
+        return y + rows(STATE_KEYS.length, cols) * lRow;
     }
 
-    // ── 注記 (4 種・線/枠スウォッチ・2 列) ──
+    // ── 注記 (4 種・線/枠スウォッチ・動的列) ──
     private int drawNotes(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int w) {
         g.text(mc.font, T_NOTES, x, y, GateColors.TEXT);
         y += LINE;
-        int colW = w / 2;
-        // row1: リンク(線/MAIN) | ズレ無し設置位置(枠/ACCENT) ; row2: 検索範囲(線/DOME) | 混線ゲート(枠/CROSSTALK)
-        drawNote(g, mc, x, y, false, GateColors.MAIN, "visualizegate.legend.link_line");
-        drawNote(g, mc, x + colW, y, true, GateColors.ACCENT, "visualizegate.legend.ghost");
-        drawNote(g, mc, x, y + lRow, false, GateColors.DOME, "visualizegate.legend.dome");
-        drawNote(g, mc, x + colW, y + lRow, true, GateColors.CROSSTALK, "visualizegate.legend.crosstalk");
-        return y + 2 * lRow;
+        int cols = cols(w);
+        int colW = w / cols;
+        int cellText = colW - (SW + 4) - GAP;
+        for (int i = 0; i < NOTE_KEYS.length; i++) {
+            int nx = x + (i % cols) * colW;
+            int ny = y + (i / cols) * lRow;
+            drawNote(g, mc, nx, ny, NOTE_FRAME[i], NOTE_COLORS[i], NOTE_KEYS[i], cellText);
+        }
+        return y + rows(NOTE_KEYS.length, cols) * lRow;
     }
 
-    /** 注記 1 行 (frame=true→枠スウォッチ / false→線スウォッチ ＋ ラベル)。 */
-    private void drawNote(GuiGraphicsExtractor g, Minecraft mc, int x, int y, boolean frame, int color, String key) {
+    private static int rows(int n, int cols) {
+        return (n + cols - 1) / cols;
+    }
+
+    /** 注記 1 行 (frame=true→枠スウォッチ / false→線スウォッチ ＋ ラベル・cellText で実測クリップ)。 */
+    private void drawNote(GuiGraphicsExtractor g, Minecraft mc, int x, int y, boolean frame, int color,
+            String key, int cellText) {
         if (frame) {
             g.fill(x, y + 1, x + SW, y + 2, color);
             g.fill(x, y + SW, x + SW, y + SW + 1, color);
@@ -292,7 +319,8 @@ public final class VgDockRenderer {
             int cy = y + 1 + SW / 2;
             g.fill(x, cy, x + SW, cy + 1, color);
         }
-        g.text(mc.font, Component.translatable(key), x + SW + 4, y, GateColors.TEXT);
+        String label = TextFit.clip(mc.font, Component.translatable(key).getString(), cellText);
+        g.text(mc.font, Component.literal(label), x + SW + 4, y, GateColors.TEXT);
     }
 
     /** ローリングバッファをスパークライン (縦バー) で描く。 head は次に書く位置 (= 最古)。 */
