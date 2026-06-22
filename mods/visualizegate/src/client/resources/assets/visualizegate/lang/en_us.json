@@ -202,8 +202,6 @@
 	"visualizegate.pc.hud.scale": "OW%s Ne%s",
 	"visualizegate.unit.meters": "%s m",
 	"visualizegate.unit.pixels": "%s px",
-	"visualizegate.perf.cpu.title": "CPU %s%% · sys %s%%",
-	"visualizegate.perf.cpu.off": "CPU: off",
 
 	"visualizegate.card.linked.title": "Links to an existing gate",
 	"visualizegate.card.linked.aligned": "Almost perfectly aligned",

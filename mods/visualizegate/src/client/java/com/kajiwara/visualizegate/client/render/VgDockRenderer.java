@@ -1,14 +1,12 @@
 package com.kajiwara.visualizegate.client.render;
 
 import java.util.List;
-import java.util.Locale;
 
 import com.kajiwara.visualizegate.domain.GateConflictAnalyzer;
 import com.kajiwara.visualizegate.domain.GateNode;
 import com.kajiwara.visualizegate.domain.GateState;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
-import com.kajiwara.visualizegate.state.CpuSampler;
 import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.ui.GateColors;
 import com.kajiwara.visualizegate.ui.TextFit;
@@ -66,7 +64,7 @@ public final class VgDockRenderer {
     private static final int BG_COLLAPSED = 0x7A0F0A17; // alpha 0x7A≒0.48
     private static final int BG_EXPANDED = 0x800F0A17;  // alpha 0x80≒0.50
 
-    // フレーム時間 (ms) ローリング (描画スレッド由来・軽い nanoTime 差分)。 CPU は別スレッド (CpuSampler)。
+    // フレーム時間 (ms) ローリング (描画スレッド由来・軽い nanoTime 差分)＝スリムバーの fps 表示用。
     private final float[] frameMs = new float[FRAME_CAP];
     private int frameHead = 0;
     private int frameCount = 0;
@@ -160,18 +158,14 @@ public final class VgDockRenderer {
     private static final int MIN_DOCK_W = 180; // 極小画面でも本文が収まる下限
     private static final int DIV = 6;        // セクション区切り (ヘアライン＋余白)
     private static final int GAP = 3;
-    private static final int SPARK_H = 18;   // スパークライン高 (通常)
     private static final int SW = 7;         // スウォッチ一辺
 
     // セクション見出し (定数・グリフ非依存テキスト)。
-    private static final Component T_PERF = Component.translatable("visualizegate.dock.perf");
-    private static final Component T_CPU_OFF = Component.translatable("visualizegate.perf.cpu.off");
     private static final Component T_STATUS = Component.translatable("visualizegate.dock.status");
     private static final Component T_NOTES = Component.translatable("visualizegate.dock.notes");
 
     // ⑤④ レイアウト値 (点群移設後は常に通常・tight は撤去)。 高さ helper と draw が共有。
     private final int lRow = LINE;
-    private final int lSpark = SPARK_H;
     private final int lDiv = DIV;
 
     private void drawExpanded(GuiGraphicsExtractor g, Minecraft mc, int x, int y) {
@@ -206,30 +200,19 @@ public final class VgDockRenderer {
         g.fill(x, y, x + dockW, y + h, BG_EXPANDED);
         drawHeaderRow(g, mc, x, y, dockW, hdr, true);
 
+        // ㊾ パフォーマンス (CPU/sys) セクションは撤去＝header → 区切り(1本) → ゲート状態 → 注記 に純化。
+        //    CPU サンプリング機能 (フラグ/サンプラ/設定トグル) は存置 (ドックの数値表示のみ撤去)。
         int cy = y + PAD + LINE;
-        cy = divider(g, x, cy, dockW);
-        cy = drawPerf(g, mc, innerX, cy, innerW);
         cy = divider(g, x, cy, dockW);
         cy = drawStatus(g, mc, innerX, cy, innerW);
         cy += GAP;
         cy = drawNotes(g, mc, innerX, cy, innerW);
     }
 
-    /** 固定セクション高 (ヘッダ + perf + 状態 + 注記・最終 PAD 前まで)。 レイアウト値 (lRow/lSpark/lDiv) で算出。 */
+    /** 固定セクション高 (ヘッダ + 状態 + 注記・最終 PAD 前まで)。 レイアウト値 (lRow/lDiv) で算出。 */
     private int hSections(int innerW) {
         int h = PAD + LINE; // top pad + header row
-        h += lDiv + perfHeight();
         h += lDiv + statusHeight(innerW) + GAP + notesHeight(innerW);
-        return h;
-    }
-
-    private int perfHeight() {
-        // ㊹B タイトル + CPU(text+spark) のみ。 フレーム時間スパークライン/GPU% 注記は撤去 (fps はスリムバーに表示)。
-        // CPU サンプリング無効時は text のみ (spark 行を畳む)。 グラフ表示 OFF でも spark を畳む。
-        int h = LINE + LINE; // title + cpu text
-        if (VgOverlayState.isCpuSamplingEnabled() && VgOverlayState.isCpuGraphEnabled()) {
-            h += lSpark + 2;
-        }
         return h;
     }
 
@@ -245,23 +228,6 @@ public final class VgDockRenderer {
     private int divider(GuiGraphicsExtractor g, int x, int y, int dockW) {
         g.fill(x + PAD, y + 2, x + dockW - PAD, y + 3, GateColors.MAIN_DIM);
         return y + lDiv;
-    }
-
-    // ── パフォーマンス (㊹B CPU 使用率のみ: text＋スパークライン。 フレーム時間/GPU% 代理表示は撤去) ──
-    private int drawPerf(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int w) {
-        g.text(mc.font, T_PERF, x, y, GateColors.TEXT);
-        y += LINE;
-        // CPU 行。 サンプリング無効なら計測値の代わりに "off" を出す (誤誘導しない)。 fps はスリムバーのヘッダに常時。
-        boolean sampling = VgOverlayState.isCpuSamplingEnabled();
-        g.text(mc.font, sampling ? cpuLine() : T_CPU_OFF, x, y, GateColors.TEXT);
-        y += LINE;
-        // CPU スパークライン: サンプリング有効 かつ グラフ表示 ON のときだけ (perfHeight と一致)。
-        if (sampling && VgOverlayState.isCpuGraphEnabled()) {
-            CpuSampler s = CpuSampler.get();
-            drawSpark(g, x, y, w, lSpark, s.historyRef(), s.head(), s.count(), 100f, GateColors.PC_NETHER_HIGH);
-            y += lSpark + 2;
-        }
-        return y;
     }
 
     // ── ゲート状態 (5 色・2 列) ──
@@ -337,24 +303,6 @@ public final class VgDockRenderer {
         }
         String label = TextFit.clip(mc.font, Component.translatable(key).getString(), cellText);
         g.text(mc.font, Component.literal(label), x + SW + 4, y, GateColors.TEXT);
-    }
-
-    /** ローリングバッファをスパークライン (縦バー) で描く。 head は次に書く位置 (= 最古)。 */
-    private void drawSpark(GuiGraphicsExtractor g, int x, int y, int w, int h,
-            float[] buf, int head, int count, float maxVal, int color) {
-        if (count <= 0 || w <= 0 || h <= 0) {
-            return;
-        }
-        // ㊺D ベースライン横線は撤去: 直下のセクション区切り (divider) と並んで二重線に見えていた (㊹B で perf が
-        //     spark で終わるようになった残骸)。 セクション境界は divider 一本に。 バーは y+h を底に描く (不変)。
-        int n = Math.min(count, w);
-        for (int i = 0; i < n; i++) {
-            int idx = ((head - 1 - i) % count + count) % count;
-            float v = buf[idx];
-            int bh = (int) Math.max(0, Math.min(h, (v / maxVal) * h));
-            int bx = x + w - 1 - i;
-            g.fill(bx, y + h - bh, bx + 1, y + h, color);
-        }
     }
 
     /** ヘッダ行 (角四角＋本文＋色付き件数＋展開インジケータ)。 */
@@ -491,25 +439,6 @@ public final class VgDockRenderer {
         return (ms > 0.01f) ? (1000f / ms) : 0f;
     }
 
-    // ㊲C CPU 行キャッシュ (表示値 0.1 刻み変化時のみ再生成＝毎フレームの translatable/format 排除)。
-    private int clP10 = Integer.MIN_VALUE;
-    private int clS10 = Integer.MIN_VALUE;
-    private Component cpuLineC = Component.empty();
-
-    private Component cpuLine() {
-        CpuSampler s = CpuSampler.get();
-        float p = s.processPct();
-        float sys = s.systemPct();
-        int p10 = Math.round(p * 10f);
-        int s10 = Math.round(sys * 10f);
-        if (p10 != clP10 || s10 != clS10) {
-            clP10 = p10;
-            clS10 = s10;
-            cpuLineC = Component.translatable("visualizegate.perf.cpu.title", fmt(p), fmt(sys));
-        }
-        return cpuLineC;
-    }
-
     /** 現在次元の path (例 {@code the_nether} / {@code overworld})。 取得不可なら空。 */
     private String currentDimPath(Minecraft mc) {
         ClientLevel level = mc.level;
@@ -519,9 +448,5 @@ public final class VgDockRenderer {
         String id = level.dimension().identifier().toString();
         int c = id.indexOf(':');
         return (c >= 0) ? id.substring(c + 1) : id;
-    }
-
-    static String fmt(float v) {
-        return String.format(Locale.ROOT, "%.1f", v);
     }
 }
