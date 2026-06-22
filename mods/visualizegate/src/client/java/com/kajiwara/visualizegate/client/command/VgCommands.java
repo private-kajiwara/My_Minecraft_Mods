@@ -142,6 +142,12 @@ public final class VgCommands {
             GateConfigManager.save();
             return feedbackToggle(c, "visualizegate.cmd.names", on);
         }));
+        // gate-label <on|off> (引数なし=toggle): 在世界ゲート名ラベルの明示 ON/OFF。 /vg names と同一フラグ・同 setter
+        //   (gateNamesEnabled・live-state mirror)＝設定/他経路と双方向同期。 GateConfig 永続。 応答は cmd.names を共有。
+        root.then(literal("gate-label")
+                .executes(c -> setGateLabel(c, !GateMenuState.isGateNamesEnabled()))
+                .then(literal("on").executes(c -> setGateLabel(c, true)))
+                .then(literal("off").executes(c -> setGateLabel(c, false))));
         // 競合解決: 赤(競合)ゲートに対し、 相手を専有できる<b>安全建設位置</b>を探して在世界表示する。
         //          name サジェストは「いま競合中のゲートだけ」をライブ提案 (解消で自動的に候補から消える)。
         root.then(literal("resolving-conflict")
@@ -714,6 +720,13 @@ public final class VgCommands {
         PointCloudViewState.setCaptureEnabled(on);
         GateConfigManager.save();
         return feedbackToggle(c, "visualizegate.cmd.pointcloud.capture", on);
+    }
+
+    /** 在世界ゲート名ラベルの ON/OFF を設定し永続 (/vg names と同一フラグ・setter＝双方向同期)。 */
+    private static int setGateLabel(CommandContext<FabricClientCommandSource> c, boolean on) {
+        GateMenuState.setGateNamesEnabled(on);
+        GateConfigManager.save();
+        return feedbackToggle(c, "visualizegate.cmd.names", on);
     }
 
     /** ⑤⑥ 現在の点群パネル・モードをチャット表示 (off / show / only:detail / only:compact)。 */
