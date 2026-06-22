@@ -421,9 +421,17 @@ public class PointCloudScreen extends Screen {
         slScaleOwX = slX;
         slScaleNX = slX + slScaleHalfW + trackGap;
         slScaleY = y + 11;          // ラベル(上)分を空ける
-        slY = slScaleY + slH + 22;  // Dimension spacing
-        sl2Y = slY + slH + 22;      // ⑭ GPU detail
-        sl3Y = sl2Y + slH + 22;     // ⑯ 点サイズ
+        // ㉞B スライダ 4 行 (scale/spacing/GPU/point) の行ピッチを利用可能高へ適応させる。 従来は固定 32px で、
+        //      Capture トグル行 (5 個目) を足してトグル群が 24px 伸びた分、 低いパネル (大 GUI スケール/小窓) で
+        //      最下段 Point size がフッタ (Re-analyze/Done) に重なって崩れていた。 上限=従来見た目 (32px)・下限 24px
+        //      (ラベル11+トラック10 は重ならない) で、 最終トラック下端が listBottom に収まる最大ピッチへクランプ。
+        int rowPitchMax = slH + 22;                       // 従来見た目 (=32)
+        int rowPitchMin = slH + 14;                       // 圧縮下限 (=24)
+        int fitPitch = (listBottom - slScaleY - slH) / 3; // 最終トラック下端を listBottom に載せる最大ピッチ
+        int rowPitch = Math.max(rowPitchMin, Math.min(rowPitchMax, fitPitch));
+        slY = slScaleY + rowPitch;  // Dimension spacing
+        sl2Y = slY + rowPitch;      // ⑭ GPU detail
+        sl3Y = sl2Y + rowPitch;     // ⑯ 点サイズ
     }
 
     /**
