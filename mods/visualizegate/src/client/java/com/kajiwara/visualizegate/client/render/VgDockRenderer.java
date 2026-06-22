@@ -179,16 +179,32 @@ public final class VgDockRenderer {
         //     ⑤④ 点群は右下の独立 HUD パネル (PointCloudHudRenderer) へ移設＝ドックは点群を持たない (短くなるだけ)。
         // ㊳A 実幅は GUI スケール画面に収まるよう制約: 中央 (クロスヘア) を越えない (≤ 画面半分)、 上限 spec 452。
         int sw = mc.getWindow().getGuiScaledWidth();
-        int dockW = Math.min(DOCK_W, sw / 2 - MARGIN * 2);
-        dockW = Math.max(MIN_DOCK_W, dockW);
-        dockW = Math.min(dockW, sw - MARGIN * 2); // 極小画面の安全側クランプ
+        int maxW = sw - MARGIN * 2;                       // 画面内に収まる絶対上限 (x=MARGIN ゆえ右端 = sw-MARGIN)
+        // セクション基準幅 (spec 452・画面半分まで)。 これが従来の dockW。
+        int sectionW = Math.min(DOCK_W, sw / 2 - MARGIN * 2);
+        sectionW = Math.max(MIN_DOCK_W, sectionW);
+        sectionW = Math.min(sectionW, maxW);
+        // ㊽ ヘッダ要約 (■+title+dim+fps+件数+余白+▼) の実測全幅 (collapsed と同式)。 背景がこれを覆うようにする
+        //    ＝件数 (競合/ズレ) が背景外へはみ出し ▼ と重なる回帰の是正。
+        Component hdr = header(mc);
+        int countsW = countsWidth(mc);
+        int chromeW = PAD + SQ + SQ_GAP + IND_GAP + IND_W + PAD; // テキスト以外の固定幅
+        int headerW = chromeW + mc.font.width(hdr) + countsW;
+        int dockW = Math.max(sectionW, headerW);          // 背景がヘッダ要約を完全に覆う
+        dockW = Math.min(dockW, maxW);                    // 画面外には出さない
+        dockW = Math.max(dockW, MIN_DOCK_W);
+        // 画面幅上限で要約が収まり切らない時のみ title を実測クリップ (はみ出すより「…」省略・通常 ja は全文)。
+        int availText = dockW - chromeW - countsW;
+        if (mc.font.width(hdr) > availText) {
+            hdr = Component.literal(TextFit.clip(mc.font, hdr.getString(), Math.max(0, availText)));
+        }
         int innerX = x + PAD;
         int innerW = dockW - PAD * 2;
 
         int h = hSections(innerW) + PAD;
 
         g.fill(x, y, x + dockW, y + h, BG_EXPANDED);
-        drawHeaderRow(g, mc, x, y, dockW, header(mc), true);
+        drawHeaderRow(g, mc, x, y, dockW, hdr, true);
 
         int cy = y + PAD + LINE;
         cy = divider(g, x, cy, dockW);
