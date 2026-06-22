@@ -13,6 +13,7 @@ import com.kajiwara.visualizegate.client.keybind.GateKeyBindings;
 import com.kajiwara.visualizegate.state.GateMenuState;
 import com.kajiwara.visualizegate.state.PointCloudViewState;
 import com.kajiwara.visualizegate.ui.GateColors;
+import com.kajiwara.visualizegate.ui.TextFit;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -363,6 +364,7 @@ public class GateConfigScreen extends Screen {
         g.fill(0, 0, this.width, this.height, GateColors.SCRIM);
         super.extractRenderState(g, mouseX, mouseY, partialTick); // 基底 (子 widget 無し・PointCloudScreen と同流儀)
 
+        pendingTip = null; // ㊽ 毎フレーム先頭で集約リセット (sidebar/detail 両方が条件付きで設定)。
         drawTitleBar(g);
         drawSidebar(g, mouseX, mouseY);
         drawDetail(g, mouseX, mouseY);
@@ -414,9 +416,13 @@ public class GateConfigScreen extends Screen {
     }
 
     private void drawSidebar(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        boolean overSidebar = mouseX >= 0 && mouseX <= SIDEBAR_W;
         for (SideEntry e : sidebar) {
             if (e.section != null) {
-                g.text(this.font, Component.translatable(e.section), 10, e.y + 3, GateColors.SECTION);
+                // ㊽ B-P2: SIDEBAR_W 右端 (-10 余白) へ実測クリップ＝長訳が詳細ペインへはみ出さない。
+                String full = Component.translatable(e.section).getString();
+                g.text(this.font, Component.literal(TextFit.clip(this.font, full, SIDEBAR_W - 10 - 6)),
+                        10, e.y + 3, GateColors.SECTION);
                 g.fill(10, e.y + 14, SIDEBAR_W - 10, e.y + 15, GateColors.MAIN_DIM);
             } else {
                 boolean sel = e.tab == activeTab;
@@ -424,8 +430,17 @@ public class GateConfigScreen extends Screen {
                     g.fill(0, e.y, SIDEBAR_W, e.y + e.h, GateColors.SELECT_BAND);
                     g.fill(0, e.y, 2, e.y + e.h, GateColors.MAIN);
                 }
-                g.text(this.font, Component.translatable(e.labelKey), 12, e.y + 5,
+                String full = Component.translatable(e.labelKey).getString();
+                int avail = SIDEBAR_W - 12 - 6;
+                String shown = TextFit.clip(this.font, full, avail);
+                g.text(this.font, Component.literal(shown), 12, e.y + 5,
                         sel ? GateColors.ACCENT : GateColors.TEXT);
+                // 切り詰めた行はホバーでフル表示 (既存ツールチップ機構を再利用・新規 lang キー無し)。
+                if (overSidebar && !shown.equals(full) && mouseY >= e.y && mouseY < e.y + e.h) {
+                    pendingTip = Component.literal(full);
+                    tipMx = mouseX;
+                    tipMy = mouseY;
+                }
             }
         }
     }
@@ -439,7 +454,6 @@ public class GateConfigScreen extends Screen {
         int total = 0;
         DropdownRow toOverlay = null;
         int overlayY = 0;
-        pendingTip = null;
         for (Row r : rows) {
             if (r.tab != activeTab) {
                 continue;
@@ -893,7 +907,10 @@ public class GateConfigScreen extends Screen {
 
         @Override
         void draw(GuiGraphicsExtractor g, int sx, int sy, int mouseX, int mouseY) {
-            g.text(font, Component.translatable(labelKey), sx, sy + 4, GateColors.TEXT);
+            // ㊽ B-P2: ラベルを右寄せコントロールの左端まで実測クリップ＝長訳がコントロールへ衝突しない。
+            int labelMax = controlLeftX() - sx - 6;
+            String full = Component.translatable(labelKey).getString();
+            g.text(font, Component.literal(TextFit.clip(font, full, labelMax)), sx, sy + 4, GateColors.TEXT);
             drawControl(g, sy, mouseX, mouseY);
             if (inlineKey != null) {
                 g.text(font, Component.translatable(inlineKey), sx, sy + LABEL_LINE, GateColors.SUBTEXT);
@@ -902,6 +919,11 @@ public class GateConfigScreen extends Screen {
 
         /** コントロールを行 {@code lineY} に右寄せで描く。 */
         abstract void drawControl(GuiGraphicsExtractor g, int lineY, int mouseX, int mouseY);
+
+        /** 右寄せコントロールの左端 screen X (ラベルクリップ上限)。 既定は detailRight (コントロール無し)。 */
+        int controlLeftX() {
+            return detailRight();
+        }
 
         /** ラベル行に当たっているか (右側のコントロール帯)。 */
         boolean onLine(double my, int sy) {
@@ -962,6 +984,11 @@ public class GateConfigScreen extends Screen {
         }
 
         @Override
+        int controlLeftX() {
+            return detailRight() - TRACK_W - 6 - font.width(onOff(get.apply(draft)));
+        }
+
+        @Override
         boolean click(double mx, double my, int sy) {
             if (onLine(my, sy) && mx >= detailRight() - HIT_W && mx <= detailRight()) {
                 set.accept(!get.apply(draft));
@@ -1017,6 +1044,12 @@ public class GateConfigScreen extends Screen {
             int hx = tx + (int) (TRACK_W * frac);
             g.fill(hx - 1, ty - 3, hx + 2, ty + 7, GateColors.MAIN);
             g.text(font, Component.literal(valStr), detailRight() - valW, lineY + 4, GateColors.ACCENT);
+        }
+
+        @Override
+        int controlLeftX() {
+            int valW = font.width(Component.literal(fmt.apply(get.applyAsDouble(draft))));
+            return detailRight() - valW - 10 - TRACK_W;
         }
 
         private void setFromMouse(double mx) {
@@ -1098,13 +1131,20 @@ public class GateConfigScreen extends Screen {
             boxY = ty;
             g.fill(x, ty, x + BOX_W, ty + CTRL_H, GateColors.DROPDOWN_BG);
             thinBorder(g, x, ty, BOX_W, CTRL_H, GateColors.MAIN_DIM);
-            g.text(font, current(draft), x + 5, ty + 3, GateColors.TEXT);
+            // ㊽ B-P2: 選択中テキストを枠内 (右の ▾ 三角分を除く) へ実測クリップ＝枠右へはみ出さない。
+            g.text(font, Component.literal(TextFit.clip(font, current(draft).getString(), BOX_W - 18)),
+                    x + 5, ty + 3, GateColors.TEXT);
             // ▾ 三角 (グリフ非依存)。
             int ax = x + BOX_W - 10;
             int ay = ty + 5;
             g.fill(ax, ay, ax + 5, ay + 1, GateColors.TEXT);
             g.fill(ax + 1, ay + 1, ax + 4, ay + 2, GateColors.TEXT);
             g.fill(ax + 2, ay + 2, ax + 3, ay + 3, GateColors.TEXT);
+        }
+
+        @Override
+        int controlLeftX() {
+            return detailRight() - BOX_W;
         }
 
         /** 展開リスト (draw の最後に screen が呼ぶ＝他行の上へ)。 */
@@ -1119,7 +1159,8 @@ public class GateConfigScreen extends Screen {
                 if (i == sel || hover) {
                     g.fill(x, oy, x + BOX_W, oy + OPT_H, GateColors.SELECT_BAND);
                 }
-                g.text(font, options[i], x + 5, oy + 3, i == sel ? GateColors.ACCENT : GateColors.TEXT);
+                g.text(font, Component.literal(TextFit.clip(font, options[i].getString(), BOX_W - 10)),
+                        x + 5, oy + 3, i == sel ? GateColors.ACCENT : GateColors.TEXT);
             }
             thinBorder(g, x, y, BOX_W, OPT_H * options.length, GateColors.MAIN_DIM);
         }
@@ -1178,6 +1219,19 @@ public class GateConfigScreen extends Screen {
             }
             Component c = Component.literal(v);
             g.text(font, c, detailRight() - font.width(c), lineY + 4, GateColors.ACCENT);
+        }
+
+        private String safeValue() {
+            try {
+                return value.get();
+            } catch (Throwable t) {
+                return "?";
+            }
+        }
+
+        @Override
+        int controlLeftX() {
+            return detailRight() - font.width(Component.literal(safeValue()));
         }
 
         @Override
