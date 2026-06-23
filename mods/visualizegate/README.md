@@ -25,7 +25,7 @@ point-cloud overview. No server-side installation required. (English section bel
 - **リンク予測（5 状態）** … 各ゲートを 5 つの状態で色分け表示します。
   - 正常 / 片側 / ズレ / 未接続 / 競合
 - **在世界アノテーション** … リンク線・建設推奨位置・既存ポータルの探索範囲・競合ゾーンなどを
-  ワールド内に直接描画。火打石と打金の所持中、または既知ポータルの黒曜石を注視した時にも予測線が出ます。
+  ワールド内に直接描画。火打石と打金の所持中、または既知ポータル（ポータル面または黒曜石の枠）を注視した時にも予測線が出ます。
 - **逆算（back-calculate）** … 目標座標を入れると、対になるゲートをどこに建てれば届くかを計算し、
   ワイヤーフレームとチャットで提示します（既存ポータルに吸い込まれる場合は警告色）。
 - **競合解決（resolving-conflict）** … 競合しているゲートに対し、相手を奪われない安全な建設位置を
@@ -116,7 +116,7 @@ observed.
   Unlinked / Conflict.
 - **In-world annotations** — link lines, recommended build positions, existing-portal search radii, and
   conflict zones drawn directly in the world. Prediction lines also appear while holding flint and steel,
-  or when looking at the obsidian of a known portal.
+  or when looking at a known portal (its portal block or obsidian frame).
 - **Back-calculate** — enter a target coordinate and it computes where to build the paired gate, shown as a
   wireframe plus chat (warning color if it would be pulled into an existing portal).
 - **Conflict resolution** — for a conflicting gate, searches for a safe build position that won't be stolen
