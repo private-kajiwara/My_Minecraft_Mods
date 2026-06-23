@@ -75,11 +75,11 @@ mod.mc_compat = "~26.1"
 mod.stable = "true"
 mod.recommended = "true"
 
-# ---- MC 26.2 (非難読化版・Java25) — 保留 (HELD: versions.json buildable=false) ----
-#   実値は authoritative 確認済み (Fabric Meta / Modrinth)。 deps はノード iteration 用に存置。
+# ---- MC 26.2 (非難読化版・Java25) — buildable:true (held 解除済・versions.json と一致) ----
+#   実値は authoritative 確認済み (Fabric Meta / Modrinth)。
 #   26.2 はクライアント描画パイプライン破壊的変更 (MultiBufferSource 削除→submit/staged 系・
-#   RenderPass/TextureTarget/GpuBufferSlice・setScreenAndShow 等) のため本格移植が完了するまで非ビルド。
-#   dev Iris/Sodium は 26.2 で入手可 (移植時に有効化): sodium mc26.2-0.9.0 / iris 1.11.1+26.2。
+#   RenderPass/TextureTarget/GpuBufferSlice・setScreenAndShow 等) を版別 //? で本格移植済。
+#   dev Iris/Sodium: sodium mc26.2-0.9.0 / iris 1.11.1+26.2。
 ["26.2"]
 deps.fabric_loader = "0.19.3"
 deps.fabric_api = "0.152.1+26.2"
