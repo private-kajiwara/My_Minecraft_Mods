@@ -62,6 +62,14 @@
       "recommended": true,
       "buildable": true,
       "notes": "26.1 系最新安定版・非難読化版 (Java 25)。推奨ビルド。"
+    },
+    {
+      "minecraft": "26.2",
+      "properties": "26.2.properties",
+      "stable": true,
+      "recommended": false,
+      "buildable": true,
+      "notes": "年ベース新バージョニング・非難読化版 (Java 25・非remap Loom 1.16.3)。 クライアント描画パイプライン破壊的変更 (MultiBufferSource/Tesselator/ShapeRenderer 削除→submit/staged 描画系・GUI 改名 mc.gui.*) を版別 //? で本格移植済 (在世界ハイライト/ワイヤー=lines submit・ピン=HUD 2D 投影 stateless でシェーダ下可視・検索ビーコン=バニラ submitBeaconBeam・チェスト GUI=開時 GUIスケール clamp 再適用)。 user 実機 (Iris シェーダ ON) でピン/ビーコン/チェスト GUI レイアウト確認済。 held 解除 (buildable:true)。 26.1.x はバイト一致維持。"
     }
   ],
 

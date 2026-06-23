@@ -49,7 +49,11 @@ public final class MixinSafetyHelper {
             if (player == null) return;
             ClientLevel level = mc.level;
             if (level == null) return;
+            //? if >=26.2 {
+            /*Screen screen = mc.gui.screen();*/
+            //?} else {
             Screen screen = mc.screen;
+            //?}
             if (screen == null) return;
             body.run();
         } catch (Throwable ignored) {

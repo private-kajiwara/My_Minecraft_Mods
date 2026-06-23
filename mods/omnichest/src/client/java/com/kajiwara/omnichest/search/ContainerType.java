@@ -57,6 +57,17 @@ public enum ContainerType {
     /** クラフター (= 3x3 = 9 スロット)。 メニューは {@code CrafterMenu}。 */
     CRAFTER("クラフター", Keys.CONTAINER_TYPE_CRAFTER, "Crafter"),
 
+    // ─── コンテナを持つエンティティ (= ブロックではなく移動体) ─────────────────
+    // 中身の取得は既存ブロックと完全に同一: プレイヤーが開いた瞬間に menu 経由で観測する。
+    // ブロックと異なるのは「同一性 = エンティティ UUID」 と「位置 = 毎フレーム追従」 のみ
+    // (= {@link EntityLocator} / {@link ContainerSnapshot#entity()} が担う)。
+    /** チェスト付きトロッコ (= {@code MinecartChest})。 メニューは {@code ChestMenu} (27)。 */
+    CHEST_MINECART("チェスト付きトロッコ", Keys.CONTAINER_TYPE_CHEST_MINECART, "Minecart with Chest"),
+    /** チェスト付きボート / イカダ (= {@code AbstractChestBoat})。 メニューは {@code ChestMenu} (27)。 */
+    CHEST_BOAT("チェスト付きボート", Keys.CONTAINER_TYPE_CHEST_BOAT, "Boat with Chest"),
+    /** チェストを積んだモブ (= ロバ / ラバ / ラマ / 行商ラマ)。 メニューは {@code HorseInventoryMenu}。 */
+    MOB_CHEST("チェストを積んだモブ", Keys.CONTAINER_TYPE_MOB_CHEST, "Pack Animal"),
+
     OTHER("コンテナ", Keys.CONTAINER_TYPE_OTHER, "Container");
 
     private final String displayName;
@@ -86,6 +97,18 @@ public enum ContainerType {
 
     public boolean isDouble() {
         return this == DOUBLE_CHEST || this == DOUBLE_TRAPPED_CHEST;
+    }
+
+    /**
+     * 「コンテナを持つエンティティ」 (= トロッコ / ボート / モブ) の種別か。
+     * <p>
+     * true のとき、 そのスナップショットは {@link ContainerSnapshot#entity()} を持ち、
+     * 同一性は {@code BlockPos} ではなくエンティティ UUID、 ワールド描画は毎フレーム追従になる。
+     * ブロック専用ロジック ({@code fromBlockState} / ラージチェスト判定 / ブロック破壊 sweep) には
+     * 一切掛からない (= 純粋な追加経路)。
+     */
+    public boolean isEntity() {
+        return this == CHEST_MINECART || this == CHEST_BOAT || this == MOB_CHEST;
     }
 
     /**

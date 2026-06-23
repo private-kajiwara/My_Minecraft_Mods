@@ -297,7 +297,11 @@ public final class StorageDistributionManager {
             postChat(DistributionResult.disabled().toComponent());
             return;
         }
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(new DistributePreviewScreen(parent, computePreview(ctx)));*/
+        //?} else {
         mc.setScreen(new DistributePreviewScreen(parent, computePreview(ctx)));
+        //?}
     }
 
     /**
@@ -444,7 +448,11 @@ public final class StorageDistributionManager {
                     "§7[Auto Distribute] Open a chest first."));
             return;
         }
+        //? if >=26.2 {
+        /*mc.setScreenAndShow(new SetCategoryScreen(parent, ctx));*/
+        //?} else {
         mc.setScreen(new SetCategoryScreen(parent, ctx));
+        //?}
     }
 
     // ════════════════════════════════════════════════════════════════════

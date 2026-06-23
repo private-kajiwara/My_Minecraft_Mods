@@ -1,0 +1,54 @@
+// =====================================================================
+// common/build.gradle
+// ---------------------------------------------------------------------
+//   Minecraft / Fabric API に "直接" 依存しない共有モジュール。
+//
+//   ここに入れて良いもの:
+//     - スキャン/集約/幾何 (AABB 計算等) の純粋ロジック
+//     - Minecraft 型を Object / 抽象 interface 経由で受け取る abstraction layer
+//
+//   ここに入れてはいけないもの:
+//     - net.minecraft.* / net.fabricmc.* の import
+//     - Mixin / Screen / ItemStack を直接触るコード
+//
+//   "純粋 Java" にしておくと、 Minecraft バージョンが変わっても common を
+//   再ビルドする必要が無い。 (初回スライスでは中身は空でよい。)
+// =====================================================================
+
+plugins {
+    id 'java-library'
+}
+
+// mod_version / maven_group は settings.gradle が当 Mod の
+// mods/<modid>/gradle.properties から ext として注入する。
+version = project.findProperty('mod_version') ?: rootProject.findProperty('mod_version') ?: '0.0.0'
+group   = project.findProperty('maven_group') ?: rootProject.findProperty('maven_group') ?: 'com.example'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // SLF4J: Minecraft 自体が提供するため compileOnly
+    compileOnly 'org.slf4j:slf4j-api:2.0.13'
+    compileOnly 'org.jetbrains:annotations:26.0.1'
+
+    // 純粋ロジックの単体テスト (= MC 非依存なので common 内で完結できる)。
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+// common は全 MC 世代で共有するため Java 21 固定 (1.21.x=21 / 26.1=25 の両対応)。
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+}

@@ -4,6 +4,32 @@ OmniChest の主要な修正・変更の記録。新しいエントリを上に�
 
 ## [Unreleased]
 
+### Fixed — シェーダ下で在世界ワイヤーハイライトが消える問題（描画経路を VisualizeGate 実装へ移植・1.0.5→1.0.6）
+
+- **症状**: Iris / Sodium+Iris + シェーダパック（Complementary / BSL / SEUS 等）有効時、 倉庫検索ハイライトの
+  在世界ワイヤー（X-ray ボックス）が**完全に表示されない**。 従来の「shader 時 QUAD 切替」 対処では直らなかった
+  （カスタム RenderPipeline が Iris のキャプチャ外で上書きされるため）。
+- **修正**: VisualizeGate 側で動作確認済みの経路（`OverlayDraw`）を移植。 失敗していた QUAD 経路を撤去し、
+  **shader 時はバニラ `RenderTypes.lines()` をレベルレンダラ自身のバッファ（`ctx.bufferSource()`・Iris が
+  ラップする）へ流す**ことで Iris の `rendertype_lines` プログラムに乗せ、 バニラのブロック選択枠と同様の
+  本物ワイヤーとして描く。 フラッシュは level に委ねる（水後ステージ `AFTER_TRANSLUCENT_TERRAIN`）。
+- **挙動差**: shader 時のワイヤーは**深度テスト有り（地形オクルージョン有り）**になる（バニラ `lines()` の
+  本質的帰結。 「消える」→「確実に出る」への前進）。 **非シェーダ時は従来どおり NO_DEPTH_TEST の X-ray を
+  ピクセル不変で維持**。 soft Iris 検出（`ShaderCompatManager`）は維持＝Iris 非搭載でも安全。 シェーダ経路は
+  `>=26.1` のみ、 legacy（1.21.10 / 1.21.11）は既存の lines submit 経路を維持（非回帰）。
+- **影響範囲**: 在世界ワイヤー描画の集約点（`WireHighlightRenderer.submitWireBox` ＋ `ChestHighlighter` の
+  水後ステージ）のみ。 検索/振り分け/整理/ロック/テンプレ/GUI/スロットオーバーレイ/ピン/ビーム/永続/全 Mixin は
+  **挙動不変**。 新規描画 Mixin は追加していない（Mixin 数不変＝全 12）。 git 差分は wire 描画 2 ファイル
+  （`WireHighlightRenderer.java` / `ChestHighlighter.java`）＋メタ（`gradle.properties` / 本 CHANGELOG）のみ。
+  これにより「26.1.2 が移行前ビルドとバイトコード一致」 baseline は**意図的に移動**する（差分は wire 経路のみ）。
+
+### Changed — ワークスペース/リポジトリ名
+
+- ワークスペース名を `MyFabricMod` → `MyMinecraftMod` にリネーム（on-disk ルートフォルダ名と表示用文字列のみ）。
+  `fabric.mod.json` の contact URL を実 origin `github.com/private-kajiwara/My_Minecraft_Mods` に整合。
+  **mod 挙動・バイトコード・mod_id・名前空間・archivesBaseName・jar 名・対象 MC 版集合は不変**
+  （インフラ/ワークスペースのみの変更のため mod_version は bump しない）。
+
 ### Added — 世代跨ぎ多版対応（1.21.11〜26.1.x を単一ソースから単一ビルド）
 
 - **Stonecutter ハイブリッド導入**: 1 つのソースツリー（基準名は 26.1 の非難読化公式名）から、

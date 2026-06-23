@@ -44,7 +44,17 @@ jobs:
         run: |
           # 全 Mod (mods/*/versions/versions.json) の buildable な MC を
           # 和集合・重複排除した JSON 配列を Gradle から得る (Mod 非依存)。
-          MATRIX=$(./gradlew -q printVersionsJson)
+          # maven.terraformersmc.com (modmenu beta) が時々 HTTP 400 を返す一過性障害が
+          # あるため、 Gradle 起動は最大 5 回リトライ (until=条件なので set -e で即死しない)。
+          attempt=1; max=5
+          until MATRIX=$(./gradlew -q printVersionsJson); do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::printVersionsJson failed after $max attempts"; exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "::warning::printVersionsJson attempt failed (transient maven?); retry $attempt/$max in 45s"
+            sleep 45
+          done
           echo "matrix => $MATRIX"
           echo "versions=$MATRIX" >> "$GITHUB_OUTPUT"
 
@@ -68,7 +78,18 @@ jobs:
             25
       - run: chmod +x ./gradlew
       - name: validateVersions
-        run: ./gradlew validateVersions --stacktrace
+        shell: bash
+        run: |
+          # maven (modmenu beta) の一過性 400 に備え最大 5 回リトライ。
+          attempt=1; max=5
+          until ./gradlew validateVersions --stacktrace; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::validateVersions failed after $max attempts"; exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "::warning::validateVersions attempt failed (transient maven?); retry $attempt/$max in 45s"
+            sleep 45
+          done
 
   # -------------------------------------------------------------------
   # ③ matrix の各 MC バージョンを並列ビルド
@@ -94,13 +115,24 @@ jobs:
       - run: chmod +x ./gradlew
 
       - name: build MC ${{ matrix.minecraft }}
+        shell: bash
         run: |
           TASK="build$(echo '${{ matrix.minecraft }}' | tr '.' '_')"
           echo "→ ./gradlew $TASK"
           # setup-java が入れた JDK を Gradle の toolchain 探索に渡す
           # (デーモン=JDK25 で 1.21.11 ノードの toolchain=21 を解決するため)。
-          ./gradlew "$TASK" --stacktrace \
-            "-Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64"
+          # maven.terraformersmc.com (modmenu beta) の一過性 HTTP 400 に備え最大 5 回リトライ
+          # (until=条件評価なので set -e で即死しない・本物のコンパイル失敗は 3 回で確定し exit 1)。
+          attempt=1; max=5
+          until ./gradlew "$TASK" --stacktrace \
+            "-Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64"; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::$TASK failed after $max attempts"; exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "::warning::$TASK attempt failed (transient maven?); retry $attempt/$max in 45s"
+            sleep 45
+          done
 
       - uses: actions/upload-artifact@v7
         with:

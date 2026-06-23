@@ -125,6 +125,20 @@ stonecutter parameters {
             replace("\\.setNormal\\(pose, nx, ny, nz\\)\\.setLineWidth\\(lineWidth\\)", ".setNormal(pose, nx, ny, nz)", noRev, noRev)
             // 注: Button override の extractContents→renderWidget は <26.1 regex の出力に依存し
             //   (regex 置換は base 原文に適用され連鎖しない) ため置換では不可。 NavyFooterButton で //? 対応。
+
+            // (H) コンテナを持つエンティティのパッケージ移動 (1.21.11 でサブパッケージ化)。
+            //   26.1 / 1.21.11 は subpackage (vehicle.boat / vehicle.minecart / animal.equine) だが、
+            //   1.21.10 は flat (vehicle.*) かつ horse 系は animal.horse。 クラス名・メソッド名は全版同一
+            //   (AbstractChestBoat / MinecartChest / AbstractChestedHorse / HorseInventoryMenu /
+            //    hasChest / getInventoryColumns / getEntity 等) なので import パスのみ前方変換する。
+            //   to 値 (vehicle. / animal.horse.) は 26.1 base に部分文字列として存在しうるため、
+            //   regex + sentinel で一方向化する (= 逆変換 no-op、 base 破壊を回避)。
+            replace("net\\.minecraft\\.world\\.entity\\.vehicle\\.boat\\.",
+                    "net.minecraft.world.entity.vehicle.", noRev, noRev)
+            replace("net\\.minecraft\\.world\\.entity\\.vehicle\\.minecart\\.",
+                    "net.minecraft.world.entity.vehicle.", noRev, noRev)
+            replace("net\\.minecraft\\.world\\.entity\\.animal\\.equine\\.",
+                    "net.minecraft.world.entity.animal.horse.", noRev, noRev)
         }
         string(current.parsed < "1.21.11") {
             // GuiGraphics: <26.1 で outline→renderOutline 済 → さらに submitOutline (1.21.10 名) へ。

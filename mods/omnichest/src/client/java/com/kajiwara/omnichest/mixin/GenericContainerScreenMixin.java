@@ -738,6 +738,56 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // union にのみ被さる (ラージの ◀▶ / 検索 / 種類数量 は inGroup に含めないため、 パネル外)。
     }
 
+    // ───────────────────────────────────────────────────────────
+    // 26.2: コンテナ GUI 開時の GUI スケールずれ (= 開くたびに少しずれ F11 で直る) の修正
+    //
+    // <b>原因 (26.2 固有・jar 実証)</b>: サーバ起動のコンテナ GUI は {@code ClientPacketListener#handleOpenScreen}
+    // が {@code Gui.setScreen()} 経由で開き、 {@code Minecraft#setScreenAndShow} を通らない。 そのため
+    // {@link MinecraftGuiScaleMixin} の scale 再適用 (setScreenAndShow TAIL) が発火せず、 コンテナが
+    // クランプ前 (= ワールド HUD 用) スケールのままレイアウトされ、 文字・アイテム・ボタンがまとめてずれる。
+    // F11 (resize→resizeGui→calculateScale→setGuiScale→screen.resize) すると clamp されて直る。 26.1.x は
+    // inject 先が {@code Minecraft#setScreen} で当時の開経路も setScreen だったため発生しない (= 26.2 限定の回帰)。
+    //
+    // <b>前回失敗の真因 (実証)</b>: 前回は init HEAD で clamp を試みたが、 clamp の有無を決める
+    // {@link #omnichest$wantsScaleClamp()} は {@code cits$supportedContainer} を返し、 これは下の
+    // {@link #cits$initWidgets} (init TAIL) で初めて true になる。 init HEAD 時点では false のため
+    // {@code WindowGuiScaleMixin#calculateScale} が clamp せず {@code desired==現状} で no-op になっていた。
+    //
+    // <b>今回の修正</b>: {@code cits$supportedContainer} 確定後の init TAIL 末尾 ({@link #cits$initWidgets} 最終行)
+    // で {@link #cits$reapplyScaleForContainer()} を呼ぶ。 F11 と<b>同一経路の {@code resizeGui()}</b> を 1 度
+    // だけ実行し、 ウィンドウ GUI スケールの clamp と {@code screen.resize→init} による全伝播を行う (= 論理寸法
+    // だけでなくレンダリング変換まで F11 と同じ状態にする)。 resizeGui は init を再入させるため
+    // {@code cits$reapplyingScale} 再入ガードで二重発火を防ぐ (再入側は guard で skip し、 clamp 後スケールで
+    // 正しく再レイアウトされる)。 既に正しいスケール (低スケール / クランプ不要 / 非対応コンテナ) なら
+    // {@code desired==現状} で即 return = 従来と完全一致。
+    //? if >=26.2 {
+    /*@org.spongepowered.asm.mixin.Unique
+    private boolean cits$reapplyingScale;
+
+    @org.spongepowered.asm.mixin.Unique
+    private void cits$reapplyScaleForContainer() {
+        if (this.cits$reapplyingScale) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        com.mojang.blaze3d.platform.Window window = mc.getWindow();
+        if (window == null) {
+            return;
+        }
+        // cits$supportedContainer が設定済なので calculateScale (WindowGuiScaleMixin) が正しく clamp する。
+        int desired = window.calculateScale(mc.options.guiScale().get(), mc.isEnforceUnicode());
+        if (window.getGuiScale() == desired) {
+            return;
+        }
+        this.cits$reapplyingScale = true;
+        try {
+            mc.resizeGui(); // F11 と同一経路: setGuiScale + screen.resize→init で clamp と全伝播。
+        } finally {
+            this.cits$reapplyingScale = false;
+        }
+    }*/
+    //?}
+
     @Inject(method = "init", at = @At("TAIL"))
     private void cits$initWidgets(CallbackInfo ci) {
         // ───────────────────────────────────────────────────────────
@@ -866,8 +916,13 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
                 this.cits$saveTemplateButton = Button.builder(
                         OmniChestLocale.get(Keys.BUTTON_SAVE_TEMPLATE, "Save Layout"),
+                        //? if >=26.2 {
+                        /*btn -> Minecraft.getInstance().setScreenAndShow(
+                                new TemplateSaveScreen(selfScreen, anyMenu, containerSlotCount)))*/
+                        //?} else {
                         btn -> Minecraft.getInstance().setScreen(
                                 new TemplateSaveScreen(selfScreen, anyMenu, containerSlotCount)))
+                        //?}
                         .bounds(0, 0, CITS_DEPOSIT_WIDTH, CITS_DEPOSIT_HEIGHT)
                         .build();
                 cits$applyTooltip(this.cits$saveTemplateButton, Keys.BUTTON_SAVE_TEMPLATE_TOOLTIP,
@@ -876,8 +931,13 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
                 this.cits$manageTemplateButton = Button.builder(
                         OmniChestLocale.get(Keys.BUTTON_MANAGE_TEMPLATES, "Manage Templates"),
+                        //? if >=26.2 {
+                        /*btn -> Minecraft.getInstance().setScreenAndShow(
+                                new TemplateManagerScreen(selfScreen, anyMenu, containerSlotCount)))*/
+                        //?} else {
                         btn -> Minecraft.getInstance().setScreen(
                                 new TemplateManagerScreen(selfScreen, anyMenu, containerSlotCount)))
+                        //?}
                         .bounds(0, 0, CITS_DEPOSIT_WIDTH, CITS_DEPOSIT_HEIGHT)
                         .build();
                 cits$applyTooltip(this.cits$manageTemplateButton, Keys.BUTTON_MANAGE_TEMPLATES_TOOLTIP,
@@ -1014,6 +1074,12 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         this.addRenderableWidget(this.cits$layoutRightButton);
 
         this.cits$applyLayout();
+
+        // 26.2: cits$supportedContainer 確定後にここで GUI スケール clamp を F11 同一経路で再適用する
+        //   (= 開時ずれの修正。 詳細は cits$reapplyScaleForContainer / 上の解説コメント参照)。
+        //? if >=26.2 {
+        /*this.cits$reapplyScaleForContainer();*/
+        //?}
     }
 
     /**

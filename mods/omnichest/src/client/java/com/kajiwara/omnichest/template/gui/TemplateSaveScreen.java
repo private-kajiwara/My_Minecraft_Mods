@@ -113,7 +113,11 @@ public class TemplateSaveScreen extends Screen {
             name = OmniChestLocale.getString(Keys.TEMPLATE_UNTITLED, "(untitled)");
         ChestTemplate t = TemplateManager.captureCurrentChest(this.menu, this.containerSlotCount, name, this.kind);
         TemplateManager.save(t);
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+        //?} else {
         Minecraft.getInstance().setScreen(this.parent);
+        //?}
     }
 
     @Override
@@ -143,6 +147,10 @@ public class TemplateSaveScreen extends Screen {
         //   - メインメニュー (チェスト GUI) の [配置を保存] / [テンプレ適用] から開いた場合 → チェストに戻る。
         //   - テンプレート管理画面から開いた場合 → 管理画面に戻る。
         // これにより、 ユーザが直前にいた文脈を壊さずキャンセルできる。
+        //? if >=26.2 {
+        /*Minecraft.getInstance().setScreenAndShow(this.parent);*/
+        //?} else {
         Minecraft.getInstance().setScreen(this.parent);
+        //?}
     }
 }

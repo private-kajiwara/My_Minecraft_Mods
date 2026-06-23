@@ -8,6 +8,7 @@ import com.kajiwara.omnichest.search.ChestNetworkManager;
 import com.kajiwara.omnichest.search.ContainerScanner;
 import com.kajiwara.omnichest.search.ContainerSnapshot;
 import com.kajiwara.omnichest.search.ContainerType;
+import com.kajiwara.omnichest.search.EntityLocator;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 //? if >=26.1 {
 import com.mojang.blaze3d.pipeline.ColorTargetState;
@@ -20,8 +21,10 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.shaders.UniformType;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 //? if >=26.1 {
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -35,6 +38,9 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;*/
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+//? if <26.2 {
+import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
@@ -52,9 +58,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -136,7 +144,7 @@ public final class ChestHighlighter {
      * × 距離係数 で十分小さい)。
      *
      * <p>
-     * <b>注意</b>: 値変更時に {@link #submitPinStack} と {@link #pinTopWorldY} の双方で
+     * <b>注意</b>: 値変更時に {@link #drawPinImmediate} と {@link #pinTopWorldY} の双方で
      * 同じ baseY 計算 ({@code primary.getY() + 1.0 + PIN_BASE_HEIGHT}) を共有するため、
      * ここを変えれば両方追従する (= 食い違いが起きない設計)。
      */
@@ -212,6 +220,46 @@ public final class ChestHighlighter {
     private record PendingHudIcon(ItemStack stack, float screenX, float screenY, float sizePx) {
     }
 
+    /**
+     * 1 フレーム分の「水の描画後に immediate-mode で描くビーム」 キュー。
+     *
+     * <p>
+     * {@link #onWorldRender} (= 水より前のステージ) でビーム諸元 (ワールド座標 + 色 + alpha) を積み、
+     * {@link #onAfterWaterRender} (= 水より後のステージ) でまとめて描く。 これにより半透明地形 (水) が
+     * ビームを上書きする不具合を解消する。 ビームの色 / 位置 / 太さ / 遮蔽 (depth=LEQUAL) は不変。
+     */
+    private final List<PendingBeam> pendingBeams = new ArrayList<>();
+
+    /** ビーム 1 本ぶんの諸元 (ワールド座標系)。 camera-relative 変換は描画時に行う。 */
+    private record PendingBeam(double cxWorld, double czWorld, double baseWorldY, int themeRgb, float alpha) {
+    }
+
+    /**
+     * 1 フレーム分の「水の描画後に immediate-mode で描くピン (テキスト + 黒帯)」 キュー。
+     *
+     * <p>
+     * <b>なぜ水後 immediate-mode か</b>: ピンのテキスト / 黒帯は元々 submit 収集経由で描かれており、
+     * バニラが半透明地形 (水) を全 features パスより後に描くため水に上書きされていた。 そこで
+     * {@link #onWorldRender} (= 水より前) では諸元を積むだけにし、 {@link #onAfterWaterRender}
+     * (= 水より後) で <b>ビルボード変換・レイアウト・スケールを一切変えずに</b> immediate-mode で
+     * 描き直す (= 見た目は完全不変、 描画タイミングだけ水の後にずらす)。 SEE_THROUGH のままなので
+     * 固体地形へは従来どおり貫通表示 (= X-ray) を維持する。 アイコンは従来どおり HUD パス。
+     */
+    private final List<PendingPin> pendingPins = new ArrayList<>();
+
+    /** ピン 1 個ぶんの諸元 (= 中心ワールド XZ + ピン下端 Y + 表示エントリ + テーマ色)。 */
+    private record PendingPin(double cx, double cz, double baseY, List<HighlightEntry> entries, int themeRgb) {
+    }
+
+    /**
+     * 水後ピン / ビームを描く自前の immediate {@link MultiBufferSource} (= エンジン本体の bufferSource を
+     * 汚さないため独立バッファを 1 本持つ)。 描画後に {@code endBatch()} で自分の頂点だけを flush する。
+     * 初回利用時に lazy 構築し、 以後フレーム間で再利用する (= 確保コストを 1 回に抑える)。
+     */
+    //? if <26.2 {
+    private MultiBufferSource.BufferSource afterWaterBuffer;
+    //?}
+
     /** X-ray 用 lines RenderType (初回参照時に lazy 構築)。 */
     private static volatile RenderType xrayLinesType;
 
@@ -234,6 +282,23 @@ public final class ChestHighlighter {
         //?} else {
         /*WorldRenderEvents.BEFORE_ENTITIES.register(ctx ->
                 SafeRenderDispatcher.safeRun("chest-highlight-world", () -> INSTANCE.onWorldRender(ctx)));*/
+        //?}
+
+        // ─── ビームを「半透明地形 (水) より後」 に immediate-mode で描く ───
+        // submit 収集の features パス (solid / translucent) は水 (translucent terrain) より前に
+        // 描画されるため、 submit したビームは必ず水に上書きされる。 そこで onWorldRender では
+        // ビーム諸元を {@link #pendingBeams} に積むだけにし、 水の描画後に発火するステージで
+        // bufferSource (immediate-mode) を使って描く。 ビーム自身の depth test (LEQUAL) は維持する
+        // ため、 固体地形への遮蔽挙動 (= バニラビーコン同様) は不変。
+        // 26.1: AFTER_TRANSLUCENT_TERRAIN (= 半透明地形描画直後)。 legacy: END_MAIN (= 毎フレーム
+        // 確実に水描画後に発火する終端ステージ。 BEFORE_BLOCK_OUTLINE はブロックを見ていないと
+        // 発火しないため使わない)。
+        //? if >=26.1 {
+        LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx ->
+                SafeRenderDispatcher.safeRun("chest-highlight-beam", () -> INSTANCE.onAfterWaterRender(ctx)));
+        //?} else {
+        /*WorldRenderEvents.END_MAIN.register(ctx ->
+                SafeRenderDispatcher.safeRun("chest-highlight-beam", () -> INSTANCE.onAfterWaterRender(ctx)));*/
         //?}
 
         // ─── ピンアイコンを HUD パスで貫通描画 ───
@@ -656,8 +721,12 @@ public final class ChestHighlighter {
     // ════════════════════════════════════════════════════════════════════
 
     private void onWorldRender(LevelRenderContext ctx) {
-        // 新フレームの開始: HUD パス用キューを空にする (= 前フレームの取り残しを残さない)。
+        // 新フレームの開始: HUD パス / 水後ピン・ビーム用キューを空にする (= 前フレームの取り残しを残さない)。
         pendingHudIcons.clear();
+        pendingBeams.clear();
+        pendingPins.clear();
+        // shader 時に水後ステージへ流す wire pending も毎フレームリセットする (legacy では常に空)。
+        WireHighlightRenderer.clearPending();
 
         if (active.isEmpty())
             return;
@@ -693,7 +762,13 @@ public final class ChestHighlighter {
 
         PoseStack matrices = ctx.poseStack();
         SubmitNodeCollector queue = ctx.submitNodeCollector();
+        //? if >=26.2 {
+        /*// 26.2: カスタム X-ray パイプライン (withUniform/VertexFormat.Mode 削除) は構築不可。 ボックスは
+        //   バニラ RenderTypes.lines() で submit (深度テスト有り・Iris ネイティブ捕捉)。 ワイヤー決定と同方針。
+        RenderType xray = RenderTypes.lines();*/
+        //?} else {
         RenderType xray = xrayLines();
+        //?}
 
         // 1 フレームに 1 回だけ Config を引いて使い回す (= ループ内で 重ねて get しない)。
         final int themeRgb = themeRgb();
@@ -712,6 +787,15 @@ public final class ChestHighlighter {
                     ? Math.max(0.0f, remaining / (float) FADE_TAIL_MS)
                     : 1.0f;
             int color = packColor(themeRgb, alphaF);
+
+            // ─── エンティティコンテナ (= トロッコ / ボート / モブ): 毎フレーム現在位置で追従 ───
+            // ブロック専用の still-standing 検出 / ブロック箱 / ブロック中心ピンには掛けず、
+            // 解決した実エンティティの AABB / position から箱・ピン・ビームを描く (= 純粋な別経路)。
+            if (snap.isEntity()) {
+                renderEntityHighlight(level, queue, matrices, camState, camPos,
+                        h, snap, now, color, alphaF, themeRgb);
+                continue;
+            }
 
             // ─── 「チェストはまだそこにあるか」 の検出 ───
             // 壊された瞬間にワイヤー / ピンを消す。 entries は残し、 ドロップアイテムや
@@ -737,17 +821,24 @@ public final class ChestHighlighter {
 
             // ─── ピン (ネームタグ): ワールド ビルボード として常時 チェスト 真上 に固定 ───
             // waypoint (= 経由シュルカー) はピンに出さず、 検索対象アイテムだけを表示する。
+            // 水対策: ここでは pendingPins に積むだけにし、 実描画は水後 ({@link #onAfterWaterRender}) で行う。
             List<HighlightEntry> pinEntries = h.pinEntries();
-            submitPinStack(queue, matrices, camState, snap, camPos, pinEntries, themeRgb);
+            double[] pc = snapBeamCenterXZ(snap);
+            double pinBaseY = snap.pos().getY() + 1.0 + PIN_BASE_HEIGHT;
+            pendingPins.add(new PendingPin(pc[0], pc[1], pinBaseY, pinEntries, themeRgb));
 
             // ─── ビーコン風ビーム (ピンの補助演出) ───
             // ピン座標 / anchor / 検索ロジックには一切触れず、 同じ中心位置から上空へ伸びる
-            // 半透明ビームを「足すだけ」。 Config で OFF のとき BeaconEffectLayer 内で即 return する。
+            // 半透明ビームを「足すだけ」。
             //
             // 発射基準は「ピン (名前タグ スタック) の一番真上」。 表示行数 (= アイテム行数) と
             // 距離スケールに連動するため、 表示テキスト量が増えるほど発射位置が上がる。
+            //
+            // <b>水対策</b>: ここでは submit せず {@link #pendingBeams} に積むだけ。 実描画は
+            // {@link #onAfterWaterRender} (= 水の描画後) で行い、 水がビームを上書きしないようにする。
             double beamBaseY = pinTopWorldY(snap, pinEntries.size(), camPos);
-            BeaconEffectLayer.submit(queue, matrices, snap, camPos, themeRgb, alphaF, beamBaseY);
+            double[] bc = snapBeamCenterXZ(snap);
+            pendingBeams.add(new PendingBeam(bc[0], bc[1], beamBaseY, themeRgb, alphaF));
         }
 
         // ─── ドロップアイテム / プレイヤーインベントリ への引き継ぎハイライト ───
@@ -755,6 +846,174 @@ public final class ChestHighlighter {
         // プレイヤーインベントリ側は別 Mixin ({@link com.kajiwara.omnichest.mixin.SearchMatchSlotMixin}) が
         // {@link #isHighlightedItem} を経由して既にハイライトしているため、 ここでは触らない。
         renderItemEntityHighlights(level, queue, matrices, camPos, currentDim, themeRgb);
+
+        //? if >=26.2 {
+        /*// 26.2: ビームのみここで submit する (engine が debugFilledBox を translucent フェーズ=水後に描く)。
+        //   ピンは screen 座標を焼かず world データ (pendingPins) のまま残し、 onHudRender が毎フレーム
+        //   live camera/GUI 寸法で投影し直す (= 初回ウィンドウ寸法 stale / ESC ポーズ復帰後の張り付きを回避)。
+        flushBeams262(queue, matrices, camPos);*/
+        //?}
+    }
+
+    /**
+     * 水 (半透明地形) の描画<b>後</b> に発火し、 {@link #onWorldRender} で {@link #pendingBeams} に
+     * 積まれたビームを immediate-mode で描く。 これにより「水がビームの上に重なる」 不具合を解消する。
+     *
+     * <p>
+     * <b>不変条件</b>: ビームの色 / 位置 / 太さ / depth 挙動 (= LEQUAL で固体地形に遮蔽) は一切変えない。
+     * X-ray ボックスは従来どおり {@link #onWorldRender} の submit のまま、 ピンラベルは HUD パスで描く。
+     * {@code enableOverlay} OFF 時は pendingBeams が空、 {@code enableBeacon} OFF 時は各ビームが即 return
+     * するため、 設定挙動も従来どおり。
+     */
+    private void onAfterWaterRender(LevelRenderContext ctx) {
+        if (pendingPins.isEmpty() && pendingBeams.isEmpty() && !WireHighlightRenderer.hasPending())
+            return;
+        //? if <26.2 {
+        CameraRenderState camState = ctx.levelState().cameraRenderState;
+        if (camState == null || camState.pos == null)
+            return;
+        Vec3 camPos = camState.pos;
+        PoseStack matrices = ctx.poseStack();
+        // 自前 immediate バッファへ描く (= エンジン本体の bufferSource を汚さない)。 同一フレームの
+        // matrices (camera-relative) と camera をそのまま使うため、 onWorldRender 時と同じ座標系で描ける。
+        if (afterWaterBuffer == null) {
+            afterWaterBuffer = MultiBufferSource.immediate(new ByteBufferBuilder(256));
+        }
+        MultiBufferSource.BufferSource bufferSource = afterWaterBuffer;
+
+        // (1) ピン (テキスト + 黒帯) — ビルボード変換 / レイアウト / スケールは onWorldRender 時と完全同一。
+        for (PendingPin p : pendingPins) {
+            drawPinImmediate(bufferSource, matrices, camState, p.cx(), p.cz(), p.baseY(),
+                    camPos, p.entries(), p.themeRgb());
+        }
+        // (2) ビーム。
+        for (PendingBeam b : pendingBeams) {
+            BeaconEffectLayer.drawWorld(bufferSource, matrices, b.cxWorld(), b.czWorld(),
+                    camPos, b.themeRgb(), b.alpha(), b.baseWorldY());
+        }
+        // 自前バッファの頂点だけを flush (= 水の上へ描画。 他の immediate-mode バッチには干渉しない)。
+        bufferSource.endBatch();
+        //?}
+        // 26.2: ピン (HUD 投影テキスト/アイコン) とビーム (debugFilledBox submit) は onWorldRender 末尾の
+        //   flushPinsAndBeams262 で処理済 (afterWaterBuffer immediate は撤去)。 ここでは何もしない。
+
+        // ─── shader 時: pending ワイヤーを level バッファ (ctx.bufferSource()・Iris ラップ) へ流す ───
+        // submit / 自前 immediate ではなく level バッファへ描くことで Iris の rendertype_lines に乗せる
+        // (= バニラのブロック選択枠と同じ本物ワイヤー)。 フラッシュは level に委ねる (= endBatch しない)。
+        // legacy (<26.1) では WireHighlightRenderer が enqueue しないため hasPending() は常に false。
+        //? if >=26.1 && <26.2 {
+        if (WireHighlightRenderer.hasPending()) {
+            WireHighlightRenderer.flushShaderWires(ctx.bufferSource(), matrices);
+        }
+        //?}
+    }
+
+    /** ブロック snap のビーム中心 XZ (= ピン中心と同じ。 ラージチェストは 2 ブロックの中点)。 */
+    private static double[] snapBeamCenterXZ(ContainerSnapshot snap) {
+        BlockPos primary = snap.pos();
+        BlockPos secondary = snap.secondaryPos();
+        if (secondary != null && snap.type() != null && snap.type().isDouble()) {
+            return new double[] {
+                    (primary.getX() + secondary.getX()) * 0.5 + 0.5,
+                    (primary.getZ() + secondary.getZ()) * 0.5 + 0.5 };
+        }
+        return new double[] { primary.getX() + 0.5, primary.getZ() + 0.5 };
+    }
+
+    /**
+     * コンテナを持つエンティティ (= トロッコ / ボート / モブ) のハイライトを <b>毎フレーム現在位置</b> で
+     * 描画する。 ブロック経路 ({@link #submitMergedBox} / {@link #isStillContainerBlock}) には一切触れず、
+     * 解決した実エンティティの {@link AABB} と {@code position()} から箱・ピン・ビームを構築する。
+     *
+     * <p>
+     * <b>解決できない場合の方針</b> (= ブロックの未ロード/破壊検出と同方針):
+     * <ul>
+     *   <li>捕捉位置のチャンクがロード済み かつ 解決不能 → 「消滅した」 とみなし、 ブロック破壊と同じ
+     *       grace ({@link #CHEST_BROKEN_GRACE_MS}) でハイライトを失効させる (= ワールド描画は止める)。</li>
+     *   <li>未ロードチャンク → 「分からない → 残す」。 捕捉時 pos を 1 ブロック箱として描画継続する。</li>
+     * </ul>
+     */
+    private void renderEntityHighlight(net.minecraft.client.multiplayer.ClientLevel level,
+            SubmitNodeCollector queue, PoseStack matrices, CameraRenderState camState, Vec3 camPos,
+            ActiveHighlight h, ContainerSnapshot snap, long now, int color, float alphaF, int themeRgb) {
+        EntityLocator loc = snap.entity();
+        Entity e = (loc != null) ? loc.resolve(level) : null;
+
+        double cx;
+        double cz;
+        double minX;
+        double minY;
+        double minZ;
+        double maxX;
+        double maxY;
+        double maxZ;
+        double pinBaseY;
+
+        if (e != null && e.isAlive() && !e.isRemoved()) {
+            // 生存エンティティ: 実 AABB / 中心で追従 (= 移動に毎フレーム追随)。
+            AABB bb = e.getBoundingBox();
+            Vec3 p = e.position();
+            cx = p.x;
+            cz = p.z;
+            minX = bb.minX;
+            minY = bb.minY;
+            minZ = bb.minZ;
+            maxX = bb.maxX;
+            maxY = bb.maxY;
+            maxZ = bb.maxZ;
+            pinBaseY = bb.maxY + PIN_BASE_HEIGHT;
+        } else {
+            // 解決不能。 ロード済みなら消滅 → grace 失効、 未ロードなら最後の位置で残す。
+            boolean chunkLoaded = level != null && level.isLoaded(snap.pos());
+            if (chunkLoaded) {
+                if (!h.chestBroken) {
+                    h.chestBroken = true;
+                    long clamp = now + CHEST_BROKEN_GRACE_MS;
+                    if (h.expiresAt > clamp) {
+                        h.expiresAt = clamp;
+                    }
+                }
+                return;
+            }
+            BlockPos bp = snap.pos();
+            cx = bp.getX() + 0.5;
+            cz = bp.getZ() + 0.5;
+            minX = bp.getX();
+            minY = bp.getY();
+            minZ = bp.getZ();
+            maxX = bp.getX() + 1.0;
+            maxY = bp.getY() + 1.0;
+            maxZ = bp.getZ() + 1.0;
+            pinBaseY = bp.getY() + 1.0 + PIN_BASE_HEIGHT;
+        }
+
+        // ─── ボックス (X-ray): エンティティ AABB をそのまま囲う ───
+        submitEntityBox(queue, matrices, camPos, minX, minY, minZ, maxX, maxY, maxZ, color);
+
+        // ─── ピン (ネームタグ): エンティティ中心の真上に追従。 水対策で pendingPins に積み、 水後に描く ───
+        List<HighlightEntry> pinEntries = h.pinEntries();
+        pendingPins.add(new PendingPin(cx, cz, pinBaseY, pinEntries, themeRgb));
+
+        // ─── ビーコン風ビーム: ピン上端から上空へ。 水対策で pendingBeams に積み、 水後に描く ───
+        double beamBaseY = pinTopWorldYCore(cx, cz, pinBaseY, pinEntries.size(), camPos);
+        pendingBeams.add(new PendingBeam(cx, cz, beamBaseY, themeRgb, alphaF));
+    }
+
+    /**
+     * 任意の AABB を camera-relative の wireframe box として submit する (= エンティティ追従用)。
+     * ブロック用 {@link #submitMergedBox} と描画先 ({@link WireHighlightRenderer#submitWireBox}) を
+     * 共有するため、 shader-safe 経路も同じく効く。
+     */
+    private static void submitEntityBox(SubmitNodeCollector queue, PoseStack matrices, Vec3 camPos,
+            double minX, double minY, double minZ, double maxX, double maxY, double maxZ, int color) {
+        float fx0 = (float) (minX - camPos.x) - BOX_INFLATE;
+        float fy0 = (float) (minY - camPos.y) - BOX_INFLATE;
+        float fz0 = (float) (minZ - camPos.z) - BOX_INFLATE;
+        float fx1 = (float) (maxX - camPos.x) + BOX_INFLATE;
+        float fy1 = (float) (maxY - camPos.y) + BOX_INFLATE;
+        float fz1 = (float) (maxZ - camPos.z) + BOX_INFLATE;
+        WireHighlightRenderer.submitWireBox(queue, matrices,
+                fx0, fy0, fz0, fx1, fy1, fz1, color, LINE_WIDTH);
     }
 
     /**
@@ -808,7 +1067,13 @@ public final class ChestHighlighter {
                                             ResourceKey<Level> currentDim, int themeRgb) {
         if (level == null || active.isEmpty()) return;
         int color = packColor(themeRgb, 1.0f);
+        //? if >=26.2 {
+        /*// 26.2: カスタム X-ray パイプライン (withUniform/VertexFormat.Mode 削除) は構築不可。 ボックスは
+        //   バニラ RenderTypes.lines() で submit (深度テスト有り・Iris ネイティブ捕捉)。 ワイヤー決定と同方針。
+        RenderType xray = RenderTypes.lines();*/
+        //?} else {
         RenderType xray = xrayLines();
+        //?}
         // クライアントが描画候補にしているエンティティ群を走査 (= 視界 / chunk 範囲内)
         for (net.minecraft.world.entity.Entity e : level.entitiesForRendering()) {
             if (!(e instanceof net.minecraft.world.entity.item.ItemEntity ie)) continue;
@@ -944,22 +1209,21 @@ public final class ChestHighlighter {
      * 距離に比例させて、 画面上のサイズを一定に保つ (= 透視で縮小されるのを打ち消す)。
      * 近距離は素のスケール で「近付くと大きく見える」 自然な挙動。
      */
-    private static void submitPinStack(SubmitNodeCollector queue, PoseStack matrices,
-            CameraRenderState camState, ContainerSnapshot snap, Vec3 camPos,
+    /**
+     * ピン (テキスト + 黒帯) を <b>immediate-mode</b> で描く本体。 中心 {@code (cx, cz)} とピン下端
+     * {@code baseY} を受け取り、 ブロック (= チェスト中心) / エンティティ (= 追従中心) 両経路で共有する。
+     *
+     * <p>
+     * <b>水対策の核心</b>: ビルボード変換・レイアウト・スケール・色・SEE_THROUGH (= X-ray) は従来の
+     * submit 版と完全に同一で、 描画先を {@code SubmitNodeCollector} から {@code bufferSource}
+     * (= {@link #onAfterWaterRender} が水描画後に flush する自前バッファ) に替えただけ。 これにより
+     * 「水がピンの上に重なる」 不具合だけを解消し、 見た目・遮蔽挙動は一切変えない。 アイコンは
+     * 従来どおり HUD パスへ enqueue する。
+     */
+    //? if <26.2 {
+    private static void drawPinImmediate(MultiBufferSource bufferSource, PoseStack matrices,
+            CameraRenderState camState, double cx, double cz, double baseY, Vec3 camPos,
             List<HighlightEntry> entries, int themeRgb) {
-        // 中心 (ラージチェストはその中点に置く)
-        double cx, cz;
-        BlockPos primary = snap.pos();
-        BlockPos secondary = snap.secondaryPos();
-        if (secondary != null && snap.type() != null && snap.type().isDouble()) {
-            cx = (primary.getX() + secondary.getX()) * 0.5 + 0.5;
-            cz = (primary.getZ() + secondary.getZ()) * 0.5 + 0.5;
-        } else {
-            cx = primary.getX() + 0.5;
-            cz = primary.getZ() + 0.5;
-        }
-        // ピン下端の世界 Y = チェスト天面 (y + 1) + PIN_BASE_HEIGHT
-        double baseY = primary.getY() + 1.0 + PIN_BASE_HEIGHT;
 
         Font font = Minecraft.getInstance().font;
         int lineHeight = font.lineHeight;        // 通常 9
@@ -1054,10 +1318,11 @@ public final class ChestHighlighter {
             try {
                 matrices.translate(headerTextX, headerY, 0);
                 matrices.scale(PIN_TEXT_LOCAL_SCALE, PIN_TEXT_LOCAL_SCALE, 1.0f);
-                queue.submitText(matrices, 0, 0,
-                        headerComp.getVisualOrderText(),
-                        false, Font.DisplayMode.SEE_THROUGH,
-                        0xF000F0, 0xFFFFFFFF, PIN_BG_ARGB, 0);
+                // immediate-mode text。 submitText と同じ引数割り当て:
+                //   color=0xFFFFFFFF, dropShadow=false, displayMode=SEE_THROUGH, bgColor=PIN_BG_ARGB, light=0xF000F0。
+                font.drawInBatch(headerComp.getVisualOrderText(), 0, 0,
+                        0xFFFFFFFF, false, matrices.last().pose(), bufferSource,
+                        Font.DisplayMode.SEE_THROUGH, PIN_BG_ARGB, 0xF000F0);
             } finally {
                 matrices.popPose();
             }
@@ -1074,7 +1339,7 @@ public final class ChestHighlighter {
                 // テキスト bg と 1px だけ重ねる (= 接合部の隙間を消す)。
                 // 行レイアウト / アイコンサイズ / 黒帯サイズ は変更しない (= 既存仕様温存)。
                 float textX = entryBlockLeftX + entryIconSize + entryIconGap;
-                submitPinRowBg(matrices, queue,
+                drawPinRowBgImmediate(bufferSource, matrices,
                         entryBlockLeftX - 1, rowY - 1,
                         (textX + 1) - (entryBlockLeftX - 1),
                         (float) lineHeight,
@@ -1104,9 +1369,9 @@ public final class ChestHighlighter {
                 try {
                     matrices.translate(textX, rowY, 0);
                     matrices.scale(PIN_TEXT_LOCAL_SCALE, PIN_TEXT_LOCAL_SCALE, 1.0f);
-                    queue.submitText(matrices, 0, 0, seq,
-                            false, Font.DisplayMode.SEE_THROUGH,
-                            0xF000F0, 0xFFFFFFFF, PIN_BG_ARGB, 0);
+                    font.drawInBatch(seq, 0, 0,
+                            0xFFFFFFFF, false, matrices.last().pose(), bufferSource,
+                            Font.DisplayMode.SEE_THROUGH, PIN_BG_ARGB, 0xF000F0);
                 } finally {
                     matrices.popPose();
                 }
@@ -1115,13 +1380,14 @@ public final class ChestHighlighter {
             matrices.popPose();
         }
     }
+    //?}
 
     /**
      * 検索ピン (= 名前タグ スタック) の <b>最上端</b> のワールド Y を返す。
      * ビーコン ビームの「発射基準点 (= ピンの一番真上)」 として {@link BeaconEffectLayer} へ渡す。
      *
      * <p>
-     * {@link #submitPinStack} と同じ式 (= ピン アンカ {@link #PIN_BASE_HEIGHT} +
+     * {@link #drawPinImmediate} と同じ式 (= ピン アンカ {@link #PIN_BASE_HEIGHT} +
      * 行数 × 行間 × 距離連動ワールドスケール) を再現して計算する。 これにより:
      * <ul>
      *   <li>表示テキスト量 (= ヘッダ + アイテム行数) が増えるほど発射位置が上がる
@@ -1137,7 +1403,7 @@ public final class ChestHighlighter {
      *
      * <p>
      * カメラの far クリップ平面 (≈ 描画距離 ×16m) より遠い点はワールド描画で幾何クリップされて
-     * 消えるため、 ピンはこの距離までカメラ方向へ引き寄せて描く ({@link #submitPinStack})。
+     * 消えるため、 ピンはこの距離までカメラ方向へ引き寄せて描く ({@link #drawPinImmediate})。
      * far 平面に余裕を持たせるため描画距離の 0.8 倍を採り、 極端に小さい描画距離設定でも
      * 1 チャンク程度は確保する。 設定が読めない場合は控えめな既定値で安全側に倒す。
      */
@@ -1164,8 +1430,15 @@ public final class ChestHighlighter {
         }
         // ピン アンカ (= テキスト スタック最下段) の世界 Y。
         double baseY = primary.getY() + 1.0 + PIN_BASE_HEIGHT;
+        return pinTopWorldYCore(cx, cz, baseY, entryCount, camPos);
+    }
 
-        // ワールドスケールは submitPinStack と同じく「アンカまでの距離」 で決まる。
+    /**
+     * ビーム発射基準 (= ピン上端) の計算本体。 中心 {@code (cx, cz)} とピン下端 {@code baseY} を
+     * 明示的に受け取り、 ブロック / エンティティ両経路で共有する。
+     */
+    private static double pinTopWorldYCore(double cx, double cz, double baseY, int entryCount, Vec3 camPos) {
+        // ワールドスケールは drawPinImmediate と同じく「アンカまでの距離」 で決まる。
         double dx = cx - camPos.x;
         double dy = baseY - camPos.y;
         double dz = cz - camPos.z;
@@ -1205,7 +1478,7 @@ public final class ChestHighlighter {
         if (stack == null || stack.isEmpty()) return;
 
         // ─── ピンローカル座標 → ワールドオフセット ───
-        // 元のポーズスタック (= submitPinStack 内) の順序は:
+        // 元のポーズスタック (= drawPinImmediate 内) の順序は:
         //   translate(dx,dy,dz) → mulPose(orientation) → scale(s, -s, s)
         // 従って、 ローカル (pinLocalX, pinLocalY, 0) は
         //   1) scale で (px*s, -py*s, 0)
@@ -1238,6 +1511,14 @@ public final class ChestHighlighter {
      * GuiGraphicsExtractor の通常描画なので世界 depth とは無関係 = 必ず最前面に出る (= 貫通保証)。
      */
     private void onHudRender(GuiGraphicsExtractor g) {
+        //? if >=26.2 {
+        /*// 26.2: ピン (背景+アイコン+テキスト) は HUD パスで毎フレーム live 投影して描く (= stale 防止)。
+        //   pendingPins は world データのみを保持し、 ここで現在フレームの camera/GUI 寸法で投影し直すため、
+        //   初回ウィンドウ寸法の stale や ESC ポーズ復帰後の「画面張り付き (カメラ非追従)」が起きない。
+        drawPinsHudLive(g);
+        return;*/
+        //?}
+        //? if <26.2 {
         if (pendingHudIcons.isEmpty()) return;
         // スナップショットを取って描画 (= HUD 中に世界パスが再 enqueue する場合の保険)。
         // 描画後は clear せず、 次フレームの onWorldRender が冒頭で clear する。
@@ -1261,7 +1542,202 @@ public final class ChestHighlighter {
                 pose.popMatrix();
             }
         }
+        //?}
     }
+
+    //? if >=26.2 {
+    /*// ════════════════════════════════════════════════════════════════════
+    // 26.2 HUD 投影パス (毎フレーム live・stateless): ビームを submit、 ピン本体 (背景+アイコン+テキスト) を
+    //   onHudRender で毎フレーム live 投影して描く。
+    //
+    //   <b>なぜ submit でなく HUD か</b>: submitText/submitNameTag は Iris シェーダ下でグリフが落ちる
+    //   (VG 実証)。 そこで在世界テキストは world/Iris パス後の HUD で GUI 描画する (= VG WorldLabel.drawHud
+    //   と同方針)。
+    //
+    //   <b>なぜ world パスで screen 座標を焼かないか (= staleness 回避)</b>:
+    //   旧 26.2 実装は onWorldRender で screen 座標を pendingHudLabels/Icons に焼き onHudRender が blit して
+    //   いたため、 (1) 初回フレームのウィンドウ/GUI 寸法が stale だとレイアウトがずれ (F11 リサイズで初めて
+    //   直る)、 (2) ESC ポーズメニューへ入ると onHudRender が発火せず焼いた座標が古いまま残り、 戻ると
+    //   ピンが画面に張り付く (カメラ非追従) という不具合になった。 そこで pendingPins (= world 座標のみ) を
+    //   保持し、 onHudRender が毎フレーム live camera (mainCamera) と live GUI 寸法で投影し直す。 これにより
+    //   「今フレームの正しい投影で今フレームのピンだけ」を描く (= VG GateName と同じ stateless)。
+    // ════════════════════════════════════════════════════════════════════
+
+    // onWorldRender 末尾 (= submit collector が有効なフェーズ) から呼ぶ: pending のビームのみ submit する
+    //   (engine が debugFilledBox を translucent フェーズ=水後に描く)。 ピンは HUD パスへ委ねる。
+    private void flushBeams262(SubmitNodeCollector queue, PoseStack matrices, Vec3 camPos) {
+        for (PendingBeam b : pendingBeams) {
+            BeaconEffectLayer.drawWorldSubmit(queue, matrices, b.cxWorld(), b.czWorld(),
+                    camPos, b.themeRgb(), b.alpha(), b.baseWorldY());
+        }
+    }
+
+    // HUD パス本体: pendingPins を毎フレーム live 投影してピンを描く。 Screen 表示中 / F1 はピン非描画
+    //   (= ポーズ復帰時の張り付き回避・HUD 抑制と整合・VG GateName と同方針)。
+    private void drawPinsHudLive(GuiGraphicsExtractor g) {
+        if (pendingPins.isEmpty()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gui.screen() != null || mc.gui.hud.isHidden()) {
+            return;
+        }
+        net.minecraft.client.Camera cam = mc.gameRenderer.mainCamera();
+        if (cam == null) return;
+        Vec3 camPos = cam.position();
+        Quaternionf camOri = cam.rotation();
+        Font font = mc.font;
+        for (PendingPin p : new ArrayList<>(pendingPins)) {
+            drawPinHudLive(g, font, camPos, camOri, p);
+        }
+    }
+
+    // ピン 1 個を live 投影して描く。 レイアウト式 (距離クランプ/行/スケール/中央揃え) は旧 drawPinImmediate と
+    //   同一。 billboard はカメラ正対なので「ピンローカル font-px → screen」はアフィン: 行原点を 1 度だけ投影し、
+    //   pxPerFontPx (= 1 font-px あたりの screen px) で残りの要素を screen 空間オフセットで配置する (= 各要素が
+    //   必ず整列)。 各行は 背景 (g.fill) → アイコン (g.item) → テキスト (g.text) の背面順で描く。
+    private void drawPinHudLive(GuiGraphicsExtractor g, Font font, Vec3 camPos, Quaternionf camOri,
+            PendingPin p) {
+        double cx = p.cx();
+        double cz = p.cz();
+        double baseY = p.baseY();
+        List<HighlightEntry> entries = p.entries();
+        int themeRgb = p.themeRgb();
+
+        int lineHeight = font.lineHeight;
+        int rowSpacing = lineHeight + 1;
+
+        double dx = cx - camPos.x;
+        double dy = baseY - camPos.y;
+        double dz = cz - camPos.z;
+        double distM = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        double maxRenderDist = pinMaxRenderDistance();
+        double renderDist = Math.min(distM, maxRenderDist);
+        double clampFactor = (distM > 1.0e-6) ? (renderDist / distM) : 1.0;
+        double renderCx = camPos.x + dx * clampFactor;
+        double renderCy = camPos.y + dy * clampFactor;
+        double renderCz = camPos.z + dz * clampFactor;
+
+        int totalRows = (entries.isEmpty() ? 1 : entries.size() + 1);
+        Component headerComp = Component.literal(
+                String.format(Locale.ROOT, "▼ %.1fm", distM)).withColor(themeRgb);
+
+        Component[] entryTexts = new Component[entries.size()];
+        int entryIconSize = lineHeight;
+        int entryIconGap = 2;
+        int maxBlockWidth = 0;
+        for (int i = 0; i < entries.size(); i++) {
+            HighlightEntry e = entries.get(i);
+            Component body = Component.literal(
+                    e.stack.getHoverName().getString() + " ×" + e.count).withColor(0xFFFFFF);
+            entryTexts[i] = body;
+            int blockW = entryIconSize + entryIconGap + font.width(body);
+            if (blockW > maxBlockWidth) maxBlockWidth = blockW;
+        }
+
+        float distScaleFactor = (float) (Math.max(renderDist, PIN_SCALE_REF_DISTANCE)
+                / PIN_SCALE_REF_DISTANCE);
+        float worldScale = PIN_TEXT_SCALE * distScaleFactor;
+        float entryBlockLeftX = -maxBlockWidth / 2.0f;
+
+        // ─── ヘッダ「▼ 距離」 (中央揃え・最上段) ───
+        int headerRowIndex = totalRows - 1;
+        float headerY = -(headerRowIndex + 1) * (float) rowSpacing + 1.0f;
+        int headerWidth = font.width(headerComp);
+        float headerTextX = -headerWidth / 2.0f;
+        float[] hOrigin = projectPinLocal(renderCx, renderCy, renderCz, headerTextX, headerY,
+                worldScale, camPos, camOri);
+        if (hOrigin != null) {
+            float pp = hOrigin[2];
+            // 背景: ヘッダ文字背後の黒帯 (= 旧 drawInBatch bg と同色 PIN_BG_ARGB)。
+            fillPinBg(g, hOrigin[0] - pp, hOrigin[1] - pp, (headerWidth + 2) * pp, lineHeight * pp);
+            drawPinText(g, font, headerComp.getVisualOrderText(), hOrigin[0], hOrigin[1],
+                    pp * PIN_TEXT_LOCAL_SCALE, 0xFF000000 | (themeRgb & 0xFFFFFF));
+        }
+
+        // ─── エントリ行 [背景][アイコン][テキスト] ───
+        for (int i = 0; i < entries.size(); i++) {
+            int rowIndex = totalRows - 2 - i;
+            float rowY = -(rowIndex + 1) * (float) rowSpacing + 1.0f;
+            HighlightEntry e = entries.get(i);
+            int textW = font.width(entryTexts[i]);
+            float[] origin = projectPinLocal(renderCx, renderCy, renderCz, entryBlockLeftX, rowY,
+                    worldScale, camPos, camOri);
+            if (origin == null) continue;
+            float ox = origin[0];
+            float oy = origin[1];
+            float pp = origin[2];
+            // 背景: 行全体 (アイコン + gap + テキスト) を覆う黒帯 (= 旧 PIN_BG_ARGB・行全体)。
+            fillPinBg(g, ox - pp, oy - pp,
+                    (entryIconSize + entryIconGap + textW + 2) * pp, lineHeight * pp);
+            // アイコン: 行頭。 画面サイズ = entryIconSize * pp (= 旧 computeIconScreenSize 経路と同値)。
+            float iconSizePx = entryIconSize * pp;
+            float iconCx = ox + (entryIconSize / 2.0f) * pp;
+            float iconCy = oy + (entryIconSize / 2.0f) * pp;
+            drawPinIcon(g, e.stack, iconCx - iconSizePx / 2.0f, iconCy - iconSizePx / 2.0f, iconSizePx);
+            // テキスト: アイコンの右隣。 テキストのみ局所縮小 (PIN_TEXT_LOCAL_SCALE)。
+            float textX = ox + (entryIconSize + entryIconGap) * pp;
+            drawPinText(g, font, entryTexts[i].getVisualOrderText(), textX, oy,
+                    pp * PIN_TEXT_LOCAL_SCALE, 0xFFFFFFFF);
+        }
+    }
+
+    // ピンローカル (font-px) 座標 → screen。 戻り値 {screenX, screenY, pxPerFontPx}。 背後/画面外は null。
+    //   pxPerFontPx は computeIconScreenSize (= アイコンと同一採寸) を lineHeight で割って算出 (= 文字/アイコン/
+    //   背景が同一基準で揃う・26.1.x と同じ相対サイズ)。
+    private float[] projectPinLocal(double rcx, double rcy, double rcz, float localX, float localY,
+            float worldScale, Vec3 camPos, Quaternionf camOri) {
+        Vector3f offset = new Vector3f(localX * worldScale, -localY * worldScale, 0.0f);
+        camOri.transform(offset);
+        double wx = rcx + offset.x;
+        double wy = rcy + offset.y;
+        double wz = rcz + offset.z;
+        float[] screen = worldToScreen(wx, wy, wz, camPos, camOri);
+        if (screen == null) return null;
+        int lineHeight = Minecraft.getInstance().font.lineHeight;
+        float rowScreenPx = computeIconScreenSize(wx, wy, wz, lineHeight * worldScale, camPos, camOri);
+        return new float[] { screen[0], screen[1], rowScreenPx / lineHeight };
+    }
+
+    // 背景矩形 (= 旧 drawPinRowBgImmediate / drawInBatch bg と同色 PIN_BG_ARGB)。 GUI 空間 (identity pose) で塗る。
+    private void fillPinBg(GuiGraphicsExtractor g, float left, float top, float width, float height) {
+        g.fill(Math.round(left), Math.round(top), Math.round(left + width), Math.round(top + height),
+                PIN_BG_ARGB);
+    }
+
+    // アイコン 1 個を screen 左上 + サイズ px で描く (sub-pixel は pose.translate に委ねる)。
+    private void drawPinIcon(GuiGraphicsExtractor g, ItemStack stack, float topLeftX, float topLeftY,
+            float sizePx) {
+        if (stack == null || stack.isEmpty()) return;
+        float scale = sizePx / 16.0f;
+        var pose = g.pose();
+        pose.pushMatrix();
+        try {
+            pose.translate(topLeftX, topLeftY);
+            if (Math.abs(scale - 1.0f) > 1.0e-4f) {
+                pose.scale(scale, scale);
+            }
+            g.item(stack, 0, 0);
+        } finally {
+            pose.popMatrix();
+        }
+    }
+
+    // テキスト 1 行を screen 左上 + scale で描く (sub-pixel は pose.translate に委ねる)。
+    private void drawPinText(GuiGraphicsExtractor g, Font font,
+            net.minecraft.util.FormattedCharSequence seq, float x, float y, float scale, int colorArgb) {
+        var pose = g.pose();
+        pose.pushMatrix();
+        try {
+            pose.translate(x, y);
+            if (Math.abs(scale - 1.0f) > 1.0e-4f) {
+                pose.scale(scale, scale);
+            }
+            g.text(font, seq, 0, 0, colorArgb);
+        } finally {
+            pose.popMatrix();
+        }
+    }*/
+    //?}
 
     /**
      * ワールド座標 → GUI スケール後のスクリーン座標 (= GuiGraphicsExtractor 用 px、 sub-pixel float) に投影する。
@@ -1417,20 +1893,22 @@ public final class ChestHighlighter {
      *   <li>頂点フォーマットは {@code POSITION_COLOR_LIGHTMAP} ({@code .setColor + .setLight}) で十分。</li>
      * </ul>
      */
-    private static void submitPinRowBg(PoseStack matrices, SubmitNodeCollector queue,
+    //? if <26.2 {
+    private static void drawPinRowBgImmediate(MultiBufferSource bufferSource, PoseStack matrices,
             float x, float y, float width, float height, int argb) {
         final float x1 = x;
         final float y1 = y;
         final float x2 = x + width;
         final float y2 = y + height;
-        queue.submitCustomGeometry(matrices, RenderTypes.textBackgroundSeeThrough(),
-                (pose, consumer) -> {
-                    consumer.addVertex(pose, x1, y1, 0).setColor(argb).setLight(0xF000F0);
-                    consumer.addVertex(pose, x1, y2, 0).setColor(argb).setLight(0xF000F0);
-                    consumer.addVertex(pose, x2, y2, 0).setColor(argb).setLight(0xF000F0);
-                    consumer.addVertex(pose, x2, y1, 0).setColor(argb).setLight(0xF000F0);
-                });
+        // submitCustomGeometry → bufferSource.getBuffer の immediate-mode 版 (= 頂点 / RenderType は同一)。
+        VertexConsumer consumer = bufferSource.getBuffer(RenderTypes.textBackgroundSeeThrough());
+        var pose = matrices.last();
+        consumer.addVertex(pose, x1, y1, 0).setColor(argb).setLight(0xF000F0);
+        consumer.addVertex(pose, x1, y2, 0).setColor(argb).setLight(0xF000F0);
+        consumer.addVertex(pose, x2, y2, 0).setColor(argb).setLight(0xF000F0);
+        consumer.addVertex(pose, x2, y1, 0).setColor(argb).setLight(0xF000F0);
     }
+    //?}
 
     // ════════════════════════════════════════════════════════════════════
     // X-ray RenderType (lines, NO_DEPTH_TEST)
@@ -1441,6 +1919,7 @@ public final class ChestHighlighter {
      * バニラの {@code core/rendertype_lines} シェーダをそのまま使い、
      * pipeline 設定のみ depth test を {@code NO_DEPTH_TEST} に差し替える。
      */
+    //? if <26.2 {
     private static RenderType xrayLines() {
         RenderType cached = xrayLinesType;
         if (cached != null)
@@ -1485,6 +1964,7 @@ public final class ChestHighlighter {
             return rt;
         }
     }
+    //?}
 
     // ════════════════════════════════════════════════════════════════════
     // ヘルパ

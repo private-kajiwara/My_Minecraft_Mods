@@ -1,0 +1,44 @@
+{
+	"schemaVersion": 1,
+	"id": "visualizegate",
+	"version": "${version}",
+	"name": "VisualizeGate",
+	"description": "Visualizes Nether portals in the world with bounding-box frames so you can spot and align them at a glance.",
+	"authors": [
+		"kajiwara"
+	],
+	"contact": {
+		"homepage": "https://github.com/private-kajiwara/My_Minecraft_Mods",
+		"sources": "https://github.com/private-kajiwara/My_Minecraft_Mods",
+		"issues": "https://github.com/private-kajiwara/My_Minecraft_Mods/issues"
+	},
+	"license": "CC0-1.0",
+	"icon": { "128": "assets/visualizegate/icon.png", "512": "assets/visualizegate/icon@512.png" },
+	"environment": "client",
+	"entrypoints": {
+		"main": [
+			"com.kajiwara.visualizegate.VisualizeGateMod"
+		],
+		"client": [
+			"com.kajiwara.visualizegate.VisualizeGateClient"
+		],
+		"modmenu": [
+			"com.kajiwara.visualizegate.config.modmenu.GateModMenuApi"
+		]
+	},
+	"mixins": [
+		{
+			"config": "visualizegate.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	},
+	"recommends": {
+		"modmenu": "*"
+	}
+}

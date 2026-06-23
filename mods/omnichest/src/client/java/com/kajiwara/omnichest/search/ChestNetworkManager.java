@@ -102,6 +102,23 @@ public final class ChestNetworkManager {
         put(new ContainerSnapshot(dimension, pos, secondaryPos, type, items, lastSeenMillis));
     }
 
+    /**
+     * コンテナを持つエンティティ (= トロッコ / ボート / モブ) のスナップショットを構築して put する。
+     * ブロック版 {@link #capture} と同じ経路 (= {@link #put}) を通すため、 インデックス /
+     * 検索 / ネスト / リスナ は<b>区別なく</b> エンティティ snapshot も扱える。
+     *
+     * @param pos    捕捉時のエンティティ {@code blockPosition()} (= 未解決時のフォールバック位置)
+     * @param entity 同一性 (UUID) と毎フレーム位置解決 (networkId) を担うロケータ
+     */
+    public void captureEntity(ResourceKey<Level> dimension,
+            BlockPos pos,
+            ContainerType type,
+            List<ItemStack> items,
+            long lastSeenMillis,
+            EntityLocator entity) {
+        put(new ContainerSnapshot(dimension, pos, null, type, items, lastSeenMillis, entity));
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // 読み出し
     // ────────────────────────────────────────────────────────────────────

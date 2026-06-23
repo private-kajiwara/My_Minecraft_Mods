@@ -33,6 +33,12 @@ repositories {
     maven("https://maven.terraformersmc.com/releases/") { name = "TerraformersMC" }
     maven("https://maven.shedaniel.me/") { name = "Shedaniel" }
     maven("https://maven.fabricmc.net/")
+    // dev runClient 専用 (Iris / Sodium)。 content filter で maven.modrinth 群のみに限定し、
+    // 既存の依存解決には影響させない (= 配布/コンパイルへの混入経路を作らない)。
+    maven("https://api.modrinth.com/maven") {
+        name = "Modrinth"
+        content { includeGroup("maven.modrinth") }
+    }
 }
 
 dependencies {
@@ -47,6 +53,18 @@ dependencies {
 
     val modmenu: String = sc.properties["deps.mod_menu"]
     if (modmenu.isNotEmpty()) modImplementation("com.terraformersmc:modmenu:$modmenu")
+
+    // ---- dev runClient 専用のシェーダ環境 (Iris + Sodium) ----
+    //   modLocalRuntime = dev ランタイム classpath のみ (runClient/runServer)。
+    //   配布 jar・fabric.mod.json の依存・コンパイル classpath には一切載らない。
+    //   ⇒ 既存のシェーダ soft 検出は不変 (Iris/Sodium をハード依存化しない)。
+    //   Iris は required で特定 Sodium を要求するため、 ノード別に固定ペアで入れる
+    //   (値は stonecutter.properties.toml。 ミスマッチは起動クラッシュの原因)。
+    //   入手不可ノードは toml を空にすれば skip (= ModMenu のみで従来どおり起動)。
+    val sodium: String = sc.properties["deps.sodium"]
+    val iris: String = sc.properties["deps.iris"]
+    if (sodium.isNotEmpty()) modLocalRuntime("maven.modrinth:sodium:$sodium")
+    if (iris.isNotEmpty()) modLocalRuntime("maven.modrinth:iris:$iris")
 
     // MC 非依存の純粋ロジック
     implementation(project(":common"))

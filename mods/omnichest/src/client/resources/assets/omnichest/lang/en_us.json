@@ -378,6 +378,9 @@
   "omnichest.container_type.dispenser": "Dispenser",
   "omnichest.container_type.dropper": "Dropper",
   "omnichest.container_type.crafter": "Crafter",
+  "omnichest.container_type.chest_minecart": "Minecart with Chest",
+  "omnichest.container_type.chest_boat": "Boat with Chest",
+  "omnichest.container_type.mob_chest": "Pack Animal",
   "omnichest.container_type.other": "Container",
 
   "omnichest.storage_category.building": "Building Storage",

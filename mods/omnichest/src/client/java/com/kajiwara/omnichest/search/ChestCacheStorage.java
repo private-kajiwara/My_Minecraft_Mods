@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.search;
 
 import com.kajiwara.omnichest.OmniChest;
 import com.mojang.serialization.DynamicOps;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -29,6 +30,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * チェストネットワーク (= 開いたことのあるコンテナ群) を NBT で永続化する。
@@ -55,8 +57,15 @@ import java.util.Optional;
  */
 public final class ChestCacheStorage {
 
-    /** schema 形式 version。互換性破壊する変更時にインクリメント。 */
-    private static final int VERSION = 1;
+    /**
+     * schema 形式 version。互換性破壊する変更時にインクリメント。
+     * <ul>
+     * <li>1: ブロックコンテナのみ保存 (エンティティは非永続)。</li>
+     * <li>2: コンテナ持ちエンティティ (= トロッコ / ボート / モブ) も UUID 付きで保存。
+     * v1 ファイルは entity タグ無しの block 群として従来どおりロードできる (= 後方互換)。</li>
+     * </ul>
+     */
+    private static final int VERSION = 2;
     /** save の連打を抑制する最小間隔 (ms)。 */
     private static final long SAVE_THROTTLE_MS = 2000L;
 
@@ -87,8 +96,22 @@ public final class ChestCacheStorage {
         // 切断時に最終 save (load 完了済み & 変化あり)。
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             if (loaded)
-                trySave();
+                trySave("disconnect");
             loaded = false;
+        });
+
+        // ゲーム完全終了時 (= ウィンドウ× / Alt+F4 / Quit) にも最終 save。
+        // CLIENT_STOPPING は Minecraft.close() 冒頭で発火し、 この時点では level / 統合サーバが
+        // まだ生きているため currentCacheFile() / trySave() が正しく書き込める。
+        // ワールド内に居たまま直接終了する経路では DISCONNECT の発火が保証されない (発火しても
+        // level 破棄後だと trySave() が mc.level==null で no-op になる) ため、 ここで取りこぼしを防ぐ。
+        // loaded ガードにより、 タイトル画面からの Quit (退出済み = loaded false) では発火しても
+        // 既存キャッシュを空保存で上書きしない (加えて currentCacheFile() も null を返し二重に安全)。
+        // throttle の直近変更トレーリング取りこぼしも、 この無条件 flush が拾う。
+        // StorageMemory / SlotLockStorage と同じ DISCONNECT + CLIENT_STOPPING の二重フックに揃える。
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            if (loaded)
+                trySave("client_stopping");
         });
     }
 
@@ -97,35 +120,62 @@ public final class ChestCacheStorage {
         if (now - lastSaveMs < SAVE_THROTTLE_MS)
             return;
         lastSaveMs = now;
-        trySave();
+        trySave("throttled");
     }
 
     public static void trySave() {
+        trySave("manual");
+    }
+
+    /**
+     * @param reason 発火経路 (= "throttled" / "disconnect" / "client_stopping" / "manual")。
+     *               診断ログ用。 保存挙動には影響しない。
+     */
+    public static void trySave(String reason) {
         Path file = currentCacheFile();
-        if (file == null)
+        if (file == null) {
+            // 診断: ワールド/サーバ未接続でファイルが決まらない (= 保存対象なし)。
+            OmniChest.LOGGER.info("[omnichest] ChestCache save skip [{}]: no cache file (not in world/server)", reason);
             return;
+        }
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
-        if (level == null)
+        if (level == null) {
+            // 診断: level 破棄後の発火 (= この経路では書き込めない)。
+            OmniChest.LOGGER.info("[omnichest] ChestCache save skip [{}]: level==null, file={}", reason, file);
             return;
+        }
         RegistryAccess registries = level.registryAccess();
         DynamicOps<Tag> ops = registries.createSerializationContext(NbtOps.INSTANCE);
 
+        int written = 0;
+        int entityWritten = 0;
         try {
             Files.createDirectories(file.getParent());
             CompoundTag root = new CompoundTag();
             root.putInt("version", VERSION);
             ListTag listTag = new ListTag();
             for (ContainerSnapshot snap : ChestNetworkManager.get().snapshots()) {
+                // ブロック / エンティティ 双方を保存する (= v2)。 エンティティは UUID で同一性を持ち、
+                // ロード時は最終既知座標で一覧へ復元、 実体再ロード時に networkId へ再アンカーされる
+                // ({@link snapshotToTag} / {@link tagToSnapshot} / ContainerScanner の ENTITY_LOAD)。
                 CompoundTag t = snapshotToTag(snap, ops);
-                if (t != null)
+                if (t != null) {
                     listTag.add(t);
+                    written++;
+                    if (snap.isEntity())
+                        entityWritten++;
+                }
             }
             root.put("snapshots", listTag);
 
             try (OutputStream os = Files.newOutputStream(file)) {
                 NbtIo.writeCompressed(root, os);
             }
+            // 診断: 何件を どのファイルへ どの経路で 書いたか (managerSize と突き合わせ可能)。
+            OmniChest.LOGGER.info(
+                    "[omnichest] Saved {} chest snapshots to {} [{}] (managerSize={}, entityWritten={})",
+                    written, file, reason, ChestNetworkManager.get().size(), entityWritten);
         } catch (Exception e) {
             OmniChest.LOGGER.warn("Failed to save chest cache to {}", file, e);
         }
@@ -136,10 +186,13 @@ public final class ChestCacheStorage {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null) {
+            OmniChest.LOGGER.info("[omnichest] ChestCache load skip: level==null");
             loaded = true; // level 不在では load しないが、以後の save は許可。
             return;
         }
         if (file == null || !Files.exists(file)) {
+            // 診断: ロード対象ファイル不在 (= 初回 / パス不一致の切り分け用)。
+            OmniChest.LOGGER.info("[omnichest] ChestCache load: no file to load (file={})", file);
             loaded = true;
             return;
         }
@@ -212,6 +265,12 @@ public final class ChestCacheStorage {
         }
         t.putString("type", snap.type().name());
         t.putLong("lastSeen", snap.lastSeenMillis());
+        // エンティティコンテナ: 同一性は UUID。 networkId はセッション内ハンドルなので保存しない
+        // (= ロード時はセンチネルで未解決状態にし、 実体再ロードで再アンカーする)。
+        // pos は捕捉時 (= 最終既知) 座標で、 上の x/y/z にそのまま入る (= 一覧復元の表示位置)。
+        if (snap.isEntity() && snap.entity() != null) {
+            t.putString("entityUuid", snap.entity().uuid().toString());
+        }
 
         ListTag items = new ListTag();
         for (int i = 0; i < snap.items().size(); i++) {
@@ -292,6 +351,22 @@ public final class ChestCacheStorage {
                 continue;
             ItemStack stack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(ItemStack.EMPTY);
             items.set(slot, stack);
+        }
+
+        // エンティティコンテナ (v2): UUID を持つ場合は EntityLocator 付きで復元する。
+        // networkId はまだ不明なのでセンチネル (= 未解決)。 実体が再ロードされた時に
+        // ContainerScanner の ENTITY_LOAD が UUID 一致で networkId へ再アンカーする。
+        // UUID が壊れていれば そのエントリは安全にスキップ (= クラッシュさせない)。
+        String entityUuidStr = t.getString("entityUuid").orElse(null);
+        if (entityUuidStr != null && !entityUuidStr.isEmpty()) {
+            UUID uuid;
+            try {
+                uuid = UUID.fromString(entityUuidStr);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+            return new ContainerSnapshot(dim, pos, null, type, items, lastSeen,
+                    EntityLocator.unresolved(uuid));
         }
 
         return new ContainerSnapshot(dim, pos, secondaryPos, type, items, lastSeen);

@@ -209,6 +209,10 @@ public final class Keys {
     public static final String CONTAINER_TYPE_DISPENSER = "omnichest.container_type.dispenser";
     public static final String CONTAINER_TYPE_DROPPER = "omnichest.container_type.dropper";
     public static final String CONTAINER_TYPE_CRAFTER = "omnichest.container_type.crafter";
+    // ─── コンテナを持つエンティティ (= トロッコ / ボート / モブ) ─────────────
+    public static final String CONTAINER_TYPE_CHEST_MINECART = "omnichest.container_type.chest_minecart";
+    public static final String CONTAINER_TYPE_CHEST_BOAT = "omnichest.container_type.chest_boat";
+    public static final String CONTAINER_TYPE_MOB_CHEST = "omnichest.container_type.mob_chest";
     public static final String CONTAINER_TYPE_OTHER = "omnichest.container_type.other";
 
     // ─── StorageCategory displayName ───────────────────────────

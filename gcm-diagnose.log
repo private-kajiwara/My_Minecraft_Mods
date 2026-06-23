@@ -1,0 +1,226 @@
+﻿Diagnose log at 2026-06-10T12:33:05Z
+
+AppPath: C:\Program Files\Git\mingw64\bin\git-credential-manager.exe
+InstallDir: C:\Program Files\Git\mingw64\bin\
+Version: 2.7.3+5fa7116896c82164996a609accd1c5ad90fe730a
+
+------------
+Diagnostic: Environment
+Skipped: False
+Success: True
+Exception: None
+Log:
+OSType: Windows
+OSVersion: 10.0 (build 26200)
+Reading environment variables... OK
+ Variables:
+SESSIONNAME=Console
+ProgramFiles(x86)=C:\Program Files (x86)
+MSYSTEM=MINGW64
+ProgramW6432=C:\Program Files
+PROCESSOR_IDENTIFIER=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+EFC_14680_1592913036=1
+TMP=C:\Users\ppapk\AppData\Local\Temp
+PROCESSOR_ARCHITECTURE=AMD64
+VSCODE_GIT_ASKPASS_MAIN=c:\Users\ppapk\AppData\Roaming\Code\User\globalStorage\vscode.git\askpass\493597c785d4c5cb\askpass-main.js
+Path=C:/Program Files/Git/mingw64/libexec/git-core;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\ppapk\bin;c:\Users\ppapk\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\debugCommand;c:\Users\ppapk\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\copilotCli;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot\bin;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files\dotnet\;C:\Program Files\NVIDIA Corporation\NVIDIA app\NvDLISR;C:\Program Files\nodejs\;C:\Program Files\Git\cmd;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\GitHub CLI\;C:\Users\ppapk\AppData\Local\Microsoft\WindowsApps;C:\Users\ppapk\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\ppapk\AppData\Roaming\Programs\Zero Install;C:\Users\ppapk\AppData\Local\Microsoft\WindowsApps;C:\Users\ppapk\AppData\Roaming\npm;C:\Program Files\Git\bin;C:\Users\ppapk\AppData\Local\Python\bin;c:\Users\ppapk\.vscode\extensions\vscjava.vscode-java-debug-0.59.0\bundled\scripts\noConfigScripts
+MIC_LD_LIBRARY_PATH=C:\Program Files (x86)\Common Files\Intel\Shared Libraries\compiler\lib\mic
+CLAUDE_CODE_SSE_PORT=47962
+ACSetupSvcPort=23210
+VSCODE_GIT_IPC_HANDLE=\\.\pipe\vscode-git-811aad7090-sock
+USERDOMAIN=メインPC
+PROCESSOR_REVISION=b701
+TEMP=C:\Users\ppapk\AppData\Local\Temp
+USERPROFILE=C:\Users\ppapk
+LOGONSERVER=\\メインPC
+TERM=xterm-256color
+USERNAME=ppapk
+SystemRoot=C:\WINDOWS
+CHROME_CRASHPAD_PIPE_NAME=\\.\pipe\crashpad_33456_TIRARQKTGWSXQUIC
+GIT_EXEC_PATH=C:/Program Files/Git/mingw64/libexec/git-core
+PLINK_PROTOCOL=ssh
+KMP_BLOCKTIME=0
+USERDOMAIN_ROAMINGPROFILE=メインPC
+CommonProgramFiles=C:\Program Files\Common Files
+VSCODE_INJECTION=1
+VSCODE_PYTHON_AUTOACTIVATE_GUARD=1
+PROCESSOR_LEVEL=6
+VSCODE_JAVA_EXEC=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot\bin\java
+ProgramData=C:\ProgramData
+LANG=ja_JP.UTF-8
+RlsSvcPort=22112
+HOMEPATH=\Users\ppapk
+COMPUTERNAME=メインPC
+ALLUSERSPROFILE=C:\ProgramData
+CommonProgramW6432=C:\Program Files\Common Files
+COPILOT_DEBUG_NONCE=2c82231640e7821f8c775b575c6846d6
+EFC_14680_4126798990=1
+__PSLockDownPolicy=0
+VSCODE_JDWP_ADAPTER_ENDPOINTS=c:\Users\ppapk\.vscode\extensions\vscjava.vscode-java-debug-0.59.0\.noConfigDebugAdapterEndpoints\endpoint-fef0cd2cfd44b59a.txt
+DriverData=C:\Windows\System32\Drivers\DriverData
+HOMEDRIVE=C:
+INTEL_DEV_REDIST=C:\Program Files (x86)\Common Files\Intel\Shared Libraries\
+windir=C:\WINDOWS
+GIT_TRACE2_PARENT_SID=b53bcaa6-644b-494f-b239-74ce9e490eda
+SystemDrive=C:
+NUMBER_OF_PROCESSORS=32
+OS=Windows_NT
+ProgramFiles=C:\Program Files
+ComSpec=C:\WINDOWS\system32\cmd.exe
+PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL
+HOME=C:\Users\ppapk
+JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot
+PSModulePath=C:\Users\ppapk\OneDrive\ドキュメント\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules
+TMPDIR=C:\Users\ppapk\AppData\Local\Temp
+APPDATA=C:\Users\ppapk\AppData\Roaming
+OneDrive=C:\Users\ppapk\OneDrive
+ACSvcPort=17532
+LOCALAPPDATA=C:\Users\ppapk\AppData\Local
+OMP_WAIT_POLICY=PASSIVE
+GIT_ASKPASS=c:\Users\ppapk\AppData\Roaming\Code\User\globalStorage\vscode.git\askpass\493597c785d4c5cb\askpass.sh
+VSCODE_GIT_ASKPASS_NODE=C:\Users\ppapk\AppData\Local\Programs\Microsoft VS Code\Code.exe
+TERM_PROGRAM_VERSION=1.123.2
+CommonProgramFiles(x86)=C:\Program Files (x86)\Common Files
+COLORTERM=truecolor
+PUBLIC=C:\Users\Public
+TERM_PROGRAM=vscode
+VSCODE_GIT_ASKPASS_EXTRA_ARGS=
+
+
+------------
+Diagnostic: File system
+Skipped: False
+Success: True
+Exception: None
+Log:
+Temporary directory is 'C:\Users\ppapk\AppData\Local\Temp\'...
+Checking basic file I/O...
+Writing to temporary file 'C:\Users\ppapk\AppData\Local\Temp\d258408f887521faad2599a8'... OK
+Reading from temporary file 'C:\Users\ppapk\AppData\Local\Temp\d258408f887521faad2599a8'... OK
+Deleting temporary file 'C:\Users\ppapk\AppData\Local\Temp\d258408f887521faad2599a8'... OK
+Testing IFileSystem instance...
+UserHomePath: C:\Users\ppapk
+UserDataDirectoryPath: C:\Users\ppapk\.gcm
+GetCurrentDirectory(): C:\MyFabricMod
+
+------------
+Diagnostic: Networking
+Skipped: False
+Success: True
+Exception: None
+Log:
+Checking networking and HTTP stack...
+Creating HTTP client... OK
+IsNetworkAvailable: True
+Sending HEAD request to http://example.com...Sending HEAD request to https://example.com... OK
+ OK
+Acquiring free TCP port... OK
+Testing local HTTP loopback connections...
+Creating new HTTP listener for http://localhost:64244/... OK
+Waiting for loopback connection... OK
+Writing response... OK
+Waiting for response data... OK
+Loopback connection data OK
+
+------------
+Diagnostic: Git
+Skipped: False
+Success: True
+Exception: None
+Log:
+Getting Git version... OK
+Git version is '2.54.0.windows.1'
+Locating current repository...Git repository at 'C:/MyFabricMod/.git'
+ OK
+Listing all Git configuration... OK
+Git configuration:
+file:C:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:C:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:C:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:C:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:C:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:C:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:C:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:C:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:C:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Users/ppapk/.gitconfig	user.name=private-kajiwara
+file:C:/Users/ppapk/.gitconfig	user.email=ppapkajiwara@gmail.com
+file:.git/config	core.repositoryformatversion=0
+file:.git/config	core.filemode=false
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	core.symlinks=false
+file:.git/config	core.ignorecase=true
+file:.git/config	remote.upstream.url=https://github.com/private-kajiwara/MyFabricMod.git
+file:.git/config	remote.upstream.fetch=+refs/heads/*:refs/remotes/upstream/*
+file:.git/config	branch.main.remote=upstream
+file:.git/config	branch.main.merge=refs/heads/main
+file:.git/config	branch.main.vscode-merge-base=origin/main
+file:.git/config	branch.fix/1.0.2.remote=upstream
+file:.git/config	branch.fix/1.0.2.merge=refs/heads/fix/1.0.2
+file:.git/config	branch.fix/1.0.2.vscode-merge-base=origin/fix/1.0.2
+file:.git/config	branch.fix/1.0.2.vscode-merge-base=origin/main
+file:.git/config	branch.fix/omnichest-1.0.2.remote=upstream
+file:.git/config	branch.fix/omnichest-1.0.2.merge=refs/heads/fix/omnichest-1.0.2
+file:.git/config	branch.fix/omnichest-1.0.2.vscode-merge-base=origin/fix/omnichest-1.0.2
+file:.git/config	branch.fix/omnichest-1.0.3-directory-improvements.remote=upstream
+file:.git/config	branch.fix/omnichest-1.0.3-directory-improvements.merge=refs/heads/fix/omnichest-1.0.3-directory-improvements
+file:.git/config	branch.fix/omnichest-1.0.3-directory-improvements.vscode-merge-base=origin/fix/omnichest-1.0.3-directory-improvements
+file:.git/config	branch.feature/mods-of-intergenerational-support.remote=upstream
+file:.git/config	branch.feature/mods-of-intergenerational-support.merge=refs/heads/feature/mods-of-intergenerational-support
+file:.git/config	branch.feature/mods-of-intergenerational-support.vscode-merge-base=origin/feature/mods-of-intergenerational-support
+file:.git/config	branch.feature/general-support-for-mod-loaders.remote=upstream
+file:.git/config	branch.feature/general-support-for-mod-loaders.merge=refs/heads/feature/general-support-for-mod-loaders
+file:.git/config	branch.feature/general-support-for-mod-loaders.vscode-merge-base=origin/feature/general-support-for-mod-loaders
+file:.git/config	branch.feature/omnichest-1.0.4.remote=upstream
+file:.git/config	branch.feature/omnichest-1.0.4.merge=refs/heads/feature/omnichest-1.0.4
+file:.git/config	branch.feature/omnichest-1.0.4.vscode-merge-base=origin/feature/omnichest-1.0.4
+file:.git/config	branch.fix/omnichest-1.0.5.remote=upstream
+file:.git/config	branch.fix/omnichest-1.0.5.merge=refs/heads/fix/omnichest-1.0.5
+file:.git/config	branch.fix/omnichest-1.0.5.vscode-merge-base=origin/fix/omnichest-1.0.5
+file:.git/config	branch.feature/visualizegate-1.0.0.remote=origin
+file:.git/config	branch.feature/visualizegate-1.0.0.vscode-merge-base=origin/feature/visualizegate-1.0.0
+file:.git/config	branch.feature/visualizegate-1.0.0.merge=refs/heads/feature/visualizegate-1.0.0
+file:.git/config	remote.origin.url=https://github.com/private-kajiwara/My_Minecraft_Mods.git
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+
+
+------------
+Diagnostic: Credential storage
+Skipped: False
+Success: True
+Exception: None
+Log:
+ICredentialStore instance is of type: CredentialStore
+Writing test credential... OK
+Reading test credential... OK
+Deleting test credential... OK
+
+------------
+Diagnostic: Microsoft authentication (AAD/MSA)
+Skipped: False
+Success: True
+Exception: None
+Log:
+Broker is not enabled.
+Flow type is: Auto
+Gathering MSAL token cache data... OK
+CacheDirectory: C:\Users\ppapk\AppData\Local\.IdentityService
+CacheFileName: msal.cache
+CacheFilePath: C:\Users\ppapk\AppData\Local\.IdentityService\msal.cache
+Creating cache helper... OK
+Verifying MSAL token cache persistence... OK
+
+------------
+Diagnostic: GitHub API
+Skipped: False
+Success: True
+Exception: None
+Log:
+Using 'https://github.com/' as API target.
+Querying '/meta' endpoint... OK
+

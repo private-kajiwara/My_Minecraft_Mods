@@ -51,7 +51,11 @@ public class WindowGuiScaleMixin {
         if (mc == null) {
             return;
         }
+        //? if >=26.2 {
+        /*Screen screen = mc.gui.screen();*/
+        //?} else {
         Screen screen = mc.screen;
+        //?}
         if (!(screen instanceof OmniChestScaledScreen scaled) || !scaled.omnichest$wantsScaleClamp()) {
             return; // 対応画面以外は素通し (= バニラ挙動)。
         }

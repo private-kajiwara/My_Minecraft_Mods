@@ -2,10 +2,10 @@ package com.kajiwara.omnichest.client.render;
 
 import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.config.data.SearchConfig;
-import com.kajiwara.omnichest.search.ContainerSnapshot;
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.core.BlockPos;
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?}
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -19,11 +19,11 @@ import net.minecraft.world.phys.Vec3;
  *   <li>カメラ距離で <b>distance culling</b> (遠すぎるビームは描かない)。</li>
  *   <li>基準不透明度 × ハイライトのフェード量 × 明滅パルス × 距離フェード で alpha を合成。</li>
  *   <li>上方へ向けて alpha を 0 に落とす縦グラデーション (= alpha fade) を指定して
- *       {@link SearchBeaconRenderer#submitBeam} に委譲。</li>
+ *       {@link SearchBeaconRenderer#drawBeamImmediate} に委譲。</li>
  * </ol>
  *
  * <p>
- * <b>不変条件</b>: 本レイヤはハイライトの登録情報 ({@link ContainerSnapshot}) を読むだけで、
+ * <b>不変条件</b>: 本レイヤはハイライトの中心座標・alpha を読むだけで、
  * ピン座標・Overlay anchor・検索ロジック・Tracking system のいずれも書き換えない。
  * あくまで「ピンの補助演出」 として独立に描画を足すだけ。
  */
@@ -49,22 +49,28 @@ public final class BeaconEffectLayer {
     }
 
     /**
-     * 1 つのハイライトに対してビームを submit する (= 描画条件を満たさなければ何もしない)。
+     * 1 つのハイライトに対してビームを <b>immediate-mode</b> で描く (= 描画条件を満たさなければ何もしない)。
      *
-     * @param queue          ワールド描画キュー
+     * <p>
+     * <b>なぜ immediate-mode か</b>: submit 収集 ({@code SubmitNodeCollector}) のビームは、 バニラが
+     * 半透明地形 (水) を全 features パスより後に描くため必ず水に上書きされる。 そこで水描画後の
+     * ステージ ({@link ChestHighlighter#onAfterWaterRender}) で {@code bufferSource} に直接描き、
+     * その場で flush することで水の上に出す。 ビームの depth test (LEQUAL) は不変なので固体地形へは
+     * 従来どおり遮蔽される (= バニラビーコン挙動を維持)。
+     *
+     * @param bufferSource   immediate-mode 描画先 (= 水描画後ステージの bufferSource / consumers)
      * @param matrices       camera-relative の PoseStack
-     * @param snap           対象コンテナのスナップショット (読み取り専用)
+     * @param cxWorld,czWorld ビーム中心のワールド XZ
      * @param camPos         カメラのワールド座標
      * @param themeRgb       テーマ色 (= ピン / ボックスと共通の 0xRRGGBB)
      * @param highlightAlpha ハイライト全体のフェード量 (0..1、 = 消滅直前は小さくなる)
-     * @param baseWorldY     ビーム下端のワールド Y。 ピンの一番真上 (= 名前タグ スタック上端) が
-     *                       渡される。 表示文字量・距離に連動して変動する
-     *                       ({@link com.kajiwara.omnichest.client.render.ChestHighlighter#pinTopWorldY} 参照)。
+     * @param baseWorldY     ビーム下端のワールド Y (= ピンの一番真上)
      */
-    public static void submit(SubmitNodeCollector queue, PoseStack matrices,
-            ContainerSnapshot snap, Vec3 camPos, int themeRgb, float highlightAlpha,
-            double baseWorldY) {
-        if (snap == null || highlightAlpha <= 0.001f) return;
+    //? if <26.2 {
+    public static void drawWorld(net.minecraft.client.renderer.MultiBufferSource.BufferSource bufferSource,
+            PoseStack matrices, double cxWorld, double czWorld, Vec3 camPos, int themeRgb,
+            float highlightAlpha, double baseWorldY) {
+        if (highlightAlpha <= 0.001f) return;
 
         SearchConfig cfg;
         try {
@@ -74,18 +80,6 @@ public final class BeaconEffectLayer {
         }
         if (cfg == null || !cfg.enableBeacon) return;
 
-        // ─── ピンと同じ中心 (= 読み取りのみ、 ピン座標は変えない) ───
-        BlockPos primary = snap.pos();
-        BlockPos secondary = snap.secondaryPos();
-        double cxWorld;
-        double czWorld;
-        if (secondary != null && snap.type() != null && snap.type().isDouble()) {
-            cxWorld = (primary.getX() + secondary.getX()) * 0.5 + 0.5;
-            czWorld = (primary.getZ() + secondary.getZ()) * 0.5 + 0.5;
-        } else {
-            cxWorld = primary.getX() + 0.5;
-            czWorld = primary.getZ() + 0.5;
-        }
         // baseWorldY = ピンの一番真上 (引数で受け取る)。 ここでチェスト天面からは立ち上げない。
 
         // ─── distance culling ───
@@ -111,7 +105,53 @@ public final class BeaconEffectLayer {
 
         float width = (float) Math.max(0.05, Math.min(1.0, cfg.beaconWidth));
 
-        // camera-relative 座標へ変換して submit。
+        // camera-relative 座標へ変換して描く。
+        float cx = (float) (cxWorld - camPos.x);
+        float cz = (float) (czWorld - camPos.z);
+        float y0 = (float) (baseWorldY - camPos.y);
+        float y1 = (float) (baseWorldY + BEAM_HEIGHT - camPos.y);
+
+        SearchBeaconRenderer.drawBeamImmediate(bufferSource, matrices, cx, cz, y0, y1,
+                themeRgb, bottomAlpha, topAlpha, width);
+    }
+    //?}
+
+    //? if >=26.2 {
+    /*// 26.2: immediate (MultiBufferSource) 撤去版。 alpha/culling ロジックは drawWorld と同一で、
+    //   最終描画だけ SubmitNodeCollector への submit (バニラ beacon beam = Iris-safe) に替える。 engine が
+    //   translucent フェーズ (= 水後) に描くため、 旧「水後 immediate」 ステージは不要。
+    public static void drawWorldSubmit(SubmitNodeCollector queue,
+            PoseStack matrices, double cxWorld, double czWorld, Vec3 camPos, int themeRgb,
+            float highlightAlpha, double baseWorldY) {
+        if (highlightAlpha <= 0.001f) return;
+
+        SearchConfig cfg;
+        try {
+            cfg = ConfigManager.get().search;
+        } catch (Throwable t) {
+            return;
+        }
+        if (cfg == null || !cfg.enableBeacon) return;
+
+        double dx = cxWorld - camPos.x;
+        double dyToBase = baseWorldY - camPos.y;
+        double dz = czWorld - camPos.z;
+        double dist = Math.sqrt(dx * dx + dyToBase * dyToBase + dz * dz);
+        if (dist > CULL_DISTANCE) return;
+
+        float baseAlpha = clamp01(cfg.beaconOpacity / 100.0f) * clamp01(highlightAlpha);
+        if (cfg.beaconAnimation) {
+            baseAlpha *= pulse();
+        }
+        if (cfg.beaconDistanceFade) {
+            baseAlpha *= distanceFade(dist);
+        }
+        if (baseAlpha <= 0.004f) return;
+
+        float bottomAlpha = baseAlpha;
+        float topAlpha = 0.0f;
+        float width = (float) Math.max(0.05, Math.min(1.0, cfg.beaconWidth));
+
         float cx = (float) (cxWorld - camPos.x);
         float cz = (float) (czWorld - camPos.z);
         float y0 = (float) (baseWorldY - camPos.y);
@@ -119,7 +159,8 @@ public final class BeaconEffectLayer {
 
         SearchBeaconRenderer.submitBeam(queue, matrices, cx, cz, y0, y1,
                 themeRgb, bottomAlpha, topAlpha, width);
-    }
+    }*/
+    //?}
 
     /** ゆっくりした明滅倍率 (PULSE_MIN..1.0)。 時間ベースなので描画負荷に依らず一定速度。 */
     private static float pulse() {

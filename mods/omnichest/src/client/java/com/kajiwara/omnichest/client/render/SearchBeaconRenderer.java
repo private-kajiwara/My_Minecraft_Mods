@@ -13,7 +13,12 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.renderer.SubmitNodeCollector;
+//? if <26.2 {
+import net.minecraft.client.renderer.MultiBufferSource;
+//?}
+//? if >=26.2 {
+/*import net.minecraft.client.renderer.SubmitNodeCollector;*/
+//?}
 //? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
@@ -60,7 +65,13 @@ public final class SearchBeaconRenderer {
     }
 
     /**
-     * 1 本のビームを submit する。 座標はすべて <b>camera-relative</b> (= matrices がカメラ原点)。
+     * 1 本のビームを <b>immediate-mode</b> で {@code bufferSource} に描く。 座標はすべて
+     * <b>camera-relative</b> (= matrices がカメラ原点)。 実際の GPU 反映は {@link #flush} で行う。
+     *
+     * <p>
+     * 旧 submit 版 (= {@code SubmitNodeCollector}) と頂点 / RenderType / 色は完全に同一。 描画タイミング
+     * だけを「水の描画後」 に移すための immediate-mode 版 (= {@code submitCustomGeometry} を
+     * {@code bufferSource.getBuffer} + 直接頂点積みに置換しただけ)。
      *
      * @param centerX     ビーム中心の camera-relative X
      * @param centerZ     ビーム中心の camera-relative Z
@@ -71,7 +82,8 @@ public final class SearchBeaconRenderer {
      * @param topAlpha    上端の不透明度 (0..1、 通常 0 付近にして上方フェード)
      * @param coreWidth   コア柱の幅 (ブロック)
      */
-    public static void submitBeam(SubmitNodeCollector queue, PoseStack matrices,
+    //? if <26.2 {
+    public static void drawBeamImmediate(MultiBufferSource bufferSource, PoseStack matrices,
             float centerX, float centerZ, float baseY, float topY,
             int rgb, float bottomAlpha, float topAlpha, float coreWidth) {
         if (topY <= baseY) return;
@@ -85,14 +97,57 @@ public final class SearchBeaconRenderer {
         int bottomGlow = packColor(rgb, bottomAlpha * GLOW_ALPHA_MULT);
         int topGlow = packColor(rgb, topAlpha * GLOW_ALPHA_MULT);
 
-        RenderType type = beamRenderType();
-        queue.submitCustomGeometry(matrices, type, (pose, consumer) -> {
-            // 外側グロー柱 (先に描いて内側コアを上に重ねる)。
-            column(consumer, pose, centerX, centerZ, baseY, topY, glowHalf, bottomGlow, topGlow);
-            // 内側コア柱。
-            column(consumer, pose, centerX, centerZ, baseY, topY, coreHalf, bottomCore, topCore);
-        });
+        VertexConsumer consumer = bufferSource.getBuffer(beamRenderType());
+        PoseStack.Pose pose = matrices.last();
+        // 外側グロー柱 (先に描いて内側コアを上に重ねる)。
+        column(consumer, pose, centerX, centerZ, baseY, topY, glowHalf, bottomGlow, topGlow);
+        // 内側コア柱。
+        column(consumer, pose, centerX, centerZ, baseY, topY, coreHalf, bottomCore, topCore);
     }
+    //?}
+
+    //? if >=26.2 {
+    /*// 26.2: 自前 position_color filled submit (旧 debugFilledBox 版) は Iris シェーダ下で捕捉されず消える
+    //   (= rendertype_lines のワイヤー/ボックスのみ生き残るのと同類)。 そこでビームは <b>バニラの本物の
+    //   ビーコンビーム</b> ({@link net.minecraft.client.renderer.blockentity.BeaconRenderer#submitBeaconBeam})
+    //   を同じ SubmitNodeCollector へ submit する。 実ビーコンはシェーダ下でも描画されるため Iris-safe が
+    //   保証され、 本機能が意図する「Minecraft ビーコン風ビーム」そのものになる。 色 (テーマ) / 高さ / 太さ
+    //   (コア+グロー半径) / 不透明度 (= bottomAlpha を color の alpha バイトへ) を移植する。 深度遮蔽・
+    //   テクスチャアニメはバニラ beacon 準拠 (= 旧 custom の上端 alpha フェードは無くなる)。 頂点組み立て
+    //   (column/sideQuad/packColor) は <26.2 の drawBeamImmediate 専用となる。
+    public static void submitBeam(SubmitNodeCollector queue, PoseStack matrices,
+            float centerX, float centerZ, float baseY, float topY,
+            int rgb, float bottomAlpha, float topAlpha, float coreWidth) {
+        if (topY <= baseY) return;
+        if (bottomAlpha <= 0.001f) return;
+
+        // 色: テーマ RGB + bottomAlpha (= pulse/距離フェード合成済) を alpha バイトへ。
+        int color = (Mth.clamp(Math.round(bottomAlpha * 255f), 0, 255) << 24) | (rgb & 0x00FFFFFF);
+        // 高さ (ブロック): カメラ相対 baseY→topY の差。
+        int height = Math.max(1, Math.round(topY - baseY));
+        // 太さ: コア半径 = config 幅の半分、 グロー半径 = ×GLOW_WIDTH_MULT (旧 immediate と同比率)。
+        float solidRadius = Math.max(0.05f, coreWidth * 0.5f);
+        float glowRadius = solidRadius * GLOW_WIDTH_MULT;
+        // バニラのテクスチャ・スクロール/回転用ゲーム時間 (= 実ビーコンと同じ自然なアニメ)。
+        float gameTime = 0.0f;
+        net.minecraft.client.multiplayer.ClientLevel level = net.minecraft.client.Minecraft.getInstance().level;
+        if (level != null) {
+            gameTime = (float) (level.getGameTime() % 24000L);
+        }
+
+        matrices.pushPose();
+        try {
+            // ビーム中心 (centerX, centerZ) へ。 submitBeaconBeam が内部で translate(0.5,0,0.5) する分を相殺。
+            matrices.translate(centerX - 0.5, baseY, centerZ - 0.5);
+            net.minecraft.client.renderer.blockentity.BeaconRenderer.submitBeaconBeam(
+                    matrices, queue,
+                    net.minecraft.client.renderer.blockentity.BeaconRenderer.BEAM_LOCATION,
+                    1.0f, gameTime, 0, height, color, solidRadius, glowRadius);
+        } finally {
+            matrices.popPose();
+        }
+    }*/
+    //?}
 
     /**
      * 正方形断面の縦柱 (= 4 側面 quad) を描く。 各 quad は下端 {@code bottomColor}・
@@ -133,6 +188,7 @@ public final class SearchBeaconRenderer {
     // ════════════════════════════════════════════════════════════════════
 
     /** position_color + QUADS + TRANSLUCENT + 通常 depth test。 lineWidth 非依存で shader 安全。 */
+    //? if <26.2 {
     private static RenderType beamRenderType() {
         RenderType cached = beamType;
         if (cached != null) return cached;
@@ -171,4 +227,5 @@ public final class SearchBeaconRenderer {
             return beamType;
         }
     }
+    //?}
 }

@@ -16,14 +16,21 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+//? if <26.2 {
+import net.minecraft.client.renderer.MultiBufferSource;
+//?}
 import net.minecraft.client.renderer.SubmitNodeCollector;
 //? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 //?} else {
 /*import net.minecraft.client.renderer.RenderType;*/
 //?}
 import net.minecraft.util.Mth;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 「倉庫検索ハイライト」 ワイヤー (= X-ray ボックス) 描画の <b>shader-safe</b> ラッパ。
@@ -33,23 +40,34 @@ import net.minecraft.util.Mth;
  * <ul>
  *   <li>非 shader 環境では {@code core/rendertype_lines} シェーダ + {@code setLineWidth}
  *       による線描画 + {@link DepthTestFunction#NO_DEPTH_TEST} で
- *       ブロック越しのワイヤー表示が成立していた。</li>
+ *       ブロック越しのワイヤー表示 (= X-ray) が成立していた。</li>
  *   <li>Iris / Sodium + Iris / Complementary / BSL / SEUS 等の shader pack を入れると、
- *       カスタム pipeline が shader pack の rendering path に乗らないため、
- *       ワイヤー (= 線) が <b>完全に表示されない</b> 現象が報告される。</li>
+ *       カスタム pipeline が shader pack の rendering path に乗らない (= Iris キャプチャ外で
+ *       上書きされる) ため、 ワイヤー (= 線) が <b>完全に表示されない</b> 現象が報告される。</li>
  * </ul>
  *
  * <p>
- * <b>方針</b>:
+ * <b>方針</b> (= VisualizeGate {@code OverlayDraw} で動作確認済みの経路を踏襲):
  * <ol>
- *   <li>{@link ShaderCompatManager#isShaderPackInUse()} で shader 環境を判定する。</li>
- *   <li>非 shader: 既存の {@code rendertype_lines} ベース pipeline を使用 (= 既存挙動の温存)。</li>
- *   <li>shader: shader pack でも安定して走る {@code core/position_color} ベースの pipeline + QUAD 描画に切替。
- *       「ライン」 を <em>カメラ向き 12 軸辺の極細直方体エッジ</em> として表現することで、
- *       {@code setLineWidth} uniform を必要としない構造にする。</li>
- *   <li>どちらのパスも {@link DepthTestFunction#NO_DEPTH_TEST} を維持し、 ブロック越しでも見える挙動を保つ。</li>
- *   <li>色 / 線太さ / 動き (= 既存仕様) は変えない。 既存呼び出し側からは「同じ見た目」 のまま。</li>
+ *   <li>{@link ShaderCompatManager#isShaderPackInUse()} で shader 環境をソフト判定する
+ *       (= Iris 非搭載でも安全・false 側に倒す)。</li>
+ *   <li><b>非 shader (および legacy 全環境)</b>: 既存の {@code rendertype_lines} ベース pipeline
+ *       ({@code NO_DEPTH_TEST} = X-ray) を {@link SubmitNodeCollector} へ submit する
+ *       (= 既存挙動の<b>ピクセル不変</b>な温存)。</li>
+ *   <li><b>shader 時 (&gt;=26.1)</b>: カスタム pipeline を一切使わず、 バニラ {@code RenderTypes.lines()}
+ *       を<b>レベルレンダラ自身のバッファ ({@code ctx.bufferSource()}・Iris がラップする)</b> へ流す。
+ *       submit/自前 immediate ではなく level バッファへ描く点だけが非 shader と違い、 これにより
+ *       Iris の {@code rendertype_lines} プログラムに乗ってバニラのブロック選択枠と同様の<b>本物
+ *       ワイヤー</b>として出る (= 深度オクルージョン有り)。 描画は呼び出しフレームの中で即時 submit
+ *       せず、 {@link #enqueueShaderWire} で pending に積み、 水後ステージ
+ *       ({@code AFTER_TRANSLUCENT_TERRAIN}) の {@link #flushShaderWires} で level バッファへ流す
+ *       (= フラッシュは level に委ねる。 自前 endBatch すると Iris キャプチャ外で消えるため)。</li>
  * </ol>
+ *
+ * <p>
+ * <b>挙動差</b>: shader 時のワイヤーは<b>深度テスト有り</b> (= 地形に遮蔽される) になる
+ * (バニラ {@code lines()} の本質的帰結)。 現状はそもそも shader 時に完全に消えていたため、
+ * 「消える」 → 「地形オクルージョン有りで確実に出る」 への前進。 非 shader 時は従来どおり X-ray を維持する。
  *
  * <p>
  * <b>禁止事項適合</b>:
@@ -57,18 +75,28 @@ import net.minecraft.util.Mth;
  *   <li>{@code glBegin / glEnd} は使わない (= raw GL 直叩き禁止)。</li>
  *   <li>deprecated immediate rendering を使わない。</li>
  *   <li>VertexConsumer / RenderType / PoseStack 経由の Minecraft 標準描画 API のみ使用。</li>
+ *   <li>新規描画 Mixin を増やさない (= 既存の {@link RenderTypeAccessor} のみ使用)。</li>
  * </ul>
  */
 public final class WireHighlightRenderer {
 
-    /** 共有 uniforms snippet (= LINES / QUADS どちらも要求する基本 uniform セット)。 */
+    /** 共有 uniforms snippet (= lines pipeline が要求する基本 uniform セット)。 */
     private static volatile RenderPipeline.Snippet uniformsSnippetCache;
 
     /** Lines 版 RenderType (非 shader 用; 既存挙動の継承)。 */
     private static volatile RenderType linesType;
 
-    /** Quads 版 RenderType (shader 環境向け; ライン uniform に依存しない)。 */
-    private static volatile RenderType quadsType;
+    /**
+     * shader 時に water 後ステージで level バッファへ流すための pending ワイヤーボックス
+     * (camera-relative 座標)。 描画スレッド単独で読み書き (= onWorldRender で積み onAfterWaterRender で flush)。
+     * legacy (&lt;26.1) では {@link #submitWireBox} が enqueue しないため常に空。
+     */
+    private static final List<PendingWire> pendingShaderWires = new ArrayList<>();
+
+    /** pending ワイヤーボックス 1 件 (= camera-relative AABB + 色 + 線幅)。 */
+    private record PendingWire(float x0, float y0, float z0, float x1, float y1, float z1,
+            int color, float lineWidth) {
+    }
 
     private WireHighlightRenderer() {
     }
@@ -78,50 +106,70 @@ public final class WireHighlightRenderer {
      *
      * <p>
      * 呼び出し側は (x0,y0,z0)〜(x1,y1,z1) の AABB を camera-relative 座標で渡す。
-     * 既存の {@link ChestHighlighter#submitBox} を置換することを想定。
      *
-     * @param lineWidth 線の太さ (line shader が読む値 / quads 経路では「直方体エッジの厚み」 として再解釈)
+     * @param lineWidth 線の太さ (lines shader が読む値)
      */
     public static void submitWireBox(SubmitNodeCollector queue, PoseStack matrices,
             float x0, float y0, float z0,
             float x1, float y1, float z1,
             int color, float lineWidth) {
 
+        //? if >=26.2 {
+        /*// 26.2: カスタム X-ray パイプライン (withUniform/VertexFormat.Mode) は API 削除で構築不可。 バニラ
+        //   RenderTypes.lines() を submit へ一本化する。 深度テスト有り (= 壁越し X-ray は失われる) になるが、
+        //   submit 経路は Iris がネイティブ捕捉する (= バニラのブロック選択枠と同経路) ので、 シェーダ ON でも
+        //   ワイヤーが出る。 シェーダ判定/pending/level バッファ flush は不要 (= 共通 1 経路)。
+        queue.submitCustomGeometry(matrices, RenderTypes.lines(),
+                (pose, consumer) -> addBoxEdges(consumer, pose, x0, y0, z0, x1, y1, z1, color, lineWidth));*/
+        //?} else {
+        //? if >=26.1 {
         if (ShaderCompatManager.isShaderPackInUse()) {
-            // shader 環境: lineWidth uniform を回避するため QUAD ベースのエッジで再現する。
-            submitQuadWireBox(queue, matrices, x0, y0, z0, x1, y1, z1, color, lineWidth);
-        } else {
-            // 非 shader: 既存の rendertype_lines ベース描画を継続。
-            submitLineWireBox(queue, matrices, x0, y0, z0, x1, y1, z1, color, lineWidth);
+            // shader 環境: カスタム pipeline は Iris キャプチャ外で消えるため使わない。 バニラ lines() を
+            // level バッファへ流すべく pending に積み、 水後ステージ (flushShaderWires) で描く。
+            enqueueShaderWire(x0, y0, z0, x1, y1, z1, color, lineWidth);
+            return;
         }
+        //?}
+        // 非 shader (および legacy 全環境): 既存の rendertype_lines (NO_DEPTH_TEST = X-ray) を submit。
+        submitLineWireBox(queue, matrices, x0, y0, z0, x1, y1, z1, color, lineWidth);
+        //?}
     }
 
     // ════════════════════════════════════════════════════════════════════
     // (a) 非 shader 経路: 既存挙動と同一の rendertype_lines + setLineWidth
     // ════════════════════════════════════════════════════════════════════
 
+    //? if <26.2 {
     private static void submitLineWireBox(SubmitNodeCollector queue, PoseStack matrices,
             float x0, float y0, float z0,
             float x1, float y1, float z1,
             int color, float lineWidth) {
         RenderType type = linesRenderType();
-        queue.submitCustomGeometry(matrices, type, (pose, consumer) -> {
-            // 底面 4 辺
-            addLine(consumer, pose, x0, y0, z0, x1, y0, z0, color, lineWidth);
-            addLine(consumer, pose, x1, y0, z0, x1, y0, z1, color, lineWidth);
-            addLine(consumer, pose, x1, y0, z1, x0, y0, z1, color, lineWidth);
-            addLine(consumer, pose, x0, y0, z1, x0, y0, z0, color, lineWidth);
-            // 上面 4 辺
-            addLine(consumer, pose, x0, y1, z0, x1, y1, z0, color, lineWidth);
-            addLine(consumer, pose, x1, y1, z0, x1, y1, z1, color, lineWidth);
-            addLine(consumer, pose, x1, y1, z1, x0, y1, z1, color, lineWidth);
-            addLine(consumer, pose, x0, y1, z1, x0, y1, z0, color, lineWidth);
-            // 垂直 4 辺
-            addLine(consumer, pose, x0, y0, z0, x0, y1, z0, color, lineWidth);
-            addLine(consumer, pose, x1, y0, z0, x1, y1, z0, color, lineWidth);
-            addLine(consumer, pose, x1, y0, z1, x1, y1, z1, color, lineWidth);
-            addLine(consumer, pose, x0, y0, z1, x0, y1, z1, color, lineWidth);
-        });
+        queue.submitCustomGeometry(matrices, type, (pose, consumer) ->
+                addBoxEdges(consumer, pose, x0, y0, z0, x1, y1, z1, color, lineWidth));
+    }
+    //?}
+
+    /** AABB の 12 辺を {@code lines()} 頂点として {@code consumer} へ流す (submit / level バッファ共通)。 */
+    private static void addBoxEdges(VertexConsumer consumer, PoseStack.Pose pose,
+            float x0, float y0, float z0,
+            float x1, float y1, float z1,
+            int color, float lineWidth) {
+        // 底面 4 辺
+        addLine(consumer, pose, x0, y0, z0, x1, y0, z0, color, lineWidth);
+        addLine(consumer, pose, x1, y0, z0, x1, y0, z1, color, lineWidth);
+        addLine(consumer, pose, x1, y0, z1, x0, y0, z1, color, lineWidth);
+        addLine(consumer, pose, x0, y0, z1, x0, y0, z0, color, lineWidth);
+        // 上面 4 辺
+        addLine(consumer, pose, x0, y1, z0, x1, y1, z0, color, lineWidth);
+        addLine(consumer, pose, x1, y1, z0, x1, y1, z1, color, lineWidth);
+        addLine(consumer, pose, x1, y1, z1, x0, y1, z1, color, lineWidth);
+        addLine(consumer, pose, x0, y1, z1, x0, y1, z0, color, lineWidth);
+        // 垂直 4 辺
+        addLine(consumer, pose, x0, y0, z0, x0, y1, z0, color, lineWidth);
+        addLine(consumer, pose, x1, y0, z0, x1, y1, z0, color, lineWidth);
+        addLine(consumer, pose, x1, y0, z1, x1, y1, z1, color, lineWidth);
+        addLine(consumer, pose, x0, y0, z1, x0, y1, z1, color, lineWidth);
     }
 
     private static void addLine(VertexConsumer c, PoseStack.Pose pose,
@@ -139,91 +187,53 @@ public final class WireHighlightRenderer {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // (b) shader 経路: position_color + QUADS + NO_DEPTH_TEST
+    // (b) shader 経路: バニラ lines() を level バッファ (Iris ラップ) へ流す
     // ════════════════════════════════════════════════════════════════════
 
+    /** shader 時の pending ワイヤーボックスを積む (camera-relative 座標)。 */
+    private static void enqueueShaderWire(float x0, float y0, float z0,
+            float x1, float y1, float z1, int color, float lineWidth) {
+        pendingShaderWires.add(new PendingWire(x0, y0, z0, x1, y1, z1, color, lineWidth));
+    }
+
+    /** 新フレーム開始時に pending を空にする (= 前フレームの取り残しを残さない)。 */
+    public static void clearPending() {
+        pendingShaderWires.clear();
+    }
+
+    /** shader 時に flush すべき pending ワイヤーがあるか。 legacy では常に false。 */
+    public static boolean hasPending() {
+        return !pendingShaderWires.isEmpty();
+    }
+
     /**
-     * shader 環境向けの QUAD-based ワイヤー描画。
-     *
-     * <p>
-     * 各 12 辺を 「軸方向に伸びる極細 3D 直方体」 として 4 つの quad で囲む実装に切替える。
-     * これにより:
-     * <ul>
-     *   <li>{@code setLineWidth} uniform に依存しない (= shader pack が dropping しない)。</li>
-     *   <li>頂点フォーマットは {@code POSITION_COLOR} に縮退するため、 ほぼ全 shader pack で素通り。</li>
-     *   <li>NO_DEPTH_TEST の指定は維持されるが、 仮に shader pack が depth を強制 enable しても、
-     *       quad なら少なくとも 「視界内 (= 非遮蔽)」 では描画されるため最低限可視。</li>
-     * </ul>
-     *
-     * <p>
-     * カメラ向きへの追従はしない (= 軸方向に厚みを置く)。 これは AABB box の wireframe としては
-     * 視認性が十分で、 既存 「黄色のチェスト囲み枠」 と見た目が大きく変わらない。
+     * pending ワイヤーボックスを、 渡された level バッファ ({@code ctx.bufferSource()}・Iris ラップ) へ
+     * バニラ {@code lines()} で流す。 <b>endBatch しない</b> (= フラッシュは level レンダラに委ねる。
+     * 自前 endBatch すると Iris キャプチャ外で消えるため)。 水後ステージ ({@code AFTER_TRANSLUCENT_TERRAIN})
+     * から呼ぶ。
      */
-    private static void submitQuadWireBox(SubmitNodeCollector queue, PoseStack matrices,
-            float x0, float y0, float z0,
-            float x1, float y1, float z1,
-            int color, float lineWidth) {
-        // 直方体エッジの「厚み」 = lineWidth をワールド単位に換算。
-        // lineWidth は元々ピクセル基準の値だが、 距離スケールの計算は呼び出し元で吸収されているため
-        // ここでは安定した小さな値 (= ピクセル等価ぐらい) として扱う。
-        float t = Math.max(0.01f, lineWidth * 0.01f);
-
-        RenderType type = quadsRenderType();
-        queue.submitCustomGeometry(matrices, type, (pose, consumer) -> {
-            // ─ 底面 (y0) の 4 辺 (X 軸辺 × 2 + Z 軸辺 × 2) ─
-            xEdgeQuad(consumer, pose, x0, x1, y0, z0, t, color);
-            xEdgeQuad(consumer, pose, x0, x1, y0, z1, t, color);
-            zEdgeQuad(consumer, pose, x0, y0, z0, z1, t, color);
-            zEdgeQuad(consumer, pose, x1, y0, z0, z1, t, color);
-
-            // ─ 上面 (y1) の 4 辺 ─
-            xEdgeQuad(consumer, pose, x0, x1, y1, z0, t, color);
-            xEdgeQuad(consumer, pose, x0, x1, y1, z1, t, color);
-            zEdgeQuad(consumer, pose, x0, y1, z0, z1, t, color);
-            zEdgeQuad(consumer, pose, x1, y1, z0, z1, t, color);
-
-            // ─ 垂直 4 辺 (Y 軸辺) ─
-            yEdgeQuad(consumer, pose, x0, y0, y1, z0, t, color);
-            yEdgeQuad(consumer, pose, x1, y0, y1, z0, t, color);
-            yEdgeQuad(consumer, pose, x0, y0, y1, z1, t, color);
-            yEdgeQuad(consumer, pose, x1, y0, y1, z1, t, color);
-        });
+    //? if <26.2 {
+    public static void flushShaderWires(MultiBufferSource target, PoseStack matrices) {
+        if (pendingShaderWires.isEmpty()) {
+            return;
+        }
+        //? if >=1.21.11 {
+        VertexConsumer c = target.getBuffer(RenderTypes.lines());
+        //?} else {
+        /*VertexConsumer c = target.getBuffer(RenderType.lines());*/
+        //?}
+        PoseStack.Pose pose = matrices.last();
+        for (PendingWire w : pendingShaderWires) {
+            addBoxEdges(c, pose, w.x0(), w.y0(), w.z0(), w.x1(), w.y1(), w.z1(), w.color(), w.lineWidth());
+        }
     }
-
-    /** X 軸方向に伸びる辺を 「厚み t の Z 方向 quad」 として描く。 */
-    private static void xEdgeQuad(VertexConsumer c, PoseStack.Pose pose,
-            float xA, float xB, float y, float z, float t, int color) {
-        float half = t * 0.5f;
-        c.addVertex(pose, xA, y, z - half).setColor(color);
-        c.addVertex(pose, xA, y, z + half).setColor(color);
-        c.addVertex(pose, xB, y, z + half).setColor(color);
-        c.addVertex(pose, xB, y, z - half).setColor(color);
-    }
-
-    /** Z 軸方向に伸びる辺を 「厚み t の X 方向 quad」 として描く。 */
-    private static void zEdgeQuad(VertexConsumer c, PoseStack.Pose pose,
-            float x, float y, float zA, float zB, float t, int color) {
-        float half = t * 0.5f;
-        c.addVertex(pose, x - half, y, zA).setColor(color);
-        c.addVertex(pose, x + half, y, zA).setColor(color);
-        c.addVertex(pose, x + half, y, zB).setColor(color);
-        c.addVertex(pose, x - half, y, zB).setColor(color);
-    }
-
-    /** Y 軸方向に伸びる辺を 「厚み t の X 方向 quad」 として描く。 */
-    private static void yEdgeQuad(VertexConsumer c, PoseStack.Pose pose,
-            float x, float yA, float yB, float z, float t, int color) {
-        float half = t * 0.5f;
-        c.addVertex(pose, x - half, yA, z).setColor(color);
-        c.addVertex(pose, x + half, yA, z).setColor(color);
-        c.addVertex(pose, x + half, yB, z).setColor(color);
-        c.addVertex(pose, x - half, yB, z).setColor(color);
-    }
+    //?}
 
     // ════════════════════════════════════════════════════════════════════
     // RenderType 構築 (lazy + double-checked locking)
     // ════════════════════════════════════════════════════════════════════
 
+    //? if <26.2 {
     private static RenderPipeline.Snippet uniformsSnippet() {
         RenderPipeline.Snippet cached = uniformsSnippetCache;
         if (cached != null) return cached;
@@ -238,8 +248,10 @@ public final class WireHighlightRenderer {
             return uniformsSnippetCache;
         }
     }
+    //?}
 
     /** 非 shader 用: rendertype_lines + NO_DEPTH_TEST。 既存 xrayLines と同一。 */
+    //? if <26.2 {
     private static RenderType linesRenderType() {
         RenderType cached = linesType;
         if (cached != null) return cached;
@@ -273,36 +285,5 @@ public final class WireHighlightRenderer {
             return linesType;
         }
     }
-
-    /** shader 用: position_color + QUADS + NO_DEPTH_TEST。 lineWidth uniform に依存しない。 */
-    private static RenderType quadsRenderType() {
-        RenderType cached = quadsType;
-        if (cached != null) return cached;
-        synchronized (WireHighlightRenderer.class) {
-            if (quadsType != null) return quadsType;
-
-            RenderPipeline pipeline = RenderPipeline.builder(uniformsSnippet())
-                    .withLocation(net.minecraft.resources.Identifier.fromNamespaceAndPath(
-                            "omnichest", "pipeline/xray_wire_quads"))
-                    .withVertexShader("core/position_color")
-                    .withFragmentShader("core/position_color")
-                    .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
-                    .withCull(false)
-                    .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-                    .withVertexFormat(
-                            DefaultVertexFormat.POSITION_COLOR,
-                            VertexFormat.Mode.QUADS)
-                    .build();
-
-            //? if >=1.21.11 {
-            RenderSetup setup = RenderSetup.builder(pipeline).createRenderSetup();
-            quadsType = RenderTypeAccessor.omnichest$create("omnichest_xray_wire_quads", setup);
-            //?} else {
-            /*quadsType = RenderTypeAccessor.omnichest$create("omnichest_xray_wire_quads", 1536, pipeline,
-                    ((com.kajiwara.omnichest.mixin.CompositeStateBuilderAccessor) (Object)
-                            RenderType.CompositeState.builder()).omnichest$createCompositeState(false));*/
-            //?}
-            return quadsType;
-        }
-    }
+    //?}
 }
