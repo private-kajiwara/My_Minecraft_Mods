@@ -173,6 +173,13 @@ public class PointCloudScreen extends Screen {
     // 一覧下端に確保する凡例 (5 状態色キー) の帯高。 行の描画下端 (drawGatesList/drawLinksList の bottom) と
     // クリック判定域 (inListArea) の下端をこの分だけ listBottom から引く＝凡例は行の実 bounds 外＝非インタラクティブ。
     private static final int LEGEND_RESERVE_H = 12;
+    // ㊿ View タブ縦フィットの行ピッチ範囲。 余裕があれば MAX (=従来見た目), 詰まったら MIN まで圧縮 (それでも
+    //    入らぬ極小高は View タブをスクロール化)。 TOG=トグル群 3 行 / SLIDER=スライダ 4 段。 下限は重ならない最小:
+    //    トグルはボタン高 20px が辛うじて触れる 20、 スライダはラベル 11+トラック 10=21。
+    private static final int TOG_PITCH_MAX = 24;
+    private static final int TOG_PITCH_MIN = 20;
+    private static final int SLIDER_PITCH_MAX = 32; // 従来 slH(10)+22
+    private static final int SLIDER_PITCH_MIN = 21; // slH(10)+11 (ラベル+トラックが重ならない最小)
     private Tab tab = Tab.VIEW;
     private int sbContentX;   // サイドバー左端 (= sbX)
     private int tabBarY;      // タブバー上端
@@ -180,6 +187,10 @@ public class PointCloudScreen extends Screen {
     private int listBottom;   // 一覧の下端 (フッタ手前)
     private int gatesScroll = 0;  // Gates 一覧スクロール (px)
     private int linksScroll = 0;  // Links 一覧スクロール (px)
+    // ㊿ View タブのスクロール (px) と総コンテンツ高。 トグル群＋スライダ 4 段が [listTop, listBottom] に収まらぬ
+    //    極小高 (高 GUI スケール×フルスクリーン/小窓) で可動。 収まる通常域では clampScroll が 0 へ固定＝従来不変。
+    private int viewScroll = 0;
+    private int viewContentH = 0;
     // ㉛ 選択は<b>一意キー (ワールド anchor 座標+dim)</b> で保持 (番号は表示用＝採番衝突しても 1 クリック 1 ゲート)。
     private boolean hasSel = false;
     private int selWx;
@@ -389,7 +400,46 @@ public class PointCloudScreen extends Screen {
         tabBarY = HEADER_H + 6;
         listTop = tabBarY + TABBAR_H + 4;
         listBottom = this.height - FOOTER_H - 4;
-        int y = listTop;
+
+        // スライダ群 X/幅 (スクロール非依存)。 ⑧ パネル内へインセット。
+        slX = sbX + SIDE_PAD;
+        slW = sbW - 2 * SIDE_PAD;
+        slH = 10;
+        int trackGap = 8;
+        slScaleHalfW = (slW - trackGap) / 2;
+        slScaleOwX = slX;
+        slScaleNX = slX + slScaleHalfW + trackGap;
+
+        // ㊿ 縦フィット: トグル群 (3 行) ＋ スライダ 4 段 (先頭ラベル 11 + 3 ピッチ + トラック slH) を
+        //    View 帯 [listTop, listBottom] に収める。 余裕があれば従来見た目 (トグル 24/スライダ 32)、 詰まれば
+        //    スライダ→トグルの順に下限まで圧縮、 それでも入らぬ極小高 (4K Auto≈高 240・小窓) のみ viewScroll で可動。
+        //    Capture 行 (5 個目) を含む全段が フッタ Done/Re-analyze に縦で被らないことを全 GUI スケールで保証する。
+        int band = listBottom - listTop;
+        int togFull = TOG_PITCH_MAX * 3 + 2;              // 74 (=従来 24+24+26)
+        int sliderFull = 11 + SLIDER_PITCH_MAX * 3 + slH; // 117 (先頭ラベル + 3 ピッチ + 末トラック)
+        int tp;
+        int sp;
+        if (togFull + sliderFull <= band) {
+            tp = TOG_PITCH_MAX;                           // 収まる＝従来見た目 (回帰ゼロ)
+            sp = SLIDER_PITCH_MAX;
+        } else {
+            // スライダ優先で詰め (情報密度)、 足りなければトグルも詰める。 各段/各行で 1 ピッチ縮める毎に 3px 削れる。
+            int over = togFull + sliderFull - band;
+            int sShrink = Math.min(over, (SLIDER_PITCH_MAX - SLIDER_PITCH_MIN) * 3);
+            sp = SLIDER_PITCH_MAX - (sShrink + 2) / 3;    // 切り上げで確実に over を削る
+            sp = Math.max(SLIDER_PITCH_MIN, sp);
+            over -= (SLIDER_PITCH_MAX - sp) * 3;
+            int tShrink = Math.min(Math.max(0, over), (TOG_PITCH_MAX - TOG_PITCH_MIN) * 3);
+            tp = TOG_PITCH_MAX - (tShrink + 2) / 3;
+            tp = Math.max(TOG_PITCH_MIN, tp);
+        }
+        int togBlockH = tp * 3 + 2;                        // 末行 (Capture) は +2 (従来 26=24+2 の踏襲)
+
+        // 総コンテンツ高 (listTop 起点・最終トラック下端まで)＝スクロール量クランプの基準。
+        viewContentH = togBlockH + 11 + sp * 3 + slH;
+        viewScroll = clampScroll(viewScroll, viewContentH, band);
+
+        int y = listTop - viewScroll;                     // スクロール適用後のトグル上端
 
         // View トグルを 2×2 ([OW][Nether]/[Gate links][Dim tint]) ＋ 5 個目 [Capture] を 1 行で再配置 (sidebarW 依存)。
         int colGap = 4;
@@ -398,17 +448,17 @@ public class PointCloudScreen extends Screen {
         if (viewWidgets.size() == 5) {
             positionBtn(viewWidgets.get(0), sbX, y, halfW);
             positionBtn(viewWidgets.get(1), col2X, y, halfW);
-            y += 24;
+            y += tp;
             positionBtn(viewWidgets.get(2), sbX, y, halfW);
             positionBtn(viewWidgets.get(3), col2X, y, halfW);
-            y += 24;
+            y += tp;
             positionBtn(viewWidgets.get(4), sbX, y, sbW); // Capture トグル (1 行・サイドバー全幅)
-            y += 26;
+            y += tp + 2;
         } else {
-            y += 24 + 24 + 26; // ボタン未生成でもスライダ基準 Y を一致
+            y += togBlockH; // ボタン未生成でもスライダ基準 Y を一致
         }
 
-        // 空状態の中央 [キャプチャを有効化] ボタンを vp 中央 (ヒント直下) に配置。
+        // 空状態の中央 [キャプチャを有効化] ボタンを vp 中央 (ヒント直下) に配置 (vp 内＝スクロール非依存)。
         if (captureEnableBtn != null) {
             int bw = Math.min(160, Math.max(80, vpW - 16));
             captureEnableBtn.setWidth(bw);
@@ -416,26 +466,13 @@ public class PointCloudScreen extends Screen {
             captureEnableBtn.setY(vpY + vpH / 2 + 8);
         }
 
-        // スライダ群 (手動描画・手動入力)。 ⑧ パネル内へインセット。
-        slX = sbX + SIDE_PAD;
-        slW = sbW - 2 * SIDE_PAD;
-        slH = 10;
-        int trackGap = 8;
-        slScaleHalfW = (slW - trackGap) / 2;
-        slScaleOwX = slX;
-        slScaleNX = slX + slScaleHalfW + trackGap;
         slScaleY = y + 11;          // ラベル(上)分を空ける
-        // ㉞B スライダ 4 行 (scale/spacing/GPU/point) の行ピッチを利用可能高へ適応させる。 従来は固定 32px で、
-        //      Capture トグル行 (5 個目) を足してトグル群が 24px 伸びた分、 低いパネル (大 GUI スケール/小窓) で
-        //      最下段 Point size がフッタ (Re-analyze/Done) に重なって崩れていた。 上限=従来見た目 (32px)・下限 24px
-        //      (ラベル11+トラック10 は重ならない) で、 最終トラック下端が listBottom に収まる最大ピッチへクランプ。
-        int rowPitchMax = slH + 22;                       // 従来見た目 (=32)
-        int rowPitchMin = slH + 14;                       // 圧縮下限 (=24)
-        int fitPitch = (listBottom - slScaleY - slH) / 3; // 最終トラック下端を listBottom に載せる最大ピッチ
-        int rowPitch = Math.max(rowPitchMin, Math.min(rowPitchMax, fitPitch));
-        slY = slScaleY + rowPitch;  // Dimension spacing
-        sl2Y = slY + rowPitch;      // ⑭ GPU detail
-        sl3Y = sl2Y + rowPitch;     // ⑯ 点サイズ
+        slY = slScaleY + sp;        // Dimension spacing
+        sl2Y = slY + sp;            // ⑭ GPU detail
+        sl3Y = sl2Y + sp;           // ⑯ 点サイズ
+
+        // ㊿ スクロール/帯外のトグルは hide (auto 描画は scissor 外＝はみ出し防止)＋タブ可視を再適用。
+        applyTabVisibility();
     }
 
     /**
@@ -458,12 +495,17 @@ public class PointCloudScreen extends Screen {
         b.setWidth(w);
     }
 
-    /** ㉚ View タブのトグルボタンは View 時のみ表示/操作可 (Gates/Links では隠す)。 */
+    /**
+     * ㉚ View タブのトグルボタンは View 時のみ表示/操作可 (Gates/Links では隠す)。 ㊿ さらに viewScroll で
+     * View 帯 [listTop, listBottom] からはみ出したボタンも隠す (auto 描画は scissor 外＝ヘッダ/フッタへの
+     * オーバードロー防止)。 帯に全身が収まる通常域では全ボタン可視＝従来不変。
+     */
     private void applyTabVisibility() {
         boolean view = tab == Tab.VIEW;
         for (Button b : viewWidgets) {
-            b.visible = view;
-            b.active = view;
+            boolean vis = view && b.getY() >= listTop && b.getY() + b.getHeight() <= listBottom;
+            b.visible = vis;
+            b.active = vis;
         }
     }
 
@@ -585,8 +627,12 @@ public class PointCloudScreen extends Screen {
         // ㉚ タブバー＋タブ別サイドバー内容。
         drawTabBar(g);
         if (tab == Tab.VIEW) {
+            // ㊿ スライダ/統計は viewScroll でずれるため View 帯にクリップ (Gates/Links と同型の scissor)。
+            //    スクロール時に末段が タブバー上/フッタ下へはみ出さない。 トグルは applyTabVisibility が帯外を hide 済。
+            g.enableScissor(sbContentX, listTop, sbContentX + sidebarW, listBottom);
             drawSlider(g);
             drawCounts(g, snap);
+            g.disableScissor();
         } else if (tab == Tab.GATES) {
             drawGatesList(g, snap);
             drawLegend(g);
@@ -2466,6 +2512,15 @@ public class PointCloudScreen extends Screen {
             }
             return true;
         }
+        // ㊿ View タブ: サイドバー帯上のホイール → トグル/スライダ群をスクロール (極小高で末段 Point size へ到達)。
+        //    収まる通常域では viewContentH ≤ band ゆえ clampScroll が 0 に固定＝何も動かない (回帰ゼロ)。
+        if (tab == Tab.VIEW && mouseX >= sbContentX && mouseX <= sbContentX + sidebarW
+                && mouseY >= listTop && mouseY <= listBottom) {
+            int step = (int) (-scrollY * ROW_H * 2);
+            viewScroll = clampScroll(viewScroll + step, viewContentH, listBottom - listTop);
+            recomputeLayout(); // ボタン位置/可視を新オフセットへ即同期 (hit-test と desync させない)
+            return true;
+        }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
@@ -2526,25 +2581,30 @@ public class PointCloudScreen extends Screen {
                 && my >= listTop && my <= listBottom - LEGEND_RESERVE_H;
     }
 
+    /** ㊿ View 帯内か (viewScroll で帯外へ出たトラックのファントムクリック＝ヘッダ/フッタ域での誤操作を防ぐ)。 */
+    private boolean inViewBand(double my) {
+        return my >= listTop && my <= listBottom;
+    }
+
     private boolean inSlider(double mx, double my) {
-        return mx >= slX && mx <= slX + slW && my >= slY - 3 && my <= slY + slH + 3;
+        return inViewBand(my) && mx >= slX && mx <= slX + slW && my >= slY - 3 && my <= slY + slH + 3;
     }
 
     private boolean inSlider2(double mx, double my) {
-        return mx >= slX && mx <= slX + slW && my >= sl2Y - 3 && my <= sl2Y + slH + 3;
+        return inViewBand(my) && mx >= slX && mx <= slX + slW && my >= sl2Y - 3 && my <= sl2Y + slH + 3;
     }
 
     private boolean inSlider3(double mx, double my) {
-        return mx >= slX && mx <= slX + slW && my >= sl3Y - 3 && my <= sl3Y + slH + 3;
+        return inViewBand(my) && mx >= slX && mx <= slX + slW && my >= sl3Y - 3 && my <= sl3Y + slH + 3;
     }
 
     private boolean inScaleOw(double mx, double my) {
-        return mx >= slScaleOwX && mx <= slScaleOwX + slScaleHalfW
+        return inViewBand(my) && mx >= slScaleOwX && mx <= slScaleOwX + slScaleHalfW
                 && my >= slScaleY - 3 && my <= slScaleY + slH + 3;
     }
 
     private boolean inScaleNether(double mx, double my) {
-        return mx >= slScaleNX && mx <= slScaleNX + slScaleHalfW
+        return inViewBand(my) && mx >= slScaleNX && mx <= slScaleNX + slScaleHalfW
                 && my >= slScaleY - 3 && my <= slScaleY + slH + 3;
     }
 

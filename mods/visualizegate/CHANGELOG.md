@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.1] - 2026-06-23
+
+### Fixed
+
+- **Point-cloud View tab layout at large GUI scales / fullscreen.** On high-resolution displays
+  (e.g. 4K with GUI Scale "Auto", effective scale 8–9 → GUI height ≈ 240), the bottom **Point size**
+  slider overlapped the footer **Done / Re-analyze** buttons. The View tab now adaptively compresses
+  the toggle and slider row pitch to fit the available height, and — at extreme heights where even the
+  minimum pitch cannot fit — makes the tab vertically scrollable (mouse wheel), using the same
+  scroll + scissor approach as the Gates / Links tabs. All controls (OW/Nether scale, Dimension
+  spacing, GPU detail, Point size) stay clear of the footer and operable at every GUI scale; normal
+  window sizes are visually unchanged.
+
 ## [1.0.0] - 2026-06-23
 
 First public release. A fully client-side Fabric mod for visualizing and reasoning about Nether portals.
