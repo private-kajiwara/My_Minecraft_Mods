@@ -118,6 +118,10 @@ tasks.processResources {
         "version" to modVersion,
         "minecraft_version" to sc.current.version,
         "java_version" to requiredJava.majorVersion,
+        // depends.fabricloader の floor = この版の実ビルド loader (deps.fabric_loader)。
+        // 単一の正本 (stonecutter.properties.toml) から版別に差し込み、 未検証の
+        // 低い下限を約束しない (1.21.x=0.19.2 / 26.x=0.19.3 など)。
+        "loader_version" to sc.properties["deps.fabric_loader"],
     )
     inputs.properties(props)
     filesMatching("fabric.mod.json") { expand(props) }
