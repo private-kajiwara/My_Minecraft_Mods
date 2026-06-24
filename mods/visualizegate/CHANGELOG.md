@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.3] - 2026-06-24
+
+### Fixed
+
+- **Dock point-cloud radar: Nether gates followed the player.** In the Nether, gate frames in the
+  bottom-right radar HUD stuck to a tiny ring around the player marker and moved with the player,
+  instead of staying fixed at their world positions (the Overworld was correct). Terrain points were
+  unaffected because only gates pass through the off-radar **edge-clamp**. The clamp radius was derived
+  from the local terrain spread, which in the Nether collapses (horizontal 1:8 compression, and ~0 when
+  no Nether terrain is captured — the default, since capture is off) — so the clamp radius fell to ~1
+  and pinned every gate onto the player. The clamp radius is now floored to the radar's local window
+  (64 blocks) expressed in the current dimension's view scale, so gates within the window stay
+  world-anchored in both dimensions and only genuinely off-radar gates are edge-clamped. The Overworld
+  is unchanged (its terrain-derived radius already exceeds the floor); the camera, terrain points,
+  player marker, colors, numbering, and 5-state coloring are untouched. Dock radar only — the full
+  point-cloud screen never had this behavior.
+
 ## [1.0.2] - 2026-06-24
 
 ### Fixed
