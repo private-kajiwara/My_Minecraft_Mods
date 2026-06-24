@@ -156,6 +156,14 @@ public final class PointCloudHudRenderer {
     private static final int DIM_TINT_NETHER = GateColors.PC_NETHER_HIGH;
     private static final float DIM_TINT_FRAC = 0.15f;
     private static final float PC_FIT_K = 1.2f;      // 雲半径フィット係数 (近距離ズーム)
+    /**
+     * ⑤④ dock は<b>現在次元の単層</b>ローカルレーダー (フル画面と違い OW+Nether を同時に積まない)。 解析 ({@link
+     * PointCloudAnalyzer}) が焼き込む OW:Nether=1:8 水平圧縮 ({@link PointCloudSnapshot#NETHER_XZ_SCALE}) を<b>dock 描画側で
+     * 打ち消し</b>、 Nether も OW と同じ 1:1 ローカル広がりで描く (= Nether でも OW 同等の見かけ範囲)。 Nether 在時のみ
+     * 全 XZ 量 (地形点/ゲート/マーカー/カメラ中心) と半径基準 (pcDistance/縁クランプ/枠・十字サイズ) へ ×{@code 8} を一律に
+     * 乗せる (Y/spacing は不変＝縦は元から非圧縮)。 OW は ×1＝不変。 フル画面と共有解析は 1:8 のまま不変 (dock 描画のみの是正)。
+     */
+    private static final float NETHER_DOCK_UNZIP = 1f / PointCloudSnapshot.NETHER_XZ_SCALE; // = 8
     private static final float GPU_MARKER_ARM_FRAC = 0.03f;
     private static final float GPU_MARKER_W_FRAC = 0.0022f;
     private static final float GPU_GATE_FRAME_HALF_H_FRAC = 0.022f;
@@ -219,9 +227,9 @@ public final class PointCloudHudRenderer {
             if (snap.hasMarker && mc.player != null) {
                 boolean neth = snap.markerNether;
                 float pivotY = PointCloudViewState.getDimensionSpacing() * 0.5f;
-                float ms = neth ? PointCloudViewState.getNetherDisplayScale()
-                        : PointCloudViewState.getOwDisplayScale();
-                float xzW = neth ? PointCloudSnapshot.NETHER_XZ_SCALE : 1f; // ネザーは水平 1/8 (terrain と同変換)
+                float ms = neth ? PointCloudViewState.getNetherDisplayScale() * NETHER_DOCK_UNZIP
+                        : PointCloudViewState.getOwDisplayScale(); // ⑤④ dock 単層: Nether を OW 相当 1:1 へ
+                float xzW = neth ? PointCloudSnapshot.NETHER_XZ_SCALE : 1f; // ネザーは水平 1/8 (terrain と同変換・unzip は ms 側)
                 double dX = mc.player.getX() - DockRadar.get().capX();
                 double dY = mc.player.getY() - DockRadar.get().capY();
                 double dZ = mc.player.getZ() - DockRadar.get().capZ();
@@ -456,9 +464,9 @@ public final class PointCloudHudRenderer {
             k++;
         }
         for (int i = 0; i < nN; i += nStride) {
-            xyz[k * 3] = snap.nX[i] * nScale;
-            xyz[k * 3 + 1] = snap.nY[i] - pivotY;
-            xyz[k * 3 + 2] = snap.nZ[i] * nScale;
+            xyz[k * 3] = snap.nX[i] * nScale * NETHER_DOCK_UNZIP; // ⑤④ dock 単層: 1:8 焼込みを打ち消し OW 相当 1:1
+            xyz[k * 3 + 1] = snap.nY[i] - pivotY;                 // Y は非圧縮ゆえ unzip しない
+            xyz[k * 3 + 2] = snap.nZ[i] * nScale * NETHER_DOCK_UNZIP;
             col[k] = tint ? mix(snap.nColor[i], DIM_TINT_NETHER, DIM_TINT_FRAC) : snap.nColor[i];
             k++;
         }
@@ -468,29 +476,31 @@ public final class PointCloudHudRenderer {
         // ── overlay: 現在次元のゲート枠 (5状態色・範囲外は縁クランプ) ＋ 現在地マーカー (金十字)。 ──
         int[] gateState = snap.gateMeta != null ? snap.gateMeta.gateState() : null;
         boolean pNeth = snap.markerNether;
-        float ms = pNeth ? nScale : owScale;
+        float dimUnzip = pNeth ? NETHER_DOCK_UNZIP : 1f; // ⑤④ dock 単層: Nether を OW 相当 1:1 へ (XZ・半径基準)
+        float ms = (pNeth ? nScale : owScale) * dimUnzip;
+        float effRadius = snap.radius * dimUnzip;        // 描画スケール後の雲半径 (枠/十字/縁クランプ/カメラ距離の基準)
         int visGates = 0;
         for (int i = 0; i < snap.gateX.length; i++) {
             if (snap.gateNether[i] == pNeth && (pNeth ? showN : showOw) && !gateHidden(snap, i)) {
                 visGates++;
             }
         }
-        float gateHalfH = Math.max(1.2f, snap.radius * GPU_GATE_FRAME_HALF_H_FRAC);
-        float gateHalfW = Math.max(0.9f, snap.radius * GPU_GATE_FRAME_HALF_W_FRAC);
-        float gateBarW = Math.max(0.08f, snap.radius * GPU_GATE_BAR_W_FRAC);
-        float gateGridW = Math.max(0.06f, snap.radius * GPU_GATE_GRID_W_FRAC);
+        float gateHalfH = Math.max(1.2f, effRadius * GPU_GATE_FRAME_HALF_H_FRAC);
+        float gateHalfW = Math.max(0.9f, effRadius * GPU_GATE_FRAME_HALF_W_FRAC);
+        float gateBarW = Math.max(0.08f, effRadius * GPU_GATE_BAR_W_FRAC);
+        float gateGridW = Math.max(0.06f, effRadius * GPU_GATE_GRID_W_FRAC);
         float mcx = snap.hasMarker ? snap.markerX * ms : 0f;
         float mcy = snap.hasMarker ? (pNeth ? snap.markerY - pivotY : snap.markerY + pivotY) : 0f;
         float mcz = snap.hasMarker ? snap.markerZ * ms : 0f;
-        // ㊽ ゲート縁クランプ半径は<b>レーダーの局所窓</b> (LOCAL_RADIUS=64ブロック) を当該次元のビュースケールで
-        // 表した値で<b>floor</b> する。 旧 {@code max(snap.radius,1)} は地形の広がり依存で、 Nether では水平 1/8 圧縮＋
-        // 地形未蓄積 (capture 既定 OFF/入坑直後) で snap.radius が 0 近くまで潰れ→clampR≈1→全ゲートがプレイヤー
-        // マーカーの極小輪へピン留めされ<b>プレイヤーに追従</b>して見えた (地形点は非クランプで world 固定のまま＝
-        // ゲートだけ別経路で player 依存)。 窓サイズで floor すれば窓内ゲートは非クランプ＝<b>world 絶対固定</b>
-        // (OW と同一規則)、 真に窓外のゲートだけ縁クランプ。 OW は地形ありの通常時 snap.radius≈64≥viewRadius ＝
-        // no-op (見え方不変)。 両次元同一式＝次元分岐なし。
-        float viewRadius = DockRadar.LOCAL_RADIUS * (pNeth ? PointCloudSnapshot.NETHER_XZ_SCALE : 1f);
-        float clampR = Math.max(snap.radius, viewRadius);
+        // ㊽ ゲート縁クランプ半径は<b>レーダーの局所窓</b> (LOCAL_RADIUS=64ブロック) で<b>floor</b> する。 旧
+        // {@code max(snap.radius,1)} は地形の広がり依存で、 地形未蓄積 (capture 既定 OFF/入坑直後) で snap.radius が
+        // 0 近くまで潰れ→clampR≈1→全ゲートがプレイヤーマーカーの極小輪へピン留めされ<b>プレイヤーに追従</b>して
+        // 見えた (地形点は非クランプで world 固定のまま＝ゲートだけ別経路で player 依存)。 窓サイズで floor すれば
+        // 窓内ゲートは非クランプ＝<b>world 絶対固定</b>、 真に窓外のゲートだけ縁クランプ。 ⑤④ dock は Nether も 1:1
+        // 描画 (NETHER_DOCK_UNZIP) ゆえ窓=64ブロックは両次元同値＝viewRadius は次元分岐なし。 比較対象は描画スケール後の
+        // effRadius (OW は snap.radius と同値＝no-op・見え方不変)。
+        float viewRadius = DockRadar.LOCAL_RADIUS;
+        float clampR = Math.max(effRadius, viewRadius);
         int ov = visGates * 112 + (snap.hasMarker ? 48 : 0); // ゲート枠=112頂点 / 現在地十字=48頂点
         if (ov > 0) {
             float[] oxyz = new float[ov * 3];
@@ -516,8 +526,8 @@ public final class PointCloudHudRenderer {
                         gateHalfW, gateHalfH, gateBarW, gateGridW, GateColors.forStateOrdinal(st));
             }
             if (snap.hasMarker) {
-                float markArm = Math.max(2f, snap.radius * GPU_MARKER_ARM_FRAC);
-                float markW = Math.max(0.1f, snap.radius * GPU_MARKER_W_FRAC);
+                float markArm = Math.max(2f, effRadius * GPU_MARKER_ARM_FRAC);
+                float markW = Math.max(0.1f, effRadius * GPU_MARKER_W_FRAC);
                 int gold = 0xFF000000 | (GateColors.ACCENT & 0xFFFFFF);
                 j = emitCross(oxyz, ocol, j, mcx, mcy, mcz, markArm, markW, gold);
             }
@@ -526,8 +536,9 @@ public final class PointCloudHudRenderer {
             PointCloudGpuRenderer.uploadOverlay(pcEmpty, pcEmptyI, 0);
         }
 
-        // 局所単層の近距離ズーム: プレイヤー周辺 (snap.radius≈局所半径) を詰めて見せる。
-        pcDistance = Math.max(snap.radius * PC_FIT_K, 30f);
+        // 局所単層の近距離ズーム: プレイヤー周辺 (effRadius≈描画後の局所半径) を詰めて見せる。 ⑤④ Nether も 1:1 化で
+        // effRadius≈64＝OW と同じ距離 (≈77) になり、 1/8 圧縮時の「小さい雲を下限30から遠望＝狭い縦長」を解消。
+        pcDistance = Math.max(effRadius * PC_FIT_K, 30f);
     }
 
     /** 非表示ゲート判定 (Vメニューの isGateHidden と同一)。 */

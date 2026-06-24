@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.4] - 2026-06-24
+
+### Fixed
+
+- **Dock point-cloud radar: Nether drawn much narrower than the Overworld.** In the Nether, the radar
+  HUD showed only a thin vertical clump in the center, while the Overworld filled the panel. The points
+  were all there (e.g. ~7.5k sampled, same ±64-block local window as the Overworld) — they were just
+  drawn at 1/8 footprint. The analyzer bakes a 1:8 horizontal compression into the Nether layer so the
+  full-screen view can stack Overworld + Nether at their true coordinate ratio; but the dock radar shows
+  only the **current** dimension (a single layer), so that compression had nothing to scale against and
+  just made the Nether look small. The pcDistance floor then compounded it (a small cloud viewed from
+  too far). The dock now undoes the 1:8 compression for the Nether (renders it 1:1, the same as the
+  Overworld) — applied only in the dock renderer to the Nether's horizontal coordinates, camera, clamp,
+  and fit radius (vertical spacing is unchanged, as it was never compressed). The Overworld is unchanged
+  (×1), and the full-screen point-cloud view and the shared analyzer keep the 1:8 ratio. Gates/links
+  stay world-anchored (the 1.0.3 follow fix is preserved); points, colors, numbering, 5-state coloring,
+  marker, and defaults are unchanged.
+
 ## [1.0.3] - 2026-06-24
 
 ### Fixed
