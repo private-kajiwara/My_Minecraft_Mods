@@ -197,6 +197,8 @@ seed translations (not yet natively reviewed)** — corrections and PRs are welc
 
 # 単一ノードを起動して確認 / run a node
 ./gradlew :26.1.2:runClient
+$env:JAVA_HOME = 'C:\Users\ppapk\.jdks\jdk-25.0.3+9'
+.\gradlew.bat :visualizegate:1.21.11:runClient --console=plain
 
 # 全 6 ノードをビルドし dist/ に集約（リポジトリルートから）
 # build all 6 nodes and collect into dist/ (from the repo root)
