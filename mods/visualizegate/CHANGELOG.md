@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.2] - 2026-06-24
+
+### Fixed
+
+- **Per-world data isolation (point cloud / gates / links).** Saved gate, link, and terrain data is
+  keyed per world, but the single-player world key was derived from the world's **display name**
+  (`getLevelName()`). Because newly created worlds all share the same default name ("New World"), their
+  keys collided — so data captured in the first world appeared in every later same-named world. The key
+  now uses the **save-folder name** (`getWorldPath(ROOT)`), which Minecraft makes unique per world
+  ("New World", "New World (1)", …). Each single-player world now shows only its own observed point
+  cloud, gates, and links; switching worlds (including without restarting) no longer carries data over.
+  Multiplayer remains keyed per server address.
+- **Migration is non-destructive.** No files are deleted or moved. Worlds whose folder name matches the
+  old display name (typically the first "New World") keep their existing data; other previously-collided
+  worlds start fresh, and the old display-name entries simply remain unread in the JSON (harmless
+  orphans). Move them manually if you want to reassign old data.
+
 ## [1.0.1] - 2026-06-23
 
 ### Fixed
