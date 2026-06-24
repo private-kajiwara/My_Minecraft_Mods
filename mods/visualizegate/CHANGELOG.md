@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.6] - 2026-06-24
+
+### Fixed
+
+- **Point cloud: Nether terrain showed as vertical streaks (root fix).** Nether terrain is volumetric —
+  the sampler records every air→solid surface down a vertical band, so each (x,z) column holds several
+  stacked points. Rendered as a point cloud with the horizontal 1:8 compression, each column became a
+  tall thin vertical sliver, reading as radial vertical streaks. This affected the **full-screen** view
+  (both the GPU3D and texbatch paths) and the dock radar alike — the earlier assumption that the
+  full-screen view was streak-free was incorrect. The analyzer now reduces the Nether to a **surface**:
+  the topmost point per (x,z) column (matching how the Overworld is already a single surface point),
+  done once at the snapshot/aggregation stage so every consumer (full screen + dock, GPU3D + texbatch)
+  is consistent. Streaks are gone; the Nether reads as a clean top-down silhouette. Saved terrain tiles
+  are unchanged (the reduction is display-only); sub-surface, cave, and ceiling points below the topmost
+  surface are no longer drawn, and the Nether point count is correspondingly lower. The Overworld,
+  colors, numbering, 5-state coloring, gates/links (world-anchored, 1.0.3), marker, scales, and defaults
+  are unchanged.
+
 ## [1.0.5] - 2026-06-24
 
 ### Fixed

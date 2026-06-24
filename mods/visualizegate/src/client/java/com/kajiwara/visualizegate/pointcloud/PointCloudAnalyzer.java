@@ -48,7 +48,10 @@ public final class PointCloudAnalyzer {
 
     public static PointCloudSnapshot analyze(PointCloudInputs in) {
         int owN = in.owTerrain().length / 4;   // flat 4 つ組 (wx, wz, y, color)
-        int nN = in.netherTerrain().length / 4;
+        // ㊿ Nether 表面化: 体積カラム (1 (x,z) に複数 Y) を<b>最上 1 点</b>へ集約してから解析する＝縦スジの根治
+        // (下記 surfaceReduceNether)。 OW は元から表面 1 点ゆえ無加工。 保存タイルは不変 (描画用スナップショット段の集約)。
+        int[] nether = surfaceReduceNether(in.netherTerrain());
+        int nN = nether.length / 4;
 
         // ── 1. 水平重心・各層平均 Y (OW スケール) ──
         double owSumX = 0;   // OW 重心 (= OW 層の視野中心)
@@ -74,9 +77,9 @@ public final class PointCloudAnalyzer {
             owYMax = Math.max(owYMax, y);
         }
         for (int i = 0; i < nN; i++) {
-            int x = in.netherTerrain()[i * 4];       // ⑥ 1:1 (×8 を外す)
-            int z = in.netherTerrain()[i * 4 + 1];
-            int y = in.netherTerrain()[i * 4 + 2];
+            int x = nether[i * 4];
+            int z = nether[i * 4 + 1];
+            int y = nether[i * 4 + 2];
             nSumX += x;
             nSumZ += z;
             hCount++;
@@ -130,10 +133,10 @@ public final class PointCloudAnalyzer {
         int[] nColort = new int[nDrawn];
         int nk = 0;
         for (int i = 0; i < nN; i += nStride) {
-            int x = in.netherTerrain()[i * 4];       // ⑥ 1:1 (×8 を外す)
-            int z = in.netherTerrain()[i * 4 + 1];
-            int y = in.netherTerrain()[i * 4 + 2];
-            int color = in.netherTerrain()[i * 4 + 3];
+            int x = nether[i * 4];
+            int z = nether[i * 4 + 1];
+            int y = nether[i * 4 + 2];
+            int color = nether[i * 4 + 3];
             nXt[nk] = (x - nCenterX) * NETHER_XZ_SCALE; // ㉒A 1:8 水平縮尺
             nYt[nk] = y - nMeanY;
             nZt[nk] = (z - nCenterZ) * NETHER_XZ_SCALE;
@@ -349,6 +352,52 @@ public final class PointCloudAnalyzer {
     }
 
     // ── ヘルパ ──────────────────────────────────────────────────────────
+
+    /**
+     * ㊿ Nether 体積カラムの<b>表面化</b>: 同一 (x,z) カラムの複数 Y 点を<b>最上 1 点 (max Y)</b> へ集約する。
+     *
+     * <p>Nether 地形は {@code TerrainSampler}(hasCeiling) が band を上→下走査し air→solid 遷移ごとに点を出す＝
+     * 1 カラムに複数 Y (床/出っ張り/天井裏…)。 これを点群にすると縦の点列になり、 水平 1/8 圧縮で各カラムが
+     * <b>縦スリヴァー化</b>＝放射状の<b>縦スジ</b>として見える (フル画面/ドック共通・GPU3D/texbatch 共通)。 OW は
+     * {@code WORLD_SURFACE} 表面 1 点ゆえ縦スジが出ない。 ここで Nether も各カラム 1 点 (上から見たシルエット=
+     * 最上点) へ間引けば縦スジが消える。 集約は<b>描画用スナップショット段のみ</b>＝保存タイル (体積) は不変。
+     *
+     * <p>入力/出力は flat {@code int[]} (wx, wz, y, color の 4 つ組連結)。 列キーは (wx,wz) を long へパック。
+     */
+    private static int[] surfaceReduceNether(int[] nether) {
+        int n = nether.length / 4;
+        if (n == 0) {
+            return nether;
+        }
+        java.util.HashMap<Long, Integer> topY = new java.util.HashMap<>(n * 2);
+        for (int i = 0; i < n; i++) {
+            long key = colKey(nether[i * 4], nether[i * 4 + 1]);
+            int y = nether[i * 4 + 2];
+            Integer cur = topY.get(key);
+            if (cur == null || y > cur) {
+                topY.put(key, y);
+            }
+        }
+        int[] out = new int[topY.size() * 4];
+        java.util.HashSet<Long> emitted = new java.util.HashSet<>(topY.size() * 2);
+        int o = 0;
+        for (int i = 0; i < n; i++) {
+            long key = colKey(nether[i * 4], nether[i * 4 + 1]);
+            if (nether[i * 4 + 2] == topY.get(key) && emitted.add(key)) { // 最上点を 1 回だけ (同 y 重複ガード)
+                out[o * 4] = nether[i * 4];
+                out[o * 4 + 1] = nether[i * 4 + 1];
+                out[o * 4 + 2] = nether[i * 4 + 2];
+                out[o * 4 + 3] = nether[i * 4 + 3];
+                o++;
+            }
+        }
+        return (o * 4 == out.length) ? out : java.util.Arrays.copyOf(out, o * 4);
+    }
+
+    /** (wx,wz) → 列キー (long パック)。 */
+    private static long colKey(int wx, int wz) {
+        return ((long) wx & 0xFFFFFFFFL) << 32 | ((long) wz & 0xFFFFFFFFL);
+    }
 
     private static int stride(int count, int budget) {
         if (count <= budget || count == 0) {
