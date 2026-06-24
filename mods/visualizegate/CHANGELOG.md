@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.5] - 2026-06-24
+
+### Fixed
+
+- **Dock point-cloud radar: Nether points showed as vertical streaks (regression from 1.0.4).** 1.0.4
+  undid the Nether's 1:8 horizontal compression in the dock to widen it — but that revealed a side effect:
+  Nether terrain is volumetric (the sampler records every air→solid surface down a vertical band, so each
+  column has many stacked points), and spreading the columns horizontally separated them into visible
+  vertical streaks fanning out and downward. The horizontal compression had been hiding this by
+  overlapping the columns (the full-screen view relies on the same compression). Because the streaks are
+  the real volumetric structure, no uniform scale removes them; "no streaks" and "Overworld-width" cannot
+  both hold for this data. Per the streaks-first priority, the dock now renders the Nether with the same
+  transform as the full-screen view again (horizontal 1:8, identical to 1.0.3) — streaks gone. The Nether
+  appears horizontally compact again (the trade-off). The Overworld, the 1.0.3 gate-follow fix, the
+  full-screen view, the shared analyzer, colors, numbering, 5-state coloring, and defaults are unchanged.
+
 ## [1.0.4] - 2026-06-24
 
 ### Fixed
