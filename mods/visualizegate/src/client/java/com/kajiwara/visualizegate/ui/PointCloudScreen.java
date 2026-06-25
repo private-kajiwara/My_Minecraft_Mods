@@ -8,6 +8,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 import com.kajiwara.visualizegate.config.GateConfigManager;
+import com.kajiwara.visualizegate.domain.ConflictReason;
 import com.kajiwara.visualizegate.domain.GateConflict;
 import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
@@ -2052,7 +2053,7 @@ public class PointCloudScreen extends Screen {
         return -1;
     }
 
-    /** ㉚D Links/Conflicts 一覧。 コンフリクトを重大度順に＋接続ペア。 色分け＋素の日本語。 行クリックで選択。 */
+    /** ㉚D Links/Conflicts 一覧。 コンフリクトを重大度順に＋接続ペア。 色分け＋ローカライズ文面。 行クリックで選択。 */
     private void drawLinksList(GuiGraphicsExtractor g, PointCloudSnapshot snap) {
         GateMeta m = snap.gateMeta;
         int x = sbContentX + SIDE_PAD;
@@ -2073,7 +2074,7 @@ public class PointCloudScreen extends Screen {
             if (y + ROW_H >= top && y <= bottom) {
                 int col = stateColor(c.state().ordinal());
                 g.fill(x, y + 1, x + 6, y + 8, col);
-                g.text(this.font, Component.literal(fitWidth(c.reasonJa(), maxW - 10)), x + 9, y, GateColors.TEXT);
+                g.text(this.font, Component.literal(fitWidth(conflictText(c), maxW - 10)), x + 9, y, GateColors.TEXT);
             }
             y += ROW_H;
         }
@@ -2088,6 +2089,46 @@ public class PointCloudScreen extends Screen {
             y += ROW_H;
         }
         g.disableScissor();
+    }
+
+    /**
+     * ㉚D コンフリクト 1 件をローカライズ文面へ。 ドメインは種別＋素データのみを返し、 ここで
+     * {@code visualizegate.conflict.*} へマップしてゲート名 (非localized OW-/N-) を差し込む
+     * (旧 {@code reasonJa} の日本語ハードコードを置換)。 placeholder 数は全ロケール一致。
+     */
+    private static String conflictText(GateConflict c) {
+        int[] nums = c.gateNumbers();
+        PortalDimension[] dims = c.dims();
+        ConflictReason reason = c.reason();
+        if (reason == ConflictReason.CROSSING) {
+            // gateNumbers = [OW..., 末尾=N]。 OW 列を ", " で連結 (語順/助詞は lang 側で吸収)。
+            StringBuilder ow = new StringBuilder();
+            for (int k = 0; k < nums.length - 1; k++) {
+                if (k > 0) {
+                    ow.append(", ");
+                }
+                ow.append(gateName(dims[k], nums[k]));
+            }
+            int last = nums.length - 1;
+            return tr("visualizegate.conflict.crossing", ow.toString(), gateName(dims[last], nums[last]));
+        }
+        if (reason == ConflictReason.ASYMMETRIC) {
+            return tr("visualizegate.conflict.asymmetric",
+                    gateName(dims[0], nums[0]), gateName(dims[1], nums[1]), gateName(dims[2], nums[2]));
+        }
+        if (reason == ConflictReason.OFFSET) {
+            return tr("visualizegate.conflict.offset",
+                    gateName(dims[0], nums[0]), gateName(dims[1], nums[1]), c.offsetBlocks());
+        }
+        if (reason == ConflictReason.WILL_CREATE) {
+            return tr("visualizegate.conflict.will_create", gateName(dims[0], nums[0]));
+        }
+        return tr("visualizegate.conflict.orphan", gateName(dims[0], nums[0]));
+    }
+
+    /** 既定ゲート名 (OW-<n> / N-<n>・非localized)。 コンフリクトの次元は OW/ネザーのみ。 */
+    private static String gateName(PortalDimension dim, int number) {
+        return GateLabels.defaultName(dim == PortalDimension.NETHER, number);
     }
 
     private void ensureRowArrays(int n) {

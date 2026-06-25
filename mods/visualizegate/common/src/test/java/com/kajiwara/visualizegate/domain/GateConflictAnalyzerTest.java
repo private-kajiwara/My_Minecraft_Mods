@@ -38,7 +38,7 @@ class GateConflictAnalyzerTest {
         assertEquals(GateState.CONFLICT, r.states()[0]);
         assertEquals(GateState.CONFLICT, r.states()[1]);
         assertEquals(GateState.CONFLICT, r.states()[2]);
-        assertTrue(r.conflicts().stream().anyMatch(c -> c.reasonJa().startsWith("交差")));
+        assertTrue(r.conflicts().stream().anyMatch(c -> c.reason() == ConflictReason.CROSSING));
     }
 
     @Test

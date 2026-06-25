@@ -229,6 +229,12 @@
 	"visualizegate.state5.will_create": "未接続",
 	"visualizegate.state5.conflict": "競合",
 
+	"visualizegate.conflict.crossing": "交差: %s が同じ %s へ向かう＝先に通った側が繋がり、 他方はズレ/新規生成になる。",
+	"visualizegate.conflict.asymmetric": "非対称: %s は %s へ向かうが、 戻ると %s に出る＝往復で別ゲートになる。",
+	"visualizegate.conflict.offset": "ズレ: %s と %s はリンクするが約 %s ブロックずれている。",
+	"visualizegate.conflict.will_create": "%s: 対応するネザーゲートが無い＝通ると新しいゲートが生成される見込み。",
+	"visualizegate.conflict.orphan": "片側: %s はどの OW ゲートからもリンクされていない。",
+
 	"visualizegate.card5.headline": "%s ― %s",
 	"visualizegate.card5.here": "ここに置くと",
 	"visualizegate.card5.connect": "→ %s に接続",
