@@ -39,6 +39,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.storage.LevelResource;
 
 /**
  * 世代横断のポータル記憶 (機能2 の緑/赤判定の前提)。 {@link PortalIndex} はディメンションを去ると
@@ -631,10 +632,30 @@ public final class PortalMemory {
 
     // ── world-id / dim-id ───────────────────────────────────────────────
 
-    /** SP=セーブ名 / MP=サーバアドレス。 取得不能なら null。 */
+    /**
+     * SP=<b>セーブフォルダ名</b> / MP=サーバアドレス。 取得不能なら null。
+     *
+     * <p><b>SP は表示名でなくフォルダ名で分離する</b>: {@code getLevelName()} は level.dat の表示名で、
+     * 新規ワールドが全て既定名 ("New World" 等) になるため複数ワールドが<b>同一キーに衝突</b>し、 最初の
+     * ワールドの記憶が同名の別ワールドでも読まれてしまう。 フォルダ名は MC が自動で一意化する
+     * ("New World", "New World (1)"…) ため確実にユニーク。 {@code getWorldPath(ROOT)} は本 mod の
+     * サーバ側 (全6版でビルド実証済) と同じ公開 API で、 新規 Mixin/版差規則を要さない。 取得失敗時のみ
+     * 旧来の表示名へフォールバック (= 万一でも null で記憶機能を全停止させない)。
+     */
     private static String worldId(Minecraft mc) {
         if (mc.hasSingleplayerServer() && mc.getSingleplayerServer() != null) {
-            return "sp:" + mc.getSingleplayerServer().getWorldData().getLevelName();
+            try {
+                Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
+                java.nio.file.Path name = root.getFileName();
+                if (name != null && !name.toString().isBlank()) {
+                    return "sp:" + name;
+                }
+            } catch (Throwable t) {
+                VisualizeGateMod.LOGGER.warn(
+                        "[visualizegate] worldId folder-name resolve failed, falling back to level name: {}",
+                        t.toString());
+            }
+            return "sp:" + mc.getSingleplayerServer().getWorldData().getLevelName(); // フォールバック
         }
         ServerData sd = mc.getCurrentServer();
         if (sd != null && sd.ip != null) {

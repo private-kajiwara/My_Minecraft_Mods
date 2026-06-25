@@ -482,7 +482,15 @@ public final class PointCloudHudRenderer {
         float mcx = snap.hasMarker ? snap.markerX * ms : 0f;
         float mcy = snap.hasMarker ? (pNeth ? snap.markerY - pivotY : snap.markerY + pivotY) : 0f;
         float mcz = snap.hasMarker ? snap.markerZ * ms : 0f;
-        float clampR = Math.max(snap.radius, 1f);
+        // ㊽ ゲート縁クランプ半径は<b>レーダーの局所窓</b> (LOCAL_RADIUS=64ブロック) を当該次元のビュースケールで
+        // 表した値で<b>floor</b> する。 旧 {@code max(snap.radius,1)} は地形の広がり依存で、 Nether では水平 1/8 圧縮＋
+        // 地形未蓄積 (capture 既定 OFF/入坑直後) で snap.radius が 0 近くまで潰れ→clampR≈1→全ゲートがプレイヤー
+        // マーカーの極小輪へピン留めされ<b>プレイヤーに追従</b>して見えた (地形点は非クランプで world 固定のまま＝
+        // ゲートだけ別経路で player 依存)。 窓サイズで floor すれば窓内ゲートは非クランプ＝<b>world 絶対固定</b>
+        // (OW と同一規則)、 真に窓外のゲートだけ縁クランプ。 OW は地形ありの通常時 snap.radius≈64≥viewRadius ＝
+        // no-op (見え方不変)。 両次元同一式＝次元分岐なし。
+        float viewRadius = DockRadar.LOCAL_RADIUS * (pNeth ? PointCloudSnapshot.NETHER_XZ_SCALE : 1f);
+        float clampR = Math.max(snap.radius, viewRadius);
         int ov = visGates * 112 + (snap.hasMarker ? 48 : 0); // ゲート枠=112頂点 / 現在地十字=48頂点
         if (ov > 0) {
             float[] oxyz = new float[ov * 3];

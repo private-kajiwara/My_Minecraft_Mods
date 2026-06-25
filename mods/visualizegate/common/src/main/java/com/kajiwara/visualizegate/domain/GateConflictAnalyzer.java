@@ -127,22 +127,19 @@ public final class GateConflictAnalyzer {
             int ni = owNearestN[oi];
             if (ni < 0) {
                 states[oi] = GateState.WILL_CREATE;
-                conflicts.add(new GateConflict(GateState.WILL_CREATE,
-                        new int[] { gates.get(oi).number() }, new PortalDimension[] { PortalDimension.OVERWORLD },
-                        "OW-" + gates.get(oi).number() + ": 対応するネザーゲートが無い＝通ると新しいゲートが生成される見込み。"));
+                conflicts.add(new GateConflict(GateState.WILL_CREATE, ConflictReason.WILL_CREATE,
+                        new int[] { gates.get(oi).number() }, new PortalDimension[] { PortalDimension.OVERWORLD }, 0));
                 continue;
             }
             int back = nNearestOw[ni];
             if (back >= 0 && back != oi) {
                 states[oi] = GateState.CONFLICT;
                 states[ni] = GateState.CONFLICT;
-                conflicts.add(new GateConflict(GateState.CONFLICT,
+                conflicts.add(new GateConflict(GateState.CONFLICT, ConflictReason.ASYMMETRIC,
                         new int[] { gates.get(oi).number(), gates.get(ni).number(), gates.get(back).number() },
                         new PortalDimension[] { PortalDimension.OVERWORLD, PortalDimension.NETHER,
                                 PortalDimension.OVERWORLD },
-                        "非対称: OW-" + gates.get(oi).number() + " は N-" + gates.get(ni).number()
-                                + " へ向かうが、 N-" + gates.get(ni).number() + " から戻ると OW-"
-                                + gates.get(back).number() + " ＝往復で別ゲートに出る。"));
+                        0));
                 continue;
             }
             if (owOffset[oi] > OK_OFFSET_THRESHOLD) {
@@ -150,11 +147,10 @@ public final class GateConflictAnalyzer {
                 if (states[ni] == GateState.OK) {
                     states[ni] = GateState.OFFSET;
                 }
-                conflicts.add(new GateConflict(GateState.OFFSET,
+                conflicts.add(new GateConflict(GateState.OFFSET, ConflictReason.OFFSET,
                         new int[] { gates.get(oi).number(), gates.get(ni).number() },
                         new PortalDimension[] { PortalDimension.OVERWORLD, PortalDimension.NETHER },
-                        "ズレ: OW-" + gates.get(oi).number() + " と N-" + gates.get(ni).number()
-                                + " はリンクするが約 " + Math.round(owOffset[oi]) + " ブロックずれている。"));
+                        (int) Math.round(owOffset[oi])));
             }
         }
 
@@ -165,9 +161,8 @@ public final class GateConflictAnalyzer {
             }
             if (!byTarget.containsKey(ni)) {
                 states[ni] = GateState.ORPHAN;
-                conflicts.add(new GateConflict(GateState.ORPHAN,
-                        new int[] { gates.get(ni).number() }, new PortalDimension[] { PortalDimension.NETHER },
-                        "片側: N-" + gates.get(ni).number() + " はどの OW ゲートからもリンクされていない。"));
+                conflicts.add(new GateConflict(GateState.ORPHAN, ConflictReason.ORPHAN,
+                        new int[] { gates.get(ni).number() }, new PortalDimension[] { PortalDimension.NETHER }, 0));
             }
         }
 
@@ -177,21 +172,15 @@ public final class GateConflictAnalyzer {
     }
 
     private static GateConflict crossConflict(List<GateNode> gates, List<Integer> owIdx, int ni) {
+        // 交差: gateNumbers = [OW..., 末尾=N]・dims も並びを揃える。 表示の OW 列連結は UI 側。
         int[] nums = new int[owIdx.size() + 1];
         PortalDimension[] dims = new PortalDimension[owIdx.size() + 1];
-        StringBuilder owList = new StringBuilder();
         for (int k = 0; k < owIdx.size(); k++) {
             nums[k] = gates.get(owIdx.get(k)).number();
             dims[k] = PortalDimension.OVERWORLD;
-            if (k > 0) {
-                owList.append(", ");
-            }
-            owList.append("OW-").append(nums[k]);
         }
         nums[owIdx.size()] = gates.get(ni).number();
         dims[owIdx.size()] = PortalDimension.NETHER;
-        return new GateConflict(GateState.CONFLICT, nums, dims,
-                "交差: " + owList + " が同じ N-" + gates.get(ni).number()
-                        + " へ向かう＝先に通った側が繋がり、 他方はズレ/新規生成になる。");
+        return new GateConflict(GateState.CONFLICT, ConflictReason.CROSSING, nums, dims, 0);
     }
 }

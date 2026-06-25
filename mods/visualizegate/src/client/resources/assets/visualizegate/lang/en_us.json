@@ -229,6 +229,12 @@
 	"visualizegate.state5.will_create": "Unlinked",
 	"visualizegate.state5.conflict": "Conflict",
 
+	"visualizegate.conflict.crossing": "Crossing: %s all target the same %s — whichever is entered first links; the rest offset or spawn new gates.",
+	"visualizegate.conflict.asymmetric": "Asymmetric: %s heads to %s, but the return exits at %s — a round trip lands on a different gate.",
+	"visualizegate.conflict.offset": "Offset: %s and %s link but are about %s blocks apart.",
+	"visualizegate.conflict.will_create": "%s: no matching Nether gate — stepping through will likely create a new one.",
+	"visualizegate.conflict.orphan": "One-sided: %s is not linked from any Overworld gate.",
+
 	"visualizegate.card5.headline": "%s — %s",
 	"visualizegate.card5.here": "If you build here",
 	"visualizegate.card5.connect": "→ links to %s",
