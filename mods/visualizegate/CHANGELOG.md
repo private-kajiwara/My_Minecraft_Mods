@@ -13,6 +13,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.14] - 2026-06-25
+
+### Fixed
+
+- **Conflict reasons displayed in Japanese under non-Japanese locales.** In the point cloud's Links /
+  Conflicts rows, the reason text for a conflicting gate (crossing, asymmetric, offset, will-create,
+  orphan) was always shown in Japanese, even when the game language was English, German, Russian, or
+  Simplified Chinese. The reason strings were hard-coded in the domain layer; they have been removed and
+  replaced with localized keys (`visualizegate.conflict.*`), with the gate name supplied as a
+  placeholder. Conflict reasons now follow the selected language across all five locales (281 keys, full
+  parity). German, Russian, and Chinese are seed translations (not yet natively reviewed).
+
+## [1.0.13] - 2026-06-25
+
+### Changed
+
+- **Point cloud finalized on full volumetric display (moiré decimation reverted).** The two decimation
+  approaches tried for moiré — projected-space cells (1.0.11) and 3D world-space cells (1.0.12) — were
+  both reverted because they made the cloud look sparse and unevenly dense. Both the Overworld and the
+  Nether now draw their full volume again (every sampled point, no thinning), so underground and cave
+  points and the positions of underground gates stay readable, and the cloud no longer gains or loses
+  points while rotating or zooming. A faint moiré remains on flat regular terrain, but it flows past as
+  you rotate and is considered acceptable; this is the intended final behavior.
+
+## [1.0.12] - 2026-06-25
+
+### Fixed
+
+- **GPU3D point cloud looked sparse and shifted while rotating / zooming (regression from 1.0.11).**
+  1.0.11's decimation for the GPU3D path was keyed to the current screen projection, so rotating the
+  view revealed density that had been baked for a different angle (off-screen areas came in dense, areas
+  thinned for the old angle stayed sparse). It was replaced with camera-independent decimation in
+  pre-rotation 3D space, so the density is uniform at every angle. The texbatch path was unaffected and
+  unchanged. (Superseded by 1.0.13, which removed decimation entirely.)
+
+## [1.0.11] - 2026-06-25
+
+### Fixed
+
+- **Point-cloud moiré (shimmer) addressed via adaptive decimation.** A regular grid of fixed-size points
+  drawn under perspective aliases against the screen pixel grid (distant points pack to ~1px apart),
+  producing a shimmering moiré. As a draw-stage fix, projected points were quantized into ~2px screen
+  cells, keeping one point per cell so drawn points stay at least ~2px apart (above the aliasing limit) —
+  thinner in the distance, full density up close. The volume data itself was left intact (underground,
+  cave, and gate positions still readable); only display density was reduced. (Superseded by 1.0.13,
+  which reverted decimation in favor of full volumetric display.)
+
+## [1.0.10] - 2026-06-25
+
+### Changed
+
+- **Surface reduction and moiré jitter reverted to restore volumetric point cloud.** Reducing each
+  dimension to a single top surface (Nether in 1.0.6, Overworld in 1.0.9) hid caves, sub-surface terrain,
+  and the position of underground gates — too costly in practice. That reduction and the moiré jitter
+  (1.0.7 / 1.0.8) were both removed: both dimensions render their full volume again (several stacked
+  points per column), so underground and cave structure and gate positions are readable. The moiré
+  workaround was dropped pending a root-cause fix (addressed differently in later versions).
+
+## [1.0.9] - 2026-06-25
+
+### Changed
+
+- **Overworld reduced to a surface to match the Nether.** Overworld terrain is volumetric (the surface
+  plus caves and overhangs scanned down ~96 blocks), so drawing it as a volume with the 1.0.8 jitter made
+  the sub-surface points read as a "haze." The Overworld was reduced to the topmost point per (x,z) column
+  — the same surface treatment the Nether already had (1.0.6) — so both dimensions show a clean top-down
+  silhouette. Display-only: saved terrain tiles were unchanged; sub-surface and cave points were no longer
+  drawn. (Reverted in 1.0.10.)
+
+## [1.0.8] - 2026-06-25
+
+### Fixed
+
+- **Overworld moiré jitter had no visible effect.** The world-fixed ±0.4-block jitter added in 1.0.7
+  became sub-pixel (~0.16px) at typical fit zoom and did not break up the moiré. The jitter was moved to
+  the draw stage and its amplitude scaled by screen-pixels-per-world-unit, so the apparent offset stays
+  about 1px regardless of zoom level or world size — breaking the grid alignment consistently while
+  preserving structure. Applied to Overworld terrain points only; the Nether, gates, links, marker, and
+  labels are unchanged. (Superseded by the 1.0.10 revert.)
+
+## [1.0.7] - 2026-06-24
+
+### Fixed
+
+- **Overworld point cloud showed a moiré (ripple) pattern.** Overworld terrain points sit on a regular
+  grid; drawn 1:1 against the screen pixel grid they interfere, so even flat surfaces such as water
+  appeared to ripple. A deterministic per-point offset (derived from a coordinate hash, so the same point
+  always shifts the same way and static frames don't flicker) was added to break up the grid alignment.
+  Applied to Overworld terrain points only; gates, links, the player marker, ID labels, and the Nether
+  are unchanged. (Refined in 1.0.8, then reverted in 1.0.10.)
+
 ## [1.0.6] - 2026-06-24
 
 ### Fixed
