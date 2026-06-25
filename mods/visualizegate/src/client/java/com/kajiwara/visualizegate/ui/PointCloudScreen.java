@@ -242,14 +242,10 @@ public class PointCloudScreen extends Screen {
     private float gNetherScale = Float.NaN; // ㉓ ネザー表示スケール署名
     private int gBcVersion = -1; // ㉕ back-calculate 要素の版 (add/clean で変化＝VBO 再構築)
     private int gHiddenVer = -1; // ㉝C 表示版 (hidden トグルで変化＝VBO 再構築・Re-analyze 不要で即反映)
-    // ⊕ モアレ根治 (Nyquist 適応間引き) でカメラ依存になった署名 (settle 時のみ更新＝動作中はVBO据置で安価)。
-    //    投影セル間引きは深度/角度/ズーム/パンで変わるため、 静止確定後に当該カメラで一度 VBO を再構築する。
-    private float gYaw = Float.NaN;
-    private float gPitch = Float.NaN;
+    // ⊕ モアレ根治 (Nyquist 適応間引き)。 間引きは<b>カメラ非依存の 3D ワールドセル</b> (回転前のビュー空間) ゆえ
+    //    回転/パンでは不変＝VBO 据置 (行列のみ・安価)。 セル寸 c は視点距離(ズーム)とビュー寸(focal)依存なので、
+    //    distance/vp が変わった時のみ settle 後に VBO を再構築する (回転は再構築不要＝1.0.11 の角度依存ズレを解消)。
     private float gDistance = Float.NaN;
-    private float gPanX = Float.NaN;
-    private float gPanY = Float.NaN;
-    private float gPanZ = Float.NaN;
     private int gVpW = -1;
     private int gVpH = -1;
     private int gpuOwPts;     // ⑭ 直近に GPU へ送った OW/ネザー点数 (detail 上限後・HUD 用)
@@ -294,6 +290,18 @@ public class PointCloudScreen extends Screen {
         long cx = (long) Math.floor(sx / MIN_PX_PITCH);
         long cy = (long) Math.floor(sy / MIN_PX_PITCH);
         return !occ.add((cx & 0xFFFFFFFFL) << 32 | (cy & 0xFFFFFFFFL));
+    }
+
+    /**
+     * ⊕ GPU3D 用<b>カメラ非依存 3D ワールドセル</b>キー: 回転前ビュー空間 (x,y,z) を {@code cellInv} で量子化し
+     * 各軸 21bit へパック (セル指数は 半径/セル寸 ≈ 数百＝21bit に十分収まる)。 回転/パンで不変ゆえ VBO に焼いても
+     * 角度で粗密がズレない (1.0.11 の 2D 投影セル間引きが回転で生んだスカスカを解消)。
+     */
+    private static long cell3dKey(float x, float y, float z, float cellInv) {
+        long ix = (long) Math.floor(x * cellInv) & 0x1FFFFFL;
+        long iy = (long) Math.floor(y * cellInv) & 0x1FFFFFL;
+        long iz = (long) Math.floor(z * cellInv) & 0x1FFFFFL;
+        return ix | (iy << 21) | (iz << 42);
     }
 
     // ── ⑨ 適応スーパーサンプル: 操作中は SS=1+間引きで安く、 静止 (settle) で一度だけネイティブ SS ──
@@ -782,9 +790,10 @@ public class PointCloudScreen extends Screen {
     }
 
     /**
-     * GPU3D ジオメトリ署名の変化検出。 データ/トグル/スケール変化は常に、 <b>カメラ変化 (yaw/pitch/distance/pan/vp)
-     * は静止確定 (settle) 後のみ</b>再構築をトリガする (⊕ 投影セル Nyquist 間引きがカメラ依存になったため)。 動作中は
-     * カメラ署名を更新せず VBO 据置＝回転/ズームは行列のみで安価、 settle 時に当該カメラで一度だけ間引き再構築する。
+     * GPU3D ジオメトリ署名の変化検出。 データ/トグル/スケール変化は常に再構築。 ⊕ Nyquist 間引きは<b>カメラ非依存の
+     * 3D ワールドセル</b>ゆえ<b>回転/パンでは再構築不要</b> (VBO 不変・行列のみ＝1.0.11 の角度依存スカスカを解消)。
+     * セル寸はズーム (distance) とビュー寸 (vp→focal) のみに依存するので、 <b>distance/vp が変わった時だけ settle 後に</b>
+     * 一度再構築する (ズーム中は VBO 据置＝安価、 静止確定で当該距離のセル寸で間引き直す)。
      */
     private boolean gpuGeomChanged(PointCloudSnapshot snap) {
         boolean showOw = PointCloudViewState.isShowOverworld();
@@ -802,11 +811,10 @@ public class PointCloudScreen extends Screen {
                 && dimTint == gDimTint && spacing == gSpacing && detail == gDetail
                 && pointSize == gPointSize && owScale == gOwScale && nScale == gNetherScale
                 && bcVersion == gBcVersion && hiddenVer == gHiddenVer;
-        // ⊕ カメラ変化は settle 後のみ評価 (動作中は無視＝VBO 据置)。 settle 後の値は静止＝1 回再構築して安定。
+        // ⊕ ズーム/ビュー寸はセル寸に効く。 settle 後のみ評価 (ズーム中は VBO 据置)。 回転/パンは間引き不変ゆえ不参照。
         boolean settled = (System.nanoTime() - lastInputNanos) >= SETTLE_NANOS;
-        boolean camSame = !settled || (yaw == gYaw && pitch == gPitch && distance == gDistance
-                && panX == gPanX && panY == gPanY && panZ == gPanZ && vpW == gVpW && vpH == gVpH);
-        if (baseSame && camSame) {
+        boolean zoomSame = !settled || (distance == gDistance && vpW == gVpW && vpH == gVpH);
+        if (baseSame && zoomSame) {
             return false;
         }
         gSnap = snap;
@@ -821,20 +829,15 @@ public class PointCloudScreen extends Screen {
         gNetherScale = nScale;
         gBcVersion = bcVersion;
         gHiddenVer = hiddenVer;
-        if (settled) { // カメラ署名は settle 時のみ保存 (動作中の中間カメラで汚さない)
-            gYaw = yaw;
-            gPitch = pitch;
+        if (settled) { // セル寸署名 (distance/vp) は settle 時のみ保存 (ズーム中の中間値で汚さない)
             gDistance = distance;
-            gPanX = panX;
-            gPanY = panY;
-            gPanZ = panZ;
             gVpW = vpW;
             gVpH = vpH;
         }
         return true;
     }
 
-    /** snapshot からカメラ非依存の 3D 頂点 (点群・線) を組み GPU へアップロード。 */
+    /** snapshot からカメラ (回転/パン) 非依存の 3D 頂点 (点群・線) を組み GPU へアップロード。 */
     private void buildGpuGeometry(PointCloudSnapshot snap) {
         float pivotY = PointCloudViewState.getDimensionSpacing() * 0.5f;
         boolean tint = PointCloudViewState.isDimTint();
@@ -858,23 +861,22 @@ public class PointCloudScreen extends Screen {
         int pc = (owN + owStride - 1) / owStride + (nN + nStride - 1) / nStride;
         float[] pxyz = new float[pc * 3];
         int[] pcol = new int[pc];
-        // ⊕ モアレ根治: 投影セル Nyquist 間引き。 現カメラで各候補点を投影し、 画面内かつ MIN_PX_PITCH セルが
-        // 既に占有なら捨てる (遠方の密集格子を深度別に粗く＝モアレ消滅)。 画面外/カメラ背後の点は回転に備え残す。
-        // カメラ依存ゆえ settle 時に gpuGeomChanged が当該カメラで VBO を一度再構築する (動作中は据置＝安価)。
-        float cosY = (float) Math.cos(yaw);
-        float sinY = (float) Math.sin(yaw);
-        float cosP = (float) Math.cos(pitch);
-        float sinP = (float) Math.sin(pitch);
-        float cx = vpX + vpW * 0.5f;
-        float cy = vpY + vpH * 0.5f;
+        // ⊕ モアレ根治 (スカスカ無し版): <b>カメラ非依存の 3D ワールドセル</b>で 1 セル 1 点に間引く。 セルは回転前の
+        // ビュー空間 (描画座標 dx,dy,dz) に置くため<b>回転/パンで不変</b>＝どの角度でも粗密が一定 (1.0.11 の角度依存
+        // スカスカを解消)。 セル寸 cell は<b>最遠点</b>の投影間隔が ≳MIN_PX_PITCH になる大きさ＝透視で最も詰まる遠方が
+        // Nyquist 以上 (モアレ無し)、 近方は滑らかに疎 (自然)。 全点を同一規則で通すので「画面外だけ密」も無い。
+        float drawnR = snap.radius * Math.max(owScale, nScale); // 描画ビュー空間の半径 (層スケール込み)
+        float maxDepth = distance + drawnR;                     // 最遠点のおよその深度 (orbit 距離 + 半径)
+        float cell = MIN_PX_PITCH * maxDepth / Math.max(1f, focal); // 1 セルが最遠で ≈MIN_PX_PITCH 投影される寸法
+        float cellInv = 1f / Math.max(1.0e-3f, cell);
         pointCells.clear();
         int k = 0;
         for (int i = 0; i < owN; i += owStride) {
             float dx = snap.owX[i] * owScale;            // ㉓ XZ のみ拡縮 (Y/spacing は不変)
             float dy = snap.owY[i] + pivotY;
             float dz = snap.owZ[i] * owScale;
-            if (decimatedOut(dx, dy, dz, cosY, sinY, cosP, sinP, cx, cy)) {
-                continue;
+            if (!pointCells.add(cell3dKey(dx, dy, dz, cellInv))) {
+                continue; // 同一 3D セルに既に代表点あり → 間引き (回転不変)
             }
             pxyz[k * 3] = dx;
             pxyz[k * 3 + 1] = dy;
@@ -887,8 +889,8 @@ public class PointCloudScreen extends Screen {
             float dx = snap.nX[i] * nScale;              // ㉓ 基準 1/8 に表示スケールを重ねる
             float dy = snap.nY[i] - pivotY;
             float dz = snap.nZ[i] * nScale;
-            if (decimatedOut(dx, dy, dz, cosY, sinY, cosP, sinP, cx, cy)) {
-                continue;
+            if (!pointCells.add(cell3dKey(dx, dy, dz, cellInv))) {
+                continue; // 同一 3D セルに既に代表点あり → 間引き (回転不変)
             }
             pxyz[k * 3] = dx;
             pxyz[k * 3 + 1] = dy;
@@ -1715,21 +1717,6 @@ public class PointCloudScreen extends Screen {
         }
         float proj = focal / depth;
         return new float[] { cx + x1 * proj, cy - y2 * proj };
-    }
-
-    /**
-     * ⊕ GPU3D 用 Nyquist 間引き判定: ワールド点を現カメラで投影し、 <b>画面内かつ {@link #MIN_PX_PITCH} セルが既に
-     * 占有</b>なら {@code true} (= この点は VBO へ載せない)。 画面外/カメラ背後 ({@link #projectXY}==null) や未占有
-     * セルは {@code false} (= 載せる＝回転に備え画面外点は残す)。 texbatch の {@link #project} 内セル間引きと同一規則
-     * ({@link #cellOccupied}・共有 {@link #pointCells}) ＝両経路一致。
-     */
-    private boolean decimatedOut(float x, float y, float z,
-            float cosY, float sinY, float cosP, float sinP, float cx, float cy) {
-        float[] s = projectXY(x, y, z, cosY, sinY, cosP, sinP, cx, cy);
-        if (s == null || s[0] < vpX || s[0] > vpX + vpW || s[1] < vpY || s[1] > vpY + vpH) {
-            return false; // 画面外/背後 → 回転に備え残す (間引かない)
-        }
-        return cellOccupied(pointCells, s[0], s[1]);
     }
 
     /**
