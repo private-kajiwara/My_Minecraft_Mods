@@ -242,6 +242,8 @@ public class PointCloudScreen extends Screen {
     private float gNetherScale = Float.NaN; // ㉓ ネザー表示スケール署名
     private int gBcVersion = -1; // ㉕ back-calculate 要素の版 (add/clean で変化＝VBO 再構築)
     private int gHiddenVer = -1; // ㉝C 表示版 (hidden トグルで変化＝VBO 再構築・Re-analyze 不要で即反映)
+    private float gDistance = Float.NaN; // ⊕ モアレジッタ振幅 (画面px換算) が distance 依存＝ズームで VBO 再構築
+    private int gVpH = -1;               // ⊕ 同上: GPU worldPerPixel が vpH 依存 (resize で再構築)
     private int gpuOwPts;     // ⑭ 直近に GPU へ送った OW/ネザー点数 (detail 上限後・HUD 用)
     private int gpuNPts;
     private static final Identifier PC_TEX_ID =
@@ -765,7 +767,8 @@ public class PointCloudScreen extends Screen {
         if (snap == gSnap && showOw == gShowOw && showN == gShowN && showLinks == gShowLinks
                 && dimTint == gDimTint && spacing == gSpacing && detail == gDetail
                 && pointSize == gPointSize && owScale == gOwScale && nScale == gNetherScale
-                && bcVersion == gBcVersion && hiddenVer == gHiddenVer) {
+                && bcVersion == gBcVersion && hiddenVer == gHiddenVer
+                && distance == gDistance && vpH == gVpH) { // ⊕ ジッタ振幅(px換算)が distance/vpH 依存
             return false;
         }
         gSnap = snap;
@@ -780,6 +783,8 @@ public class PointCloudScreen extends Screen {
         gNetherScale = nScale;
         gBcVersion = bcVersion;
         gHiddenVer = hiddenVer;
+        gDistance = distance;
+        gVpH = vpH;
         return true;
     }
 
@@ -808,10 +813,17 @@ public class PointCloudScreen extends Screen {
         float[] pxyz = new float[pc * 3];
         int[] pcol = new int[pc];
         int k = 0;
+        // ⊕ モアレ対策ジッタ: OW 地形点のみ・画面 px 換算 (GPU 経路) で常に約 JITTER_PX 相当の決定論ズレを
+        // 加え格子整列を崩す。 振幅は worldPerPixel(true)×JITTER_PX (distance/vpH 依存＝署名に含めズーム追従)。
+        // 単位ハッシュは world 整数座標 (owX/owY/owZ＋重心で復元) 由来＝両経路同値・静止時不変。
+        float owJa = JITTER_PX * worldPerPixel(true);
         for (int i = 0; i < owN; i += owStride) {
-            pxyz[k * 3] = snap.owX[i] * owScale;        // ㉓ XZ のみ拡縮 (Y/spacing は不変)
-            pxyz[k * 3 + 1] = snap.owY[i] + pivotY;
-            pxyz[k * 3 + 2] = snap.owZ[i] * owScale;
+            int wx = Math.round(snap.owX[i] + snap.owCenterX);
+            int wy = Math.round(snap.owY[i] + snap.owMeanY);
+            int wz = Math.round(snap.owZ[i] + snap.owCenterZ);
+            pxyz[k * 3] = snap.owX[i] * owScale + owJitterUnit(wx, wy, wz, 0) * owJa; // ㉓ XZ のみ拡縮 (Y/spacing は不変)
+            pxyz[k * 3 + 1] = snap.owY[i] + pivotY + owJitterUnit(wx, wy, wz, 1) * owJa;
+            pxyz[k * 3 + 2] = snap.owZ[i] * owScale + owJitterUnit(wx, wy, wz, 2) * owJa;
             pcol[k] = tint ? mix(snap.owColor[i], DIM_TINT_OW, DIM_TINT_FRAC) : snap.owColor[i];
             k++;
         }
@@ -1111,9 +1123,17 @@ public class PointCloudScreen extends Screen {
 
         int st = Math.max(1, stride);
         int total = 0;
+        // ⊕ モアレ対策ジッタ: OW 地形点のみ・画面 px 換算 (software 経路) で常に約 JITTER_PX 相当の決定論ズレ。
+        // rebuildProjection は distance/vp 変化で再投影される (署名) ＝振幅がズーム追従。 GPU 経路と同一の単位ハッシュ。
+        float owJa = JITTER_PX * worldPerPixel(false);
         for (int i = 0; i < owN; i += st) {   // OW 層 (上＝広く疎: y += pivot)
             int c = tint ? mix(snap.owColor[i], DIM_TINT_OW, DIM_TINT_FRAC) : snap.owColor[i];
-            total = project(snap.owX[i] * owScale, snap.owY[i] + pivotY, snap.owZ[i] * owScale, c,
+            int wx = Math.round(snap.owX[i] + snap.owCenterX);
+            int wy = Math.round(snap.owY[i] + snap.owMeanY);
+            int wz = Math.round(snap.owZ[i] + snap.owCenterZ);
+            total = project(snap.owX[i] * owScale + owJitterUnit(wx, wy, wz, 0) * owJa,
+                    snap.owY[i] + pivotY + owJitterUnit(wx, wy, wz, 1) * owJa,
+                    snap.owZ[i] * owScale + owJitterUnit(wx, wy, wz, 2) * owJa, c,
                     cosY, sinY, cosP, sinP, cx, cy, total);
         }
         for (int i = 0; i < nN; i += st) {    // ネザー層 (下＝密なコンパクト塊: y -= pivot)
@@ -2476,10 +2496,44 @@ public class PointCloudScreen extends Screen {
      * GPU3D は縦 FOV 70°、 software はピンホール focal/depth。
      */
     private float worldPerPixel() {
-        if (gpu3dActive) {
+        return worldPerPixel(gpu3dActive);
+    }
+
+    /**
+     * {@link #worldPerPixel()} の経路明示版。 {@code buildGpuGeometry} は {@code gpu3dActive} 確定前に
+     * 呼ばれるため、 GPU 経路では {@code gpu=true} を渡して FOV 投影で換算する。
+     */
+    private float worldPerPixel(boolean gpu) {
+        if (gpu) {
             return (float) (distance * 2.0 * Math.tan(Math.toRadians(35.0)) / Math.max(1, vpH));
         }
         return distance / Math.max(1f, focal);
+    }
+
+    /**
+     * ⊕ OW 地形点のモアレ対策ジッタの<b>狙い画面幅</b> (px)。 OW 表面点は WORLD_SURFACE + ブロック格子で規則整列し、
+     * 縮尺フィット描画で画面ピクセルと干渉して<b>モアレ (さざ波)</b> が出る (平らな水面が波打つ)。 各点を画面上で
+     * 常にこの幅だけ決定論的にずらして格子の規則性を崩す。 <b>ワールド固定でなく画面 px 基準</b>なので、 世界の広さ/
+     * ズームに依らず見かけのズレ量が一定＝モアレを常に崩しつつ構造は保つ (ワールド幅は {@link #worldPerPixel} で逆算)。
+     */
+    private static final float JITTER_PX = 0.75f;
+
+    /**
+     * ⊕ ワールド整数座標 (x,y,z) と軸 (0=X/1=Y/2=Z) から<b>決定論的</b>に {@code [-1,+1]} の単位オフセットを返す。
+     * 整数ハッシュ (finalizer mix) で混ぜ、 軸別ソルトで XYZ 独立。 同じ点・同じ軸は常に同値＝静止時チラつき無し
+     * (毎フレーム乱数は不可)。 呼び出し側で画面 px 換算の振幅 ({@code JITTER_PX * worldPerPixel()}) を掛ける。
+     */
+    private static float owJitterUnit(int x, int y, int z, int axis) {
+        int h = x * 0x9E3779B1;
+        h = (h ^ (y * 0x85EBCA77)) * 0xC2B2AE3D;
+        h = (h ^ (z * 0x27D4EB2F)) * 0x165667B1;
+        h ^= (axis + 1) * 0x9E3779B1;
+        h ^= h >>> 15;
+        h *= 0x2C1B3C6D;
+        h ^= h >>> 13;
+        h *= 0x297A2D39;
+        h ^= h >>> 16;
+        return (h & 0xFFFFFF) / (float) 0xFFFFFF * 2f - 1f; // [0,1) → [-1,+1)
     }
 
     /** recenter: 注視点パンを 0 (= fit 中心=原点) へ戻す。 yaw/pitch/distance は保持。 中ボタンダブルクリック。 */

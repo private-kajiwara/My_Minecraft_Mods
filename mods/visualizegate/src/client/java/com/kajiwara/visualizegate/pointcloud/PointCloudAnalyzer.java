@@ -43,35 +43,7 @@ public final class PointCloudAnalyzer {
      */
     private static final float NETHER_XZ_SCALE = 1.0f / 8.0f;
 
-    /**
-     * ⊕ OW 地形点の<b>決定論ジッタ幅</b> (±ブロック)。 OW 地形は {@code WORLD_SURFACE} 表面 1 点 + STRIDE 格子で
-     * 規則整列するため、 等倍 1:1 描画で画面ピクセルと干渉して<b>モアレ (さざ波)</b> が出る (高さ非依存＝平らな水面も
-     * 波打つ)。 各点へその (wx,wy,wz) から導く<b>固定</b>の微小オフセットを加えて格子の整列を崩す。 毎フレーム乱数では
-     * なく座標ハッシュ＝<b>同じ点は常に同じズレ＝静止フレームでチラつかない</b>。 ±0.4 は格子を崩すに十分・地形の形は保つ。
-     * ネザーは {@link #surfaceReduceNether} 表面化＋1/8 圧縮で格子がサブピクセル化し非発生ゆえ対象外。
-     */
-    private static final float OW_JITTER = 0.4f;
-
     private PointCloudAnalyzer() {
-    }
-
-    /**
-     * ⊕ ワールド整数座標 (x,y,z) と軸 (0=X/1=Y/2=Z) から<b>決定論的</b>に {@code [-OW_JITTER, +OW_JITTER]} の
-     * 微小オフセットを返す。 整数ハッシュ (finalizer mix) で (x,y,z,axis) を混ぜる＝同じ点・同じ軸は常に同値
-     * (時間非依存＝静止)。 軸ごとに別ソルトで XYZ 独立のズレ。 乱数/状態を持たない純関数。
-     */
-    private static float owJitter(int x, int y, int z, int axis) {
-        int h = x * 0x9E3779B1;
-        h = (h ^ (y * 0x85EBCA77)) * 0xC2B2AE3D;
-        h = (h ^ (z * 0x27D4EB2F)) * 0x165667B1;
-        h ^= (axis + 1) * 0x9E3779B1;
-        h ^= h >>> 15;
-        h *= 0x2C1B3C6D;
-        h ^= h >>> 13;
-        h *= 0x297A2D39;
-        h ^= h >>> 16;
-        float u = (h & 0xFFFFFF) / (float) 0xFFFFFF; // [0,1)
-        return (u * 2f - 1f) * OW_JITTER;            // [-J, +J)
     }
 
     public static PointCloudSnapshot analyze(PointCloudInputs in) {
@@ -146,11 +118,11 @@ public final class PointCloudAnalyzer {
             int z = in.owTerrain()[i * 4 + 1];
             int y = in.owTerrain()[i * 4 + 2];
             int color = in.owTerrain()[i * 4 + 3];
-            // ⊕ モアレ対策: ワールド座標基準の決定論ジッタを足してから重心センタリング (この後 owScale が乗る＝
-            // ズレもスケール追従)。 OW 地形点のみ・ゲート/リンク/マーカー/ネザーは非対象 (別配列・無加工)。
-            owX[k] = x - owCenterX + owJitter(x, y, z, 0);
-            owY[k] = y - owMeanY + owJitter(x, y, z, 1);
-            owZ[k] = z - owCenterZ + owJitter(x, y, z, 2);
+            // ⊕ モアレ対策の決定論ジッタは<b>描画段</b> (PointCloudScreen) で加える。 画面 px 換算 (worldPerPixel)
+            // が要るためここ (カメラ非依存のワーカー) では純粋にセンタリングのみ＝owX/owY/owZ は無加工の world-重心。
+            owX[k] = x - owCenterX;
+            owY[k] = y - owMeanY;
+            owZ[k] = z - owCenterZ;
             owColor[k] = blockOrDimColor(color, GateColors.PC_OW_LOW, GateColors.PC_OW_HIGH,
                     norm(y, owYMin, owYMax));
             k++;
