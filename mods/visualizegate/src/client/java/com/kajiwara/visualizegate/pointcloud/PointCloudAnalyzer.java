@@ -47,10 +47,12 @@ public final class PointCloudAnalyzer {
     }
 
     public static PointCloudSnapshot analyze(PointCloudInputs in) {
-        int owN = in.owTerrain().length / 4;   // flat 4 つ組 (wx, wz, y, color)
-        // ㊿ Nether 表面化: 体積カラム (1 (x,z) に複数 Y) を<b>最上 1 点</b>へ集約してから解析する＝縦スジの根治
-        // (下記 surfaceReduceNether)。 OW は元から表面 1 点ゆえ無加工。 保存タイルは不変 (描画用スナップショット段の集約)。
-        int[] nether = surfaceReduceNether(in.netherTerrain());
+        // ㊿ 両次元とも<b>表面化</b>: 体積カラム (1 (x,z) に複数 Y) を最上 1 点へ集約してから解析する
+        // (下記 surfaceReduceTopY)。 Nether=縦スジ根治、 OW=体積由来の靄根治 (1.0.8 px追従ジッタが下層点に
+        // 乗るのを止める)＝両次元が同じ地表シルエットで揃う。 保存タイルは不変 (描画用スナップショット段の集約)。
+        int[] ow = surfaceReduceTopY(in.owTerrain());   // flat 4 つ組 (wx, wz, y, color)
+        int owN = ow.length / 4;
+        int[] nether = surfaceReduceTopY(in.netherTerrain());
         int nN = nether.length / 4;
 
         // ── 1. 水平重心・各層平均 Y (OW スケール) ──
@@ -66,9 +68,9 @@ public final class PointCloudAnalyzer {
         int nYMin = Integer.MAX_VALUE;
         int nYMax = Integer.MIN_VALUE;
         for (int i = 0; i < owN; i++) {
-            int x = in.owTerrain()[i * 4];
-            int z = in.owTerrain()[i * 4 + 1];
-            int y = in.owTerrain()[i * 4 + 2];
+            int x = ow[i * 4];
+            int z = ow[i * 4 + 1];
+            int y = ow[i * 4 + 2];
             owSumX += x;
             owSumZ += z;
             hCount++;
@@ -114,10 +116,10 @@ public final class PointCloudAnalyzer {
         int[] owColor = new int[owDrawn];
         int k = 0;
         for (int i = 0; i < owN; i += owStride) {
-            int x = in.owTerrain()[i * 4];
-            int z = in.owTerrain()[i * 4 + 1];
-            int y = in.owTerrain()[i * 4 + 2];
-            int color = in.owTerrain()[i * 4 + 3];
+            int x = ow[i * 4];
+            int z = ow[i * 4 + 1];
+            int y = ow[i * 4 + 2];
+            int color = ow[i * 4 + 3];
             // ⊕ モアレ対策の決定論ジッタは<b>描画段</b> (PointCloudScreen) で加える。 画面 px 換算 (worldPerPixel)
             // が要るためここ (カメラ非依存のワーカー) では純粋にセンタリングのみ＝owX/owY/owZ は無加工の world-重心。
             owX[k] = x - owCenterX;
@@ -356,25 +358,27 @@ public final class PointCloudAnalyzer {
     // ── ヘルパ ──────────────────────────────────────────────────────────
 
     /**
-     * ㊿ Nether 体積カラムの<b>表面化</b>: 同一 (x,z) カラムの複数 Y 点を<b>最上 1 点 (max Y)</b> へ集約する。
+     * ㊿ 体積カラムの<b>表面化</b>: 同一 (x,z) カラムの複数 Y 点を<b>最上 1 点 (max Y)</b> へ集約する
+     * (両次元共通・上から見たシルエット)。
      *
-     * <p>Nether 地形は {@code TerrainSampler}(hasCeiling) が band を上→下走査し air→solid 遷移ごとに点を出す＝
-     * 1 カラムに複数 Y (床/出っ張り/天井裏…)。 これを点群にすると縦の点列になり、 水平 1/8 圧縮で各カラムが
-     * <b>縦スリヴァー化</b>＝放射状の<b>縦スジ</b>として見える (フル画面/ドック共通・GPU3D/texbatch 共通)。 OW は
-     * {@code WORLD_SURFACE} 表面 1 点ゆえ縦スジが出ない。 ここで Nether も各カラム 1 点 (上から見たシルエット=
-     * 最上点) へ間引けば縦スジが消える。 集約は<b>描画用スナップショット段のみ</b>＝保存タイル (体積) は不変。
+     * <p>{@code TerrainSampler} は 1 カラムを上→下走査し air→solid 遷移ごとに点を出す＝<b>1 カラムに複数 Y</b>:
+     * Nether(hasCeiling) は床/出っ張り/天井裏…、 <b>OW も {@code WORLD_SURFACE} から下へ {@code OW_SCAN_DEPTH}(96)
+     * 走査し洞窟床/オーバーハングを拾う</b> (「OW は表面 1 点」は誤り＝体積)。 体積のまま等倍描画すると
+     * Nether は 1/8 圧縮で<b>縦スジ</b>、 OW は <b>(1.0.8 px追従ジッタが下層点にも乗り)「靄」</b>になる。 各カラムを
+     * 最上点 (= 露出地表/天井側シルエット) 1 点へ間引けば両症状が消え、 両次元が同じ地表シルエットで揃う。
+     * 集約は<b>描画用スナップショット段のみ</b>＝保存タイル (体積) は不変。 代表色は最上点の色を採る。
      *
      * <p>入力/出力は flat {@code int[]} (wx, wz, y, color の 4 つ組連結)。 列キーは (wx,wz) を long へパック。
      */
-    private static int[] surfaceReduceNether(int[] nether) {
-        int n = nether.length / 4;
+    private static int[] surfaceReduceTopY(int[] terrain) {
+        int n = terrain.length / 4;
         if (n == 0) {
-            return nether;
+            return terrain;
         }
         java.util.HashMap<Long, Integer> topY = new java.util.HashMap<>(n * 2);
         for (int i = 0; i < n; i++) {
-            long key = colKey(nether[i * 4], nether[i * 4 + 1]);
-            int y = nether[i * 4 + 2];
+            long key = colKey(terrain[i * 4], terrain[i * 4 + 1]);
+            int y = terrain[i * 4 + 2];
             Integer cur = topY.get(key);
             if (cur == null || y > cur) {
                 topY.put(key, y);
@@ -384,12 +388,12 @@ public final class PointCloudAnalyzer {
         java.util.HashSet<Long> emitted = new java.util.HashSet<>(topY.size() * 2);
         int o = 0;
         for (int i = 0; i < n; i++) {
-            long key = colKey(nether[i * 4], nether[i * 4 + 1]);
-            if (nether[i * 4 + 2] == topY.get(key) && emitted.add(key)) { // 最上点を 1 回だけ (同 y 重複ガード)
-                out[o * 4] = nether[i * 4];
-                out[o * 4 + 1] = nether[i * 4 + 1];
-                out[o * 4 + 2] = nether[i * 4 + 2];
-                out[o * 4 + 3] = nether[i * 4 + 3];
+            long key = colKey(terrain[i * 4], terrain[i * 4 + 1]);
+            if (terrain[i * 4 + 2] == topY.get(key) && emitted.add(key)) { // 最上点を 1 回だけ (同 y 重複ガード)
+                out[o * 4] = terrain[i * 4];
+                out[o * 4 + 1] = terrain[i * 4 + 1];
+                out[o * 4 + 2] = terrain[i * 4 + 2];
+                out[o * 4 + 3] = terrain[i * 4 + 3];
                 o++;
             }
         }
