@@ -1,0 +1,92 @@
+# =====================================================================
+# stonecutter.properties.toml (Stonecutter centralized + per-node props)
+# ---------------------------------------------------------------------
+#   正本は mc-meta/versions.json + mc-meta/<MC>.properties。
+#   このファイルはそこから生成する想定 (現状は手生成)。
+#   build.gradle.kts は sc.properties["deps.*"] で読む。
+#
+#   ModMenu 設定画面のため deps.mod_menu を各ノードに設定 (OmniChest と同実値)。
+#   loader / fabric_api / mod_menu の実値は同一 MC の OmniChest と共通 (= MC 由来)。
+#
+#   deps.iris / deps.sodium は dev runClient 専用 (modLocalRuntime)。
+#   配布 jar・fabric.mod.json・コンパイル classpath には一切混入しない。
+#   ノード別に「Iris が required で要求する Sodium」とペアで固定 (OmniChest と同実値)。
+#   空文字にすればそのノードでは入れない (build.gradle.kts の isNotEmpty() ガード)。
+# =====================================================================
+
+# loom-back-compat が使う Loom バージョン (全ノード共通)
+loomx.loom_version = "1.16-SNAPSHOT"
+
+# ---- MC 1.21.10 (旧世代・難読化版・Mojmap・remap Loom・Java21) ----
+["1.21.10"]
+deps.fabric_loader = "0.19.2"
+deps.fabric_api = "0.138.4+1.21.10"
+deps.mod_menu = "16.0.1"
+deps.sodium = "mc1.21.10-0.7.3-fabric"   # dev-only (Iris 1.9.7 が要求)
+deps.iris = "1.9.7+1.21.10-fabric"        # dev-only
+mod.java = "21"
+mod.mc_compat = "1.21.10"
+mod.stable = "true"
+mod.recommended = "false"
+
+# ---- MC 1.21.11 (旧世代・難読化版・Mojmap・remap Loom・Java21) ----
+["1.21.11"]
+deps.fabric_loader = "0.19.2"
+deps.fabric_api = "0.141.3+1.21.11"
+deps.mod_menu = "17.0.0"
+deps.sodium = "mc1.21.11-0.8.7-fabric"   # dev-only (Iris 1.10.7 が要求)
+deps.iris = "1.10.7+1.21.11-fabric"       # dev-only
+mod.java = "21"
+mod.mc_compat = "1.21.11"
+mod.stable = "true"
+mod.recommended = "false"
+
+# ---- MC 26.1 系 (非難読化版・Java25) ----
+["26.1"]
+deps.fabric_loader = "0.19.3"
+deps.fabric_api = "0.145.1+26.1"
+deps.mod_menu = "18.0.0-beta.1"
+deps.sodium = "mc26.1.1-0.8.9-fabric"    # dev-only (Iris 1.10.9 が要求・26.1/26.1.1/26.1.2 互換)
+deps.iris = "1.10.9+26.1-fabric"          # dev-only
+mod.java = "25"
+mod.mc_compat = "~26.1"
+mod.stable = "true"
+mod.recommended = "false"
+
+["26.1.1"]
+deps.fabric_loader = "0.19.3"
+deps.fabric_api = "0.145.4+26.1.1"
+deps.mod_menu = "18.0.0-beta.1"
+deps.sodium = "mc26.1.1-0.8.9-fabric"    # dev-only (Iris 1.10.9 が要求)
+deps.iris = "1.10.9+26.1-fabric"          # dev-only
+mod.java = "25"
+mod.mc_compat = "~26.1"
+mod.stable = "true"
+mod.recommended = "false"
+
+["26.1.2"]
+deps.fabric_loader = "0.19.3"
+deps.fabric_api = "0.150.0+26.1.2"
+deps.mod_menu = "18.0.0-beta.1"
+deps.sodium = "mc26.1.1-0.8.9-fabric"    # dev-only (Iris 1.10.9 が要求・26.1.2 互換)
+deps.iris = "1.10.9+26.1-fabric"          # dev-only
+mod.java = "25"
+mod.mc_compat = "~26.1"
+mod.stable = "true"
+mod.recommended = "true"
+
+# ---- MC 26.2 (非難読化版・Java25) — buildable:true (held 解除済・versions.json と一致) ----
+#   実値は authoritative 確認済み (Fabric Meta / Modrinth)。
+#   26.2 はクライアント描画パイプライン破壊的変更 (MultiBufferSource 削除→submit/staged 系・
+#   RenderPass/TextureTarget/GpuBufferSlice・setScreenAndShow 等) を版別 //? で本格移植済。
+#   dev Iris/Sodium: sodium mc26.2-0.9.0 / iris 1.11.1+26.2。
+["26.2"]
+deps.fabric_loader = "0.19.3"
+deps.fabric_api = "0.152.1+26.2"
+deps.mod_menu = "20.0.0-beta.2"
+deps.sodium = "mc26.2-0.9.0-fabric"      # dev-only (Iris 1.11.1 が要求・26.2 唯一の Sodium)
+deps.iris = "1.11.1+26.2-fabric"          # dev-only
+mod.java = "25"
+mod.mc_compat = "~26.2"
+mod.stable = "true"
+mod.recommended = "false"
