@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "worldchange",
+	"version": "${version}",
+	"name": "WorldChange",
+	"description": "Switch to another existing singleplayer world in-game with /worldChange <name:seed>, without returning to the title screen.",
+	"authors": [
+		"kajiwara"
+	],
+	"contact": {
+		"homepage": "https://github.com/private-kajiwara/My_Minecraft_Mods",
+		"sources": "https://github.com/private-kajiwara/My_Minecraft_Mods",
+		"issues": "https://github.com/private-kajiwara/My_Minecraft_Mods/issues"
+	},
+	"license": "CC0-1.0",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.kajiwara.worldchange.WorldChangeClient"
+		],
+		"modmenu": [
+			"com.kajiwara.worldchange.modmenu.WorldChangeModMenuApi"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	},
+	"recommends": {
+		"modmenu": "*"
+	}
+}
