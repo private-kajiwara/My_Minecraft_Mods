@@ -20,7 +20,8 @@
       "PowerShell(Get-ChildItem c:\\\\MyFabricMod\\\\src\\\\main\\\\java\\\\com\\\\kajiwara\\\\modid -Recurse | ForEach-Object { $_.FullName }; Get-ChildItem c:\\\\MyFabricMod\\\\src\\\\main\\\\java\\\\com\\\\kajiwara\\\\chestinthesearch -Recurse | ForEach-Object { $_.FullName })",
       "PowerShell(Get-ChildItem c:\\\\MyFabricMod\\\\src\\\\client\\\\resources -Recurse | ForEach-Object { $_.FullName })",
       "PowerShell(Get-ChildItem c:\\\\MyFabricMod\\\\src\\\\main\\\\resources\\\\assets -Force -Recurse | ForEach-Object { $_.FullName }; Get-ChildItem c:\\\\MyFabricMod\\\\src\\\\client\\\\resources -Force -Recurse | ForEach-Object { $_.FullName })",
-      "PowerShell(Get-ChildItem c:\\\\MyFabricMod\\\\bin -Recurse | ForEach-Object { $_.FullName } | Select-Object -First 30)"
+      "PowerShell(Get-ChildItem c:\\\\MyFabricMod\\\\bin -Recurse | ForEach-Object { $_.FullName } | Select-Object -First 30)",
+      "Bash(rm -rf \"mods/visualizegate/C:UsersppapkAppDataLocalTempclaudeC--MyMinecraftMod7a076e2b-aef5-4a4b-a037-7055c780eb2dscratchpad\" *)"
     ]
   }
 }
