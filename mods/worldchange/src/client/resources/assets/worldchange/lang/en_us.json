@@ -1,0 +1,20 @@
+{
+	"worldchange.usage": "Usage: /worldChange <name:seed>  — switch to an existing saved world (seed optional)",
+	"worldchange.not_found": "No saved world named \"%s\" was found.",
+	"worldchange.ambiguous.need_seed": "\"%s\" matches %s worlds. Add the seed to pick one: /worldChange %1$s:<seed>",
+	"worldchange.ambiguous.seed_unresolved": "No world named \"%s\" with that seed. Candidates:",
+	"worldchange.candidate_line": "  • %s  (\"%s\")",
+	"worldchange.seed_mismatch": "Seed does not match \"%s\", switching anyway.",
+	"worldchange.switching": "Switching to \"%s\"…",
+	"worldchange.locked": "\"%s\" is in use (session locked) and cannot be opened.",
+	"worldchange.incompatible": "\"%s\" is not compatible with this Minecraft version.",
+	"worldchange.already_there": "You are already in \"%s\".",
+
+	"worldchange.screen.title": "WorldChange — pick a world",
+	"worldchange.screen.empty": "No saved worlds found.",
+	"worldchange.screen.prev": "« Prev",
+	"worldchange.screen.next": "Next »",
+	"worldchange.screen.row_current": "%s  — current",
+	"worldchange.screen.row_locked": "%s  — in use",
+	"worldchange.screen.row_incompatible": "%s  — incompatible"
+}

@@ -1,0 +1,20 @@
+{
+	"worldchange.usage": "使い方: /worldChange <名前:シード値>  — 既存ワールドへ切替 (シードは任意)",
+	"worldchange.not_found": "「%s」という名前のワールドが見つかりません。",
+	"worldchange.ambiguous.need_seed": "「%s」に一致するワールドが %s 個あります。シードで指定してください: /worldChange %1$s:<シード>",
+	"worldchange.ambiguous.seed_unresolved": "そのシードを持つ「%s」はありません。候補:",
+	"worldchange.candidate_line": "  • %s  (「%s」)",
+	"worldchange.seed_mismatch": "シードが「%s」と一致しませんが、そのまま切り替えます。",
+	"worldchange.switching": "「%s」へ切り替えています…",
+	"worldchange.locked": "「%s」は使用中 (セッションロック) のため開けません。",
+	"worldchange.incompatible": "「%s」はこの Minecraft バージョンと互換性がありません。",
+	"worldchange.already_there": "すでに「%s」にいます。",
+
+	"worldchange.screen.title": "WorldChange — ワールドを選択",
+	"worldchange.screen.empty": "保存されたワールドがありません。",
+	"worldchange.screen.prev": "« 前へ",
+	"worldchange.screen.next": "次へ »",
+	"worldchange.screen.row_current": "%s  — 現在",
+	"worldchange.screen.row_locked": "%s  — 使用中",
+	"worldchange.screen.row_incompatible": "%s  — 非互換"
+}
