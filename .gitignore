@@ -48,3 +48,7 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# git tooling diagnostics (machine-specific env dumps — do not track)
+
+gcm-diagnose.log

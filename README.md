@@ -40,6 +40,67 @@ gradle wrapper) が Mod 固有名をハードコードせずに各 Mod をビル
 
 ---
 
+## 開発環境セットアップ（Windows / macOS 共通）
+
+このリポジトリは共有 Gradle wrapper（`gradlew` / `gradlew.bat`）で全 OS から同じ
+タスクを実行できます。これまでの動作確認は主に Windows ですが、改行コード・実行ビット・
+POSIX ラッパーを整備済みで、macOS/Linux でもクローン → ビルド → 起動できる想定です
+（**macOS 実機での最終確認は環境準備のうえ各自で**）。
+
+### 1. 必要な JDK（**21 と 25 の両方**）
+
+世代境界があり、両方の JDK が要ります（片方だけでは一部の MC がビルドできません）:
+
+| MC 世代 | 必要 JDK |
+|---|---|
+| `1.21.x`（旧世代・Mojmap） | **JDK 21** |
+| `26.1` / `26.1.1` / `26.1.2` / `26.2`（新世代） | **JDK 25** |
+
+> 26.1+ は Gradle デーモン自身が JDK 25 で動いている必要があります
+> （`loom-back-compat` が世代に応じて切り替えます）。
+
+### 2. toolchain（JDK の供給）
+
+まず Gradle の toolchain 自動検出に任せます（多くの環境はこれで通ります）。
+検出されない場合は、**マシン毎の非コミット設定** `~/.gradle/gradle.properties`
+（Windows は `%USERPROFILE%\.gradle\gradle.properties`）に JDK のインストール先を登録します:
+
+```properties
+# 例（実際のパスは自分の環境のものに置き換える。複数はカンマ区切り）
+org.gradle.java.installations.paths=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home,/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home
+```
+
+このファイルはリポジトリには含めません（環境依存のため）。
+
+### 3. ビルド / 起動コマンド（OS 別）
+
+- **Windows**: `.\gradlew.bat <task>`（cmd.exe では `gradlew.bat <task>`）
+- **macOS / Linux**: `./gradlew <task>`
+
+主なタスクは下の「ビルド方法」を参照。補助スクリプトも OS 別に用意しています:
+
+| 用途 | Windows | macOS / Linux |
+|---|---|---|
+| 推奨版ビルド | `build-mod.bat` | `./build-mod.sh` |
+| OmniChest クライアント起動 | `run-client.bat [MC]` | `./run-client.sh [MC]` |
+
+`.sh` は JDK パスをハードコードせず、上記 toolchain 設定に従います。
+
+### 4. 初回ビルドはネットワーク DL を伴う
+
+クローン直後の初回ビルドは Minecraft 本体・マッピング・依存ライブラリを
+ダウンロードします（許可ドメインへのネット接続が必要・初回のみ時間がかかります）。
+
+### 5. macOS で `./gradlew` が動かない場合
+
+リポジトリには実行ビットを付与済みですが、効いていなければ:
+
+```bash
+chmod +x gradlew mods/*/gradlew build-mod.sh run-client.sh
+```
+
+---
+
 ## ビルド方法
 
 すべてリポジトリのルートで実行します（Windows は `.\gradlew.bat`、macOS/Linux は `./gradlew`）。
