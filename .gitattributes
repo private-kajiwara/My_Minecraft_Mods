@@ -1,9 +1,21 @@
 #
 # https://help.github.com/articles/dealing-with-line-endings/
 #
-# Linux start script should use lf
+# Targeted EOL rules only — intentionally NO `* text=auto` so that mod
+# sources (.java/.json/etc.) keep their existing on-disk storage and no
+# repo-wide renormalization (which would mask the OmniChest byte-parity)
+# is ever triggered.
+
+# POSIX shell / Gradle wrapper scripts must use LF (sh rejects CRLF)
 /gradlew        text eol=lf
+mods/*/gradlew  text eol=lf
+*.sh            text eol=lf
 
 # These are Windows script files and should use crlf
 *.bat           text eol=crlf
+*.cmd           text eol=crlf
 
+# Known binaries — never apply EOL normalization or diff as text
+*.png  binary
+*.jar  binary
+*.ico  binary
