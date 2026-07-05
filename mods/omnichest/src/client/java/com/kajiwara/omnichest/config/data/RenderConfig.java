@@ -12,6 +12,16 @@ public final class RenderConfig {
     public boolean enableOverlay = true;
 
     /**
+     * 「選択アイテム情報 HUD」 (= 検索でクリック固定したアイテムの名前 / 合計個数 / 場所を
+     * プレイ中の画面左上に読み取り専用で常時表示) を ON/OFF する。 既定 <b>true</b>。
+     * <p>
+     * これは<b>表示専用</b>の好み設定。 OFF にしてもハイライト・ピン・検索索引などの内部ロジックは
+     * 一切止めない (= HUD パネルを描画しないだけ)。 キーバインド ({@code toggle_selected_item_hud}) や
+     * {@code /omnichest hud <on|off>} で即座に切り替えできる。
+     */
+    public boolean showSelectedItemHud = true;
+
+    /**
      * ハイライト枠の色 (0xRRGGBB)。
      * Cloth Config の Color Picker (= startColorField) で編集する想定。
      * デフォルト 0xFFAA00 (= オレンジ)。

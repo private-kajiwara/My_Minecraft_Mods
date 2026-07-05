@@ -185,6 +185,19 @@ public final class ChestHighlighter {
     private final Map<ContainerSnapshot.Key, ActiveHighlight> active = new ConcurrentHashMap<>();
 
     /**
+     * {@link #active} の <b>構造</b> が変化する度に単調増加するバージョン番号。
+     *
+     * <p>
+     * 「選択アイテム HUD」 ({@link SelectedItemHudRenderer}) が毎フレーム重い集計をやり直さないための
+     * キャッシュ鍵。 エントリの<b>追加 / 削除 / 全消去 / expire 掃除</b>でのみ bump し、
+     * {@code expiresAt} の延長 (= GUI ホバー中の毎フレーム更新) では bump しない
+     * (= 表示内容 = アイテム集合・個数・位置 が変わらないため)。 これにより HUD 側は
+     * {@code long} 比較 1 回で「変化なし」を判定でき、 描画スレッドでの全走査を避けられる
+     * (= VG のカクつき事故を再現しない)。
+     */
+    private volatile long activeVersion = 0L;
+
+    /**
      * 1 フレーム分の「ピンアイコン HUD 描画キュー」。
      *
      * <p>
@@ -491,6 +504,7 @@ public final class ChestHighlighter {
         if (ah.entries.isEmpty()) {
             active.remove(key);
         }
+        activeVersion++;
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -557,10 +571,17 @@ public final class ChestHighlighter {
                 labelCount, snapshot.pos(),
                 durationMs == Long.MAX_VALUE ? "persistent" : durationMs, waypoint);
 
+        // HUD キャッシュ用: このコールで active の「構造」 (キー新規 / エントリ追加) が
+        // 変わったかを記録し、 変わったときだけ activeVersion を bump する。 expiresAt の
+        // 更新だけでは bump しない (= HUD の表示内容が変わらないため)。
+        boolean[] structuralChange = { false };
         active.compute(snapshot.key(), (key, existing) -> {
             ActiveHighlight target = (existing != null)
                     ? existing
                     : new ActiveHighlight(snapshot, new ArrayList<>(), expiresAt);
+            if (existing == null) {
+                structuralChange[0] = true;
+            }
             target.expiresAt = expiresAt;
 
             if (hasLabel) {
@@ -575,10 +596,80 @@ public final class ChestHighlighter {
                 }
                 if (!dup) {
                     target.entries.add(new HighlightEntry(labelCopy, labelCount, waypoint));
+                    structuralChange[0] = true;
                 }
             }
             return target;
         });
+        if (structuralChange[0]) {
+            activeVersion++;
+        }
+    }
+
+    /**
+     * {@link #active} の構造バージョン。 HUD ({@link SelectedItemHudRenderer}) が
+     * 「前フレームから選択集合が変わったか」 を {@code long} 比較 1 回で判定するために読む。
+     */
+    public long activeVersion() {
+        return activeVersion;
+    }
+
+    /**
+     * <b>読み取り専用</b>: 現在アクティブ (= 未 expire・非 waypoint) なハイライトを
+     * 「アイテム識別子」 ({@link ItemStack#isSameItemSameComponents}) ごとに集計した
+     * スナップショットを返す。 「選択アイテム HUD」 が名前・合計個数・場所を表示するための唯一のソース。
+     *
+     * <p>
+     * <b>相乗り設計</b>: 独自の全スナップショット走査は<b>しない</b>。 ピン/ビームと同じ
+     * {@link #active} を集計するだけなので、 HUD の寿命はピンと完全一致する
+     * (= 選択で現れ、 15 秒 or {@code pinPersistUntilOpened} でピンと同時に消える)。
+     *
+     * <p>
+     * <b>呼び出し規約</b>: 集計は O(コンテナ数) だが、 描画スレッドから毎フレーム呼ばず、
+     * {@link #activeVersion()} が変化したときだけ呼ぶこと (= 呼び出し側でキャッシュ)。
+     *
+     * <p>
+     * 返却は <b>recency 降順</b> (= 最も最近ハイライトされたアイテムが先頭)。
+     */
+    public List<SelectedItem> selectedItemsForHud() {
+        if (active.isEmpty()) {
+            return List.of();
+        }
+        long now = System.currentTimeMillis();
+        List<SelectedItemAccum> groups = new ArrayList<>();
+        for (ActiveHighlight h : active.values()) {
+            if (h.expiresAt < now) {
+                continue;
+            }
+            for (HighlightEntry e : h.entries) {
+                if (e.waypoint || e.stack == null || e.stack.isEmpty()) {
+                    continue;
+                }
+                SelectedItemAccum g = null;
+                for (SelectedItemAccum cand : groups) {
+                    if (ItemStack.isSameItemSameComponents(cand.icon, e.stack)) {
+                        g = cand;
+                        break;
+                    }
+                }
+                if (g == null) {
+                    g = new SelectedItemAccum(e.stack);
+                    groups.add(g);
+                }
+                g.totalCount += e.count;
+                g.locations.add(new Located(h.snapshot.dimension(), h.snapshot.pos(), e.count));
+                g.recency = Math.max(g.recency, h.expiresAt);
+            }
+        }
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+        groups.sort((a, b) -> Long.compare(b.recency, a.recency));
+        List<SelectedItem> out = new ArrayList<>(groups.size());
+        for (SelectedItemAccum g : groups) {
+            out.add(new SelectedItem(g.icon, g.totalCount, List.copyOf(g.locations), g.recency));
+        }
+        return out;
     }
 
     public void highlight(ContainerSnapshot snapshot, ItemStack labelItem, int labelCount) {
@@ -610,7 +701,10 @@ public final class ChestHighlighter {
     }
 
     public void clear() {
-        active.clear();
+        if (!active.isEmpty()) {
+            active.clear();
+            activeVersion++;
+        }
     }
 
     /**
@@ -732,7 +826,10 @@ public final class ChestHighlighter {
             return;
 
         long now = System.currentTimeMillis();
-        active.entrySet().removeIf(e -> e.getValue().expiresAt < now);
+        if (active.entrySet().removeIf(e -> e.getValue().expiresAt < now)) {
+            // expire 掃除で構造が変わったら HUD キャッシュを無効化する。
+            activeVersion++;
+        }
         if (active.isEmpty())
             return;
 
@@ -1982,6 +2079,37 @@ public final class ChestHighlighter {
      *                 ワールドのピン (名前タグ) には表示しない。 false = 通常の検索対象アイテム。
      */
     private record HighlightEntry(ItemStack stack, int count, boolean waypoint) {
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // HUD 読み取り専用 DTO (= SelectedItemHudRenderer が消費する不変スナップショット)
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * 選択中アイテム 1 種の集計結果 (不変)。
+     *
+     * @param icon       表示用スタック (= 名前 {@link ItemStack#getHoverName()} とアイコン)。
+     * @param totalCount 全コンテナ横断の合計個数。
+     * @param locations  出現場所 (次元 + 座標 + そのコンテナでの個数)。 次元別集計・最寄り算出の素データ。
+     * @param recency    このアイテムに寄与したハイライトの {@code expiresAt} 最大値 (= 並べ替え用)。
+     */
+    public record SelectedItem(ItemStack icon, int totalCount, List<Located> locations, long recency) {
+    }
+
+    /** 選択中アイテムの 1 出現場所 (不変)。 */
+    public record Located(ResourceKey<Level> dimension, BlockPos pos, int count) {
+    }
+
+    /** {@link #selectedItemsForHud()} の集計途中状態 (可変・内部用)。 */
+    private static final class SelectedItemAccum {
+        final ItemStack icon;
+        int totalCount;
+        long recency;
+        final List<Located> locations = new ArrayList<>();
+
+        SelectedItemAccum(ItemStack icon) {
+            this.icon = icon;
+        }
     }
 
     private static final class ActiveHighlight {

@@ -17,6 +17,13 @@ public final class RenderCategoryBuilder {
         b.toggle(ConfigLabels.entry("render.enableOverlay", "Enable Overlay"),
                 cfg.enableOverlay, v -> cfg.enableOverlay = v, null);
 
+        b.toggle(ConfigLabels.entry("render.showSelectedItemHud", "Selected Item HUD"),
+                cfg.showSelectedItemHud, v -> cfg.showSelectedItemHud = v,
+                ConfigLabels.tooltip("render.showSelectedItemHud",
+                        "Show a read-only panel (top-left) with the selected item's name, "
+                                + "total count and locations while playing. "
+                                + "Appears/disappears together with the world pins."));
+
         b.color(ConfigLabels.entry("render.highlightColorRgb", "Highlight Color"),
                 cfg.highlightColorRgb, v -> cfg.highlightColorRgb = v,
                 ConfigLabels.tooltip("render.highlightColorRgb",

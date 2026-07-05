@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.client;
 
 import com.kajiwara.omnichest.classify.AutoDepositManager;
 import com.kajiwara.omnichest.client.gui.SearchScreen;
+import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.distribution.ui.DistributionScreen;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
@@ -58,6 +59,14 @@ public final class ClientKeyBindings {
     public static final String CLEAR_ALL_LOCKS_KEY = "key.omnichest.clear_all_slot_locks";
 
     /**
+     * Selected Item HUD: 「選択アイテム情報 HUD」 の表示を ON/OFF 切替するキー。
+     * デフォルトは <b>未バインド</b> (= 衝突を避けるため、 ユーザー任意設定)。
+     * {@code /omnichest hud toggle} と同一の設定 ({@link com.kajiwara.omnichest.config.data.RenderConfig#showSelectedItemHud})
+     * を切り替える。
+     */
+    public static final String TOGGLE_SELECTED_ITEM_HUD_KEY = "key.omnichest.toggle_selected_item_hud";
+
+    /**
      * 独自カテゴリを 1.21.11+ の新 API ({@link KeyMapping.Category#register}) で登録する。
      * String 版は package-private に変わったため、 Identifier 版を経由する。
      * 同名カテゴリが既に存在する場合は同じインスタンスが返る。
@@ -70,6 +79,7 @@ public final class ClientKeyBindings {
     private static KeyMapping smartDeposit;
     private static KeyMapping toggleSlotLock;
     private static KeyMapping clearAllSlotLocks;
+    private static KeyMapping toggleSelectedItemHud;
 
     /** 一括解除キー押下時刻 (ms)。 1.5 秒以内の連続押下で確定。 */
     private static long lastClearAllPressMs = 0L;
@@ -128,6 +138,13 @@ public final class ClientKeyBindings {
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
 
+        // 選択アイテム HUD の表示トグル (= 未バインドで登録: ユーザーが好みのキーを割当可能)。
+        toggleSelectedItemHud = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                TOGGLE_SELECTED_ITEM_HUD_KEY,
+                InputConstants.Type.KEYSYM,
+                InputConstants.UNKNOWN.getValue(),
+                CATEGORY));
+
         ClientTickEvents.END_CLIENT_TICK.register(ClientKeyBindings::onTick);
     }
 
@@ -170,6 +187,24 @@ public final class ClientKeyBindings {
                 //?}
                     AutoDepositManager.announceSummary(mc.player);
                 }
+            }
+        }
+
+        if (toggleSelectedItemHud != null) {
+            while (toggleSelectedItemHud.consumeClick()) {
+                // 選択アイテム HUD の表示を反転 (= /omnichest hud toggle と同一設定)。
+                // Screen の有無に関わらず動く単純な表示トグル (= ロジックには触れない)。
+                boolean next;
+                try {
+                    next = !ConfigManager.get().render.showSelectedItemHud;
+                    ConfigManager.get().render.showSelectedItemHud = next;
+                    ConfigManager.save();
+                } catch (Throwable t) {
+                    next = true;
+                }
+                if (mc.player != null) mc.player.sendSystemMessage(next
+                        ? OmniChestLocale.get("omnichest.command.hud.on", "Selected item HUD: ON")
+                        : OmniChestLocale.get("omnichest.command.hud.off", "Selected item HUD: OFF"));
             }
         }
 
