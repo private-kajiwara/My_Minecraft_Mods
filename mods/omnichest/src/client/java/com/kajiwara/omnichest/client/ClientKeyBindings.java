@@ -67,6 +67,14 @@ public final class ClientKeyBindings {
     public static final String TOGGLE_SELECTED_ITEM_HUD_KEY = "key.omnichest.toggle_selected_item_hud";
 
     /**
+     * Dimension Menu: 「ハイライト中アイテムが どのディメンションにあるか」 の一覧メニュー
+     * ({@link com.kajiwara.omnichest.client.gui.DimensionMenuScreen}) を開閉する<b>再割当可能</b>キー。
+     * デフォルトは <b>未バインド</b>。 既定操作は Alt+A (下記グローバル ポール) で、 衝突時はこのキーへ
+     * 好みの単一キーを割り当てられる (= 設定 {@code render.dimensionMenuAltA} で Alt+A を無効化可)。
+     */
+    public static final String TOGGLE_DIMENSION_MENU_KEY = "key.omnichest.toggle_dimension_menu";
+
+    /**
      * 独自カテゴリを 1.21.11+ の新 API ({@link KeyMapping.Category#register}) で登録する。
      * String 版は package-private に変わったため、 Identifier 版を経由する。
      * 同名カテゴリが既に存在する場合は同じインスタンスが返る。
@@ -80,6 +88,10 @@ public final class ClientKeyBindings {
     private static KeyMapping toggleSlotLock;
     private static KeyMapping clearAllSlotLocks;
     private static KeyMapping toggleSelectedItemHud;
+    private static KeyMapping toggleDimensionMenu;
+
+    /** Alt+A グローバル ポールのエッジ検出フラグ (Alt+D と同方式)。 */
+    private static boolean lastAltADown = false;
 
     /** 一括解除キー押下時刻 (ms)。 1.5 秒以内の連続押下で確定。 */
     private static long lastClearAllPressMs = 0L;
@@ -141,6 +153,13 @@ public final class ClientKeyBindings {
         // 選択アイテム HUD の表示トグル (= 未バインドで登録: ユーザーが好みのキーを割当可能)。
         toggleSelectedItemHud = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 TOGGLE_SELECTED_ITEM_HUD_KEY,
+                InputConstants.Type.KEYSYM,
+                InputConstants.UNKNOWN.getValue(),
+                CATEGORY));
+
+        // ディメンション別メニューの再割当キー (= 未バインドで登録: 既定は Alt+A ポール)。
+        toggleDimensionMenu = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                TOGGLE_DIMENSION_MENU_KEY,
                 InputConstants.Type.KEYSYM,
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
@@ -208,6 +227,13 @@ public final class ClientKeyBindings {
             }
         }
 
+        if (toggleDimensionMenu != null) {
+            while (toggleDimensionMenu.consumeClick()) {
+                // ディメンション別メニューを開閉 (= 再割当キー経路。 開いていれば閉じる)。
+                com.kajiwara.omnichest.client.gui.DimensionMenuScreen.toggle();
+            }
+        }
+
         if (toggleSlotLock != null) {
             while (toggleSlotLock.consumeClick()) {
                 // インベントリ系の Screen で、ホバー中のスロットを toggle する。
@@ -233,6 +259,30 @@ public final class ClientKeyBindings {
                     }
                 }
             }
+        }
+
+        // ─── グローバル Alt+A = ディメンション別メニューをトグル (= 既定操作) ───
+        //
+        // KeyMapping は修飾コンボ (Alt+A) を扱えないため、 Alt+D と同じ GLFW ポール + エッジ検出で
+        // 実装する。 設定 {@code render.dimensionMenuAltA} が OFF なら無効化 (= 再割当キーのみ使う)。
+        // {@link DimensionMenuScreen#toggle()} が screen 状態を見て「開く / 自画面を閉じる / 他画面中は無視」
+        // を判断するため、 ここでは screen ガード不要 (= 自画面を開いたまま Alt+A で閉じられる)。
+        {
+            boolean altAEnabled;
+            try {
+                altAEnabled = ConfigManager.get().render.dimensionMenuAltA;
+            } catch (Throwable t) {
+                altAEnabled = true;
+            }
+            var winA = mc.getWindow();
+            boolean altDownA = InputConstants.isKeyDown(winA, InputConstants.KEY_LALT)
+                    || InputConstants.isKeyDown(winA, InputConstants.KEY_RALT);
+            boolean aDown = InputConstants.isKeyDown(winA, GLFW.GLFW_KEY_A);
+            boolean nowDown = altDownA && aDown;
+            if (altAEnabled && nowDown && !lastAltADown) {
+                com.kajiwara.omnichest.client.gui.DimensionMenuScreen.toggle();
+            }
+            lastAltADown = nowDown;
         }
 
         // ─── グローバル Alt+D = ワールド上の全ピンを一括解除 ───

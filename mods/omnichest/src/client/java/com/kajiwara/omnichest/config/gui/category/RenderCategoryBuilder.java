@@ -24,6 +24,13 @@ public final class RenderCategoryBuilder {
                                 + "total count and locations while playing. "
                                 + "Appears/disappears together with the world pins."));
 
+        b.toggle(ConfigLabels.entry("render.dimensionMenuAltA", "Dimension Menu (Alt+A)"),
+                cfg.dimensionMenuAltA, v -> cfg.dimensionMenuAltA = v,
+                ConfigLabels.tooltip("render.dimensionMenuAltA",
+                        "Toggle the \"items by dimension\" menu with Alt+A. "
+                                + "Turn off if Alt+A conflicts; you can still open it via the "
+                                + "rebindable key (Controls > OmniChest)."));
+
         b.color(ConfigLabels.entry("render.highlightColorRgb", "Highlight Color"),
                 cfg.highlightColorRgb, v -> cfg.highlightColorRgb = v,
                 ConfigLabels.tooltip("render.highlightColorRgb",
