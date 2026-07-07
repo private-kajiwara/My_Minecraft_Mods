@@ -725,8 +725,6 @@ public final class ChestHighlighter {
         pendingHudIcons.clear();
         pendingBeams.clear();
         pendingPins.clear();
-        // shader 時に水後ステージへ流す wire pending も毎フレームリセットする (legacy では常に空)。
-        WireHighlightRenderer.clearPending();
 
         if (active.isEmpty())
             return;
@@ -866,7 +864,7 @@ public final class ChestHighlighter {
      * するため、 設定挙動も従来どおり。
      */
     private void onAfterWaterRender(LevelRenderContext ctx) {
-        if (pendingPins.isEmpty() && pendingBeams.isEmpty() && !WireHighlightRenderer.hasPending())
+        if (pendingPins.isEmpty() && pendingBeams.isEmpty())
             return;
         //? if <26.2 {
         CameraRenderState camState = ctx.levelState().cameraRenderState;
@@ -896,16 +894,10 @@ public final class ChestHighlighter {
         //?}
         // 26.2: ピン (HUD 投影テキスト/アイコン) とビーム (debugFilledBox submit) は onWorldRender 末尾の
         //   flushPinsAndBeams262 で処理済 (afterWaterBuffer immediate は撤去)。 ここでは何もしない。
-
-        // ─── shader 時: pending ワイヤーを level バッファ (ctx.bufferSource()・Iris ラップ) へ流す ───
-        // submit / 自前 immediate ではなく level バッファへ描くことで Iris の rendertype_lines に乗せる
-        // (= バニラのブロック選択枠と同じ本物ワイヤー)。 フラッシュは level に委ねる (= endBatch しない)。
-        // legacy (<26.1) では WireHighlightRenderer が enqueue しないため hasPending() は常に false。
-        //? if >=26.1 && <26.2 {
-        if (WireHighlightRenderer.hasPending()) {
-            WireHighlightRenderer.flushShaderWires(ctx.bufferSource(), matrices);
-        }
-        //?}
+        //
+        // X-ray ワイヤーは shader ON/OFF を問わず onWorldRender の submit (rendertype_lines カスタムパイプライン)
+        // に一本化した。 shader 時は {@link WireHighlightRenderer} が構築時に IrisApi.assignPipeline で
+        // このパイプラインを Iris へ登録するため、 別途 level バッファへ流す旧経路は不要になった。
     }
 
     /** ブロック snap のビーム中心 XZ (= ピン中心と同じ。 ラージチェストは 2 ブロックの中点)。 */
