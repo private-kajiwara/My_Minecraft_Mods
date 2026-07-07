@@ -69,8 +69,8 @@ public final class ClientKeyBindings {
     /**
      * Dimension Menu: 「ハイライト中アイテムが どのディメンションにあるか」 の一覧メニュー
      * ({@link com.kajiwara.omnichest.client.gui.DimensionMenuScreen}) を開閉する<b>再割当可能</b>キー。
-     * デフォルトは <b>未バインド</b>。 既定操作は Alt+A (下記グローバル ポール) で、 衝突時はこのキーへ
-     * 好みの単一キーを割り当てられる (= 設定 {@code render.dimensionMenuAltA} で Alt+A を無効化可)。
+     * デフォルトは <b>未バインド</b>。 既定操作は Alt+C (下記グローバル ポール) で、 衝突時はこのキーへ
+     * 好みの単一キーを割り当てられる (= 設定 {@code render.dimensionMenuAltC} で Alt+C を無効化可)。
      */
     public static final String TOGGLE_DIMENSION_MENU_KEY = "key.omnichest.toggle_dimension_menu";
 
@@ -90,8 +90,8 @@ public final class ClientKeyBindings {
     private static KeyMapping toggleSelectedItemHud;
     private static KeyMapping toggleDimensionMenu;
 
-    /** Alt+A グローバル ポールのエッジ検出フラグ (Alt+D と同方式)。 */
-    private static boolean lastAltADown = false;
+    /** Alt+C グローバル ポールのエッジ検出フラグ (Alt+D と同方式)。 */
+    private static boolean lastAltCDown = false;
 
     /** 一括解除キー押下時刻 (ms)。 1.5 秒以内の連続押下で確定。 */
     private static long lastClearAllPressMs = 0L;
@@ -157,7 +157,7 @@ public final class ClientKeyBindings {
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
 
-        // ディメンション別メニューの再割当キー (= 未バインドで登録: 既定は Alt+A ポール)。
+        // ディメンション別メニューの再割当キー (= 未バインドで登録: 既定は Alt+C ポール)。
         toggleDimensionMenu = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 TOGGLE_DIMENSION_MENU_KEY,
                 InputConstants.Type.KEYSYM,
@@ -261,28 +261,29 @@ public final class ClientKeyBindings {
             }
         }
 
-        // ─── グローバル Alt+A = ディメンション別メニューをトグル (= 既定操作) ───
+        // ─── グローバル Alt+C = ディメンション別メニューをトグル (= 既定操作) ───
         //
-        // KeyMapping は修飾コンボ (Alt+A) を扱えないため、 Alt+D と同じ GLFW ポール + エッジ検出で
-        // 実装する。 設定 {@code render.dimensionMenuAltA} が OFF なら無効化 (= 再割当キーのみ使う)。
+        // KeyMapping は修飾コンボ (Alt+C) を扱えないため、 Alt+D と同じ GLFW ポール + エッジ検出で
+        // 実装する。 設定 {@code render.dimensionMenuAltC} が OFF なら無効化 (= 再割当キーのみ使う)。
         // {@link DimensionMenuScreen#toggle()} が screen 状態を見て「開く / 自画面を閉じる / 他画面中は無視」
-        // を判断するため、 ここでは screen ガード不要 (= 自画面を開いたまま Alt+A で閉じられる)。
+        // を判断するため、 ここでは screen ガード不要 (= 自画面を開いたまま Alt+C で閉じられる)。
+        // C はバニラの移動キー (WASD) ではないため、 旧 Alt+A で起きていたストレイフ一瞬混入が起きない。
         {
-            boolean altAEnabled;
+            boolean altCEnabled;
             try {
-                altAEnabled = ConfigManager.get().render.dimensionMenuAltA;
+                altCEnabled = ConfigManager.get().render.dimensionMenuAltC;
             } catch (Throwable t) {
-                altAEnabled = true;
+                altCEnabled = true;
             }
-            var winA = mc.getWindow();
-            boolean altDownA = InputConstants.isKeyDown(winA, InputConstants.KEY_LALT)
-                    || InputConstants.isKeyDown(winA, InputConstants.KEY_RALT);
-            boolean aDown = InputConstants.isKeyDown(winA, GLFW.GLFW_KEY_A);
-            boolean nowDown = altDownA && aDown;
-            if (altAEnabled && nowDown && !lastAltADown) {
+            var winC = mc.getWindow();
+            boolean altDownC = InputConstants.isKeyDown(winC, InputConstants.KEY_LALT)
+                    || InputConstants.isKeyDown(winC, InputConstants.KEY_RALT);
+            boolean cDown = InputConstants.isKeyDown(winC, GLFW.GLFW_KEY_C);
+            boolean nowDown = altDownC && cDown;
+            if (altCEnabled && nowDown && !lastAltCDown) {
                 com.kajiwara.omnichest.client.gui.DimensionMenuScreen.toggle();
             }
-            lastAltADown = nowDown;
+            lastAltCDown = nowDown;
         }
 
         // ─── グローバル Alt+D = ワールド上の全ピンを一括解除 ───

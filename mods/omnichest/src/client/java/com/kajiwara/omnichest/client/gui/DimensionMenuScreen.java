@@ -34,7 +34,7 @@ import java.util.Map;
  * (= 任意の Mod 追加 dim でも設定/画像追加なしで自動対応)。 純追加・既存挙動不変。
  *
  * <p>
- * 開閉トグルは {@link com.kajiwara.omnichest.client.ClientKeyBindings} の Alt+A ポール / 再割当キーから
+ * 開閉トグルは {@link com.kajiwara.omnichest.client.ClientKeyBindings} の Alt+C ポール / 再割当キーから
  * {@link #toggle()} を呼ぶ。 ESC はバニラ既定で閉じる。
  */
 public final class DimensionMenuScreen extends Screen {
@@ -206,7 +206,7 @@ public final class DimensionMenuScreen extends Screen {
 
         // フッタヒント
         Component hint = OmniChestLocale.get("omnichest.dimension_menu.hint",
-                "Alt+A / Esc to close");
+                "Alt+C / Esc to close");
         g.centeredText(font, hint, cx, bottom - 12, ThemeColorResolver.TEXT_DIM);
 
         // 空状態

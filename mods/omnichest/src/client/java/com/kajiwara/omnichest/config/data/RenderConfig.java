@@ -23,13 +23,13 @@ public final class RenderConfig {
 
     /**
      * 「ディメンション別アイテム一覧メニュー」 ({@link com.kajiwara.omnichest.client.gui.DimensionMenuScreen})
-     * を <b>既定 Alt+A</b> のグローバル ポールで開閉するか。 既定 <b>true</b>。
+     * を <b>既定 Alt+C</b> のグローバル ポールで開閉するか。 既定 <b>true</b>。
      * <p>
-     * Alt+A が他 Mod / 用途と衝突する場合は OFF にして、 再割当可能なキーバインド
+     * Alt+C が他 Mod / 用途と衝突する場合は OFF にして、 再割当可能なキーバインド
      * ({@code key.omnichest.toggle_dimension_menu}・既定 未バインド) 側に好みのキーを割り当てる。
-     * メニュー自体の存在には影響しない (= Alt+A ポールの有効/無効だけを切り替える表示専用設定)。
+     * メニュー自体の存在には影響しない (= Alt+C ポールの有効/無効だけを切り替える表示専用設定)。
      */
-    public boolean dimensionMenuAltA = true;
+    public boolean dimensionMenuAltC = true;
 
     /**
      * ハイライト枠の色 (0xRRGGBB)。
