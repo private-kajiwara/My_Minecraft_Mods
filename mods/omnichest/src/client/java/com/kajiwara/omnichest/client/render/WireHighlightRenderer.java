@@ -1,6 +1,6 @@
 package com.kajiwara.omnichest.client.render;
 
-import com.kajiwara.omnichest.client.compat.ShaderCompatManager;
+import com.kajiwara.omnichest.client.compat.IrisPipelineBridge;
 import com.kajiwara.omnichest.mixin.RenderTypeAccessor;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 //? if >=26.1 {
@@ -16,9 +16,6 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
-//? if <26.2 {
-import net.minecraft.client.renderer.MultiBufferSource;
-//?}
 import net.minecraft.client.renderer.SubmitNodeCollector;
 //? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderSetup;
@@ -28,9 +25,6 @@ import net.minecraft.client.renderer.rendertype.RenderTypes;
 /*import net.minecraft.client.renderer.RenderType;*/
 //?}
 import net.minecraft.util.Mth;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 「倉庫検索ハイライト」 ワイヤー (= X-ray ボックス) 描画の <b>shader-safe</b> ラッパ。
@@ -47,27 +41,18 @@ import java.util.List;
  * </ul>
  *
  * <p>
- * <b>方針</b> (= VisualizeGate {@code OverlayDraw} で動作確認済みの経路を踏襲):
- * <ol>
- *   <li>{@link ShaderCompatManager#isShaderPackInUse()} で shader 環境をソフト判定する
- *       (= Iris 非搭載でも安全・false 側に倒す)。</li>
- *   <li><b>非 shader (および legacy 全環境)</b>: 既存の {@code rendertype_lines} ベース pipeline
- *       ({@code NO_DEPTH_TEST} = X-ray) を {@link SubmitNodeCollector} へ submit する
- *       (= 既存挙動の<b>ピクセル不変</b>な温存)。</li>
- *   <li><b>shader 時 (&gt;=26.1)</b>: カスタム pipeline を一切使わず、 バニラ {@code RenderTypes.lines()}
- *       を<b>レベルレンダラ自身のバッファ ({@code ctx.bufferSource()}・Iris がラップする)</b> へ流す。
- *       submit/自前 immediate ではなく level バッファへ描く点だけが非 shader と違い、 これにより
- *       Iris の {@code rendertype_lines} プログラムに乗ってバニラのブロック選択枠と同様の<b>本物
- *       ワイヤー</b>として出る (= 深度オクルージョン有り)。 描画は呼び出しフレームの中で即時 submit
- *       せず、 {@link #enqueueShaderWire} で pending に積み、 水後ステージ
- *       ({@code AFTER_TRANSLUCENT_TERRAIN}) の {@link #flushShaderWires} で level バッファへ流す
- *       (= フラッシュは level に委ねる。 自前 endBatch すると Iris キャプチャ外で消えるため)。</li>
- * </ol>
- *
- * <p>
- * <b>挙動差</b>: shader 時のワイヤーは<b>深度テスト有り</b> (= 地形に遮蔽される) になる
- * (バニラ {@code lines()} の本質的帰結)。 現状はそもそも shader 時に完全に消えていたため、
- * 「消える」 → 「地形オクルージョン有りで確実に出る」 への前進。 非 shader 時は従来どおり X-ray を維持する。
+ * <b>方針</b> (= shader ON/OFF 単一経路): shader 判定で経路を分けず、 常に {@code rendertype_lines}
+ * カスタム pipeline ({@code NO_DEPTH_TEST} = X-ray) を {@link SubmitNodeCollector} へ submit する。
+ * shader 対応は「別経路への載せ替え」 ではなく、 pipeline 構築時に
+ * {@link IrisPipelineBridge#assignLines(com.mojang.blaze3d.pipeline.RenderPipeline)} で
+ * {@code IrisApi.assignPipeline(pipeline, IrisProgram.LINES)} を呼び、 <b>このカスタム pipeline を Iris の
+ * LINES プログラムへ登録</b>して実現する (reflection・Iris 非搭載時は no-op)。 これにより:
+ * <ul>
+ *   <li>shader ON でも Iris がこの pipeline を捕捉して描画する (= 表示される)。</li>
+ *   <li>pipeline が {@code NO_DEPTH_TEST} を保持するため、 Iris が深度状態を尊重すれば shader 下でも
+ *       壁抜け (= X-ray) になる。 非 shader 時は従来どおり X-ray。</li>
+ * </ul>
+ * ピン / ビームの描画経路・遮蔽挙動には一切干渉しない (= 貫通化はワイヤー限定)。
  *
  * <p>
  * <b>禁止事項適合</b>:
@@ -83,20 +68,8 @@ public final class WireHighlightRenderer {
     /** 共有 uniforms snippet (= lines pipeline が要求する基本 uniform セット)。 */
     private static volatile RenderPipeline.Snippet uniformsSnippetCache;
 
-    /** Lines 版 RenderType (非 shader 用; 既存挙動の継承)。 */
+    /** X-ray ワイヤー用 RenderType (rendertype_lines カスタム pipeline; shader ON/OFF 共通)。 */
     private static volatile RenderType linesType;
-
-    /**
-     * shader 時に water 後ステージで level バッファへ流すための pending ワイヤーボックス
-     * (camera-relative 座標)。 描画スレッド単独で読み書き (= onWorldRender で積み onAfterWaterRender で flush)。
-     * legacy (&lt;26.1) では {@link #submitWireBox} が enqueue しないため常に空。
-     */
-    private static final List<PendingWire> pendingShaderWires = new ArrayList<>();
-
-    /** pending ワイヤーボックス 1 件 (= camera-relative AABB + 色 + 線幅)。 */
-    private record PendingWire(float x0, float y0, float z0, float x1, float y1, float z1,
-            int color, float lineWidth) {
-    }
 
     private WireHighlightRenderer() {
     }
@@ -122,15 +95,10 @@ public final class WireHighlightRenderer {
         queue.submitCustomGeometry(matrices, RenderTypes.lines(),
                 (pose, consumer) -> addBoxEdges(consumer, pose, x0, y0, z0, x1, y1, z1, color, lineWidth));*/
         //?} else {
-        //? if >=26.1 {
-        if (ShaderCompatManager.isShaderPackInUse()) {
-            // shader 環境: カスタム pipeline は Iris キャプチャ外で消えるため使わない。 バニラ lines() を
-            // level バッファへ流すべく pending に積み、 水後ステージ (flushShaderWires) で描く。
-            enqueueShaderWire(x0, y0, z0, x1, y1, z1, color, lineWidth);
-            return;
-        }
-        //?}
-        // 非 shader (および legacy 全環境): 既存の rendertype_lines (NO_DEPTH_TEST = X-ray) を submit。
+        // shader ON/OFF を問わず単一経路: rendertype_lines (NO_DEPTH_TEST = X-ray) カスタム pipeline を submit。
+        // shader 時は {@link #linesRenderType()} 構築時に IrisApi.assignPipeline(pipeline, LINES) で Iris へ
+        // 登録済みのため、 Iris がこのカスタム pipeline を LINES プログラムで捕捉して描く (= shader 下でも表示)。
+        // pipeline が NO_DEPTH_TEST を保持するので、 Iris が深度状態を尊重すれば shader 下でも壁抜け (x-ray)。
         submitLineWireBox(queue, matrices, x0, y0, z0, x1, y1, z1, color, lineWidth);
         //?}
     }
@@ -187,49 +155,6 @@ public final class WireHighlightRenderer {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // (b) shader 経路: バニラ lines() を level バッファ (Iris ラップ) へ流す
-    // ════════════════════════════════════════════════════════════════════
-
-    /** shader 時の pending ワイヤーボックスを積む (camera-relative 座標)。 */
-    private static void enqueueShaderWire(float x0, float y0, float z0,
-            float x1, float y1, float z1, int color, float lineWidth) {
-        pendingShaderWires.add(new PendingWire(x0, y0, z0, x1, y1, z1, color, lineWidth));
-    }
-
-    /** 新フレーム開始時に pending を空にする (= 前フレームの取り残しを残さない)。 */
-    public static void clearPending() {
-        pendingShaderWires.clear();
-    }
-
-    /** shader 時に flush すべき pending ワイヤーがあるか。 legacy では常に false。 */
-    public static boolean hasPending() {
-        return !pendingShaderWires.isEmpty();
-    }
-
-    /**
-     * pending ワイヤーボックスを、 渡された level バッファ ({@code ctx.bufferSource()}・Iris ラップ) へ
-     * バニラ {@code lines()} で流す。 <b>endBatch しない</b> (= フラッシュは level レンダラに委ねる。
-     * 自前 endBatch すると Iris キャプチャ外で消えるため)。 水後ステージ ({@code AFTER_TRANSLUCENT_TERRAIN})
-     * から呼ぶ。
-     */
-    //? if <26.2 {
-    public static void flushShaderWires(MultiBufferSource target, PoseStack matrices) {
-        if (pendingShaderWires.isEmpty()) {
-            return;
-        }
-        //? if >=1.21.11 {
-        VertexConsumer c = target.getBuffer(RenderTypes.lines());
-        //?} else {
-        /*VertexConsumer c = target.getBuffer(RenderType.lines());*/
-        //?}
-        PoseStack.Pose pose = matrices.last();
-        for (PendingWire w : pendingShaderWires) {
-            addBoxEdges(c, pose, w.x0(), w.y0(), w.z0(), w.x1(), w.y1(), w.z1(), w.color(), w.lineWidth());
-        }
-    }
-    //?}
-
-    // ════════════════════════════════════════════════════════════════════
     // RenderType 構築 (lazy + double-checked locking)
     // ════════════════════════════════════════════════════════════════════
 
@@ -270,6 +195,10 @@ public final class WireHighlightRenderer {
                             DefaultVertexFormat.POSITION_COLOR_NORMAL_LINE_WIDTH,
                             VertexFormat.Mode.LINES)
                     .build();
+
+            // shader 対応: このカスタム pipeline を Iris の LINES プログラムへ登録する (reflection・Iris 無しは no-op)。
+            // これで shader ON 時も Iris が捕捉して描画し、 NO_DEPTH_TEST が尊重されれば壁抜け (x-ray) になる。
+            IrisPipelineBridge.assignLines(pipeline);
 
             //? if >=1.21.11 {
             RenderSetup setup = RenderSetup.builder(pipeline).createRenderSetup();
