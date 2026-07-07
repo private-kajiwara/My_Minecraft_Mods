@@ -249,6 +249,8 @@ public final class Keys {
     public static final String KEYBIND_SMART_DEPOSIT = "key.omnichest.smart_deposit";
     public static final String KEYBIND_TOGGLE_SLOT_LOCK = "key.omnichest.toggle_slot_lock";
     public static final String KEYBIND_CLEAR_ALL_SLOT_LOCKS = "key.omnichest.clear_all_slot_locks";
+    public static final String KEYBIND_TOGGLE_SELECTED_ITEM_HUD = "key.omnichest.toggle_selected_item_hud";
+    public static final String KEYBIND_TOGGLE_DIMENSION_MENU = "key.omnichest.toggle_dimension_menu";
 
     public static final String KEYBIND_LINE_OPEN_SEARCH = "omnichest.keybind.line.open_search";
     public static final String KEYBIND_LINE_SMART_DEPOSIT = "omnichest.keybind.line.smart_deposit";

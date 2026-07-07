@@ -88,6 +88,14 @@ public class SearchScreen extends Screen {
     /** 選択中の行データ。 行 = チェスト × アイテム種 × 階層、 LinkedHashMap で順序安定。 */
     private final Map<String, SelectedRow> selectedRows = new LinkedHashMap<>();
 
+    /**
+     * Shift 範囲選択のアンカー行キー ({@link #makeRowKey})。 通常クリックのたびに更新し、
+     * Shift+クリック時は「アンカー〜クリック」 の範囲を選択する。 <b>行キーで保持</b>するため
+     * フィルタ / ソート / スクロールで表示順が変わっても、 Shift 時に現在位置を再計算できる。
+     * null = アンカー未設定 (= 最初の Shift+クリックは通常クリック扱い)。
+     */
+    private String selectionAnchorKey = null;
+
     private record SelectedRow(ContainerSnapshot snapshot, ItemStack stack, int count,
                                List<ItemStack> containerPath) {
     }
@@ -935,8 +943,23 @@ public class SearchScreen extends Screen {
             return true;
         }
 
-        // 通常クリック = 行選択トグル (既存仕様維持)
         String key = makeRowKey(clicked);
+
+        // ─── Shift+クリック = アンカーからの範囲選択 (Windows Explorer 準拠・純追加) ───
+        // 通常クリック挙動は不変。 Shift が押されていて有効なアンカーが現在の表示リストにあるときだけ、
+        // アンカー〜クリック行の範囲で選択を「置換」する。 アンカーは行キーで保持するため、
+        // フィルタ / ソート / スクロールをまたいでも表示順どおりに範囲が取れる (= キーで現在位置を再計算)。
+        // アンカーが絞り込みで消えている / 未設定なら通常クリック扱いへフォールバックする。
+        if (isShiftDown() && this.selectionAnchorKey != null) {
+            int anchorIdx = indexOfRowKey(this.selectionAnchorKey);
+            if (anchorIdx >= 0) {
+                applyRangeSelection(anchorIdx, index, cfg);
+                // アンカーは動かさない (= 同一アンカーから再 Shift+クリックで範囲を伸縮できる)。
+                return true;
+            }
+        }
+
+        // 通常クリック = 行選択トグル (既存仕様維持) + アンカー更新 (= 次の範囲選択の起点)。
         if (this.selectedRows.containsKey(key)) {
             this.selectedRows.remove(key);
         } else {
@@ -945,7 +968,54 @@ public class SearchScreen extends Screen {
                             clicked.containerPath()));
             if (cfg.enableFavorites) FavoritesManager.get().touch(clicked.stack());
         }
+        this.selectionAnchorKey = key;
         return true;
+    }
+
+    /**
+     * 現在の表示リスト {@link #results} から行キーの位置を線形探索する (= 表示順の連番インデックス)。
+     * 見つからなければ -1 (= アンカーが絞り込みで消えている)。
+     */
+    private int indexOfRowKey(String rowKey) {
+        for (int i = 0; i < this.results.size(); i++) {
+            if (makeRowKey(this.results.get(i)).equals(rowKey)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * アンカー〜クリックの範囲 (表示順の {@code [min..max]}) で選択を<b>置換</b>する。
+     *
+     * <p>
+     * グリッド表示 ({@link ItemDisplayMode#isGrid()}) でも {@link #results} は<b>行優先</b>で並ぶため、
+     * 線形インデックス範囲がそのまま行優先の範囲になる (= Explorer の Shift 範囲と同じ意味)。
+     * 作用は通常クリックの選択と<b>同一</b> (= {@link #selectedRows} へ put + favorites.touch) を
+     * 範囲内の各要素へ適用するだけで、 新しい作用は発明しない。 一括 put は
+     * {@link #selectAllVisibleResults()} と同じ O(N) で既存の性能範囲に収まる。
+     */
+    private void applyRangeSelection(int anchorIdx, int clickIdx, SearchConfig cfg) {
+        int from = Math.min(anchorIdx, clickIdx);
+        int to = Math.max(anchorIdx, clickIdx);
+        this.selectedRows.clear();
+        FavoritesManager fav = cfg.enableFavorites ? FavoritesManager.get() : null;
+        for (int i = from; i <= to; i++) {
+            SearchIndex.SearchResult r = this.results.get(i);
+            this.selectedRows.put(makeRowKey(r),
+                    new SelectedRow(r.snapshot(), r.stack().copy(), r.count(), r.containerPath()));
+            if (fav != null) fav.touch(r.stack());
+        }
+    }
+
+    /**
+     * SHIFT (左右いずれか) が押されているか。
+     * 既存の {@link #isAltDown()} と同じ {@link InputConstants} 経由方式 (= マッピング差異吸収済み)。
+     */
+    private static boolean isShiftDown() {
+        var window = Minecraft.getInstance().getWindow();
+        return InputConstants.isKeyDown(window, InputConstants.KEY_LSHIFT)
+                || InputConstants.isKeyDown(window, InputConstants.KEY_RSHIFT);
     }
 
     @Override
@@ -1031,6 +1101,7 @@ public class SearchScreen extends Screen {
             }
             if (k == GLFW.GLFW_KEY_S) {
                 this.selectedRows.clear();
+                this.selectionAnchorKey = null;   // 全解除でアンカーもリセット (= 次の Shift は通常クリック扱い)。
                 return true;
             }
             if (k == GLFW.GLFW_KEY_D) {

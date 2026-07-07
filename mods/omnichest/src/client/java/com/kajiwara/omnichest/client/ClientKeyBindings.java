@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.client;
 
 import com.kajiwara.omnichest.classify.AutoDepositManager;
 import com.kajiwara.omnichest.client.gui.SearchScreen;
+import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.distribution.ui.DistributionScreen;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
@@ -58,6 +59,22 @@ public final class ClientKeyBindings {
     public static final String CLEAR_ALL_LOCKS_KEY = "key.omnichest.clear_all_slot_locks";
 
     /**
+     * Selected Item HUD: 「選択アイテム情報 HUD」 の表示を ON/OFF 切替するキー。
+     * デフォルトは <b>未バインド</b> (= 衝突を避けるため、 ユーザー任意設定)。
+     * {@code /omnichest hud toggle} と同一の設定 ({@link com.kajiwara.omnichest.config.data.RenderConfig#showSelectedItemHud})
+     * を切り替える。
+     */
+    public static final String TOGGLE_SELECTED_ITEM_HUD_KEY = "key.omnichest.toggle_selected_item_hud";
+
+    /**
+     * Dimension Menu: 「ハイライト中アイテムが どのディメンションにあるか」 の一覧メニュー
+     * ({@link com.kajiwara.omnichest.client.gui.DimensionMenuScreen}) を開閉する<b>再割当可能</b>キー。
+     * デフォルトは <b>未バインド</b>。 既定操作は Alt+C (下記グローバル ポール) で、 衝突時はこのキーへ
+     * 好みの単一キーを割り当てられる (= 設定 {@code render.dimensionMenuAltC} で Alt+C を無効化可)。
+     */
+    public static final String TOGGLE_DIMENSION_MENU_KEY = "key.omnichest.toggle_dimension_menu";
+
+    /**
      * 独自カテゴリを 1.21.11+ の新 API ({@link KeyMapping.Category#register}) で登録する。
      * String 版は package-private に変わったため、 Identifier 版を経由する。
      * 同名カテゴリが既に存在する場合は同じインスタンスが返る。
@@ -70,6 +87,11 @@ public final class ClientKeyBindings {
     private static KeyMapping smartDeposit;
     private static KeyMapping toggleSlotLock;
     private static KeyMapping clearAllSlotLocks;
+    private static KeyMapping toggleSelectedItemHud;
+    private static KeyMapping toggleDimensionMenu;
+
+    /** Alt+C グローバル ポールのエッジ検出フラグ (Alt+D と同方式)。 */
+    private static boolean lastAltCDown = false;
 
     /** 一括解除キー押下時刻 (ms)。 1.5 秒以内の連続押下で確定。 */
     private static long lastClearAllPressMs = 0L;
@@ -128,6 +150,20 @@ public final class ClientKeyBindings {
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
 
+        // 選択アイテム HUD の表示トグル (= 未バインドで登録: ユーザーが好みのキーを割当可能)。
+        toggleSelectedItemHud = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                TOGGLE_SELECTED_ITEM_HUD_KEY,
+                InputConstants.Type.KEYSYM,
+                InputConstants.UNKNOWN.getValue(),
+                CATEGORY));
+
+        // ディメンション別メニューの再割当キー (= 未バインドで登録: 既定は Alt+C ポール)。
+        toggleDimensionMenu = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                TOGGLE_DIMENSION_MENU_KEY,
+                InputConstants.Type.KEYSYM,
+                InputConstants.UNKNOWN.getValue(),
+                CATEGORY));
+
         ClientTickEvents.END_CLIENT_TICK.register(ClientKeyBindings::onTick);
     }
 
@@ -173,6 +209,31 @@ public final class ClientKeyBindings {
             }
         }
 
+        if (toggleSelectedItemHud != null) {
+            while (toggleSelectedItemHud.consumeClick()) {
+                // 選択アイテム HUD の表示を反転 (= /omnichest hud toggle と同一設定)。
+                // Screen の有無に関わらず動く単純な表示トグル (= ロジックには触れない)。
+                boolean next;
+                try {
+                    next = !ConfigManager.get().render.showSelectedItemHud;
+                    ConfigManager.get().render.showSelectedItemHud = next;
+                    ConfigManager.save();
+                } catch (Throwable t) {
+                    next = true;
+                }
+                if (mc.player != null) mc.player.sendSystemMessage(next
+                        ? OmniChestLocale.get("omnichest.command.hud.on", "Selected item HUD: ON")
+                        : OmniChestLocale.get("omnichest.command.hud.off", "Selected item HUD: OFF"));
+            }
+        }
+
+        if (toggleDimensionMenu != null) {
+            while (toggleDimensionMenu.consumeClick()) {
+                // ディメンション別メニューを開閉 (= 再割当キー経路。 開いていれば閉じる)。
+                com.kajiwara.omnichest.client.gui.DimensionMenuScreen.toggle();
+            }
+        }
+
         if (toggleSlotLock != null) {
             while (toggleSlotLock.consumeClick()) {
                 // インベントリ系の Screen で、ホバー中のスロットを toggle する。
@@ -198,6 +259,31 @@ public final class ClientKeyBindings {
                     }
                 }
             }
+        }
+
+        // ─── グローバル Alt+C = ディメンション別メニューをトグル (= 既定操作) ───
+        //
+        // KeyMapping は修飾コンボ (Alt+C) を扱えないため、 Alt+D と同じ GLFW ポール + エッジ検出で
+        // 実装する。 設定 {@code render.dimensionMenuAltC} が OFF なら無効化 (= 再割当キーのみ使う)。
+        // {@link DimensionMenuScreen#toggle()} が screen 状態を見て「開く / 自画面を閉じる / 他画面中は無視」
+        // を判断するため、 ここでは screen ガード不要 (= 自画面を開いたまま Alt+C で閉じられる)。
+        // C はバニラの移動キー (WASD) ではないため、 旧 Alt+A で起きていたストレイフ一瞬混入が起きない。
+        {
+            boolean altCEnabled;
+            try {
+                altCEnabled = ConfigManager.get().render.dimensionMenuAltC;
+            } catch (Throwable t) {
+                altCEnabled = true;
+            }
+            var winC = mc.getWindow();
+            boolean altDownC = InputConstants.isKeyDown(winC, InputConstants.KEY_LALT)
+                    || InputConstants.isKeyDown(winC, InputConstants.KEY_RALT);
+            boolean cDown = InputConstants.isKeyDown(winC, GLFW.GLFW_KEY_C);
+            boolean nowDown = altDownC && cDown;
+            if (altCEnabled && nowDown && !lastAltCDown) {
+                com.kajiwara.omnichest.client.gui.DimensionMenuScreen.toggle();
+            }
+            lastAltCDown = nowDown;
         }
 
         // ─── グローバル Alt+D = ワールド上の全ピンを一括解除 ───
