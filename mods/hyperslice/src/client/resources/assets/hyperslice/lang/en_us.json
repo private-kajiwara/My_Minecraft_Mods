@@ -1,0 +1,53 @@
+{
+	"hyperslice.hud.label": "w",
+	"hyperslice.hud.entities": "hyper-entities: %s",
+	"hyperslice.hud.nearest": "nearest  dw %s  r %s",
+	"hyperslice.hud.observer_w": "observer w %s  (slice %s, offset %s)",
+	"hyperslice.hud.key_debug": "KEY  -:%s [%s]   +:%s [%s]",
+	"hyperslice.hud.key_on": "ON",
+	"hyperslice.hud.key_off": "off",
+
+	"key.hyperslice.observer_w_decrease": "Observer w  -",
+	"key.hyperslice.observer_w_increase": "Observer w  +",
+	"key.categories.hyperslice.observer": "HyperSlice (observer)",
+
+	"hyperslice.observer.value": "Observer plane w=%s (this slice's nominal plane is w=%s).",
+	"hyperslice.observer.not_in_hyperslice": "You are not inside a HyperSlice dimension.",
+
+	"hyperslice.command.status": "Slice w=%s of %s.",
+	"hyperslice.command.moved": "Moved to slice w=%s of %s.",
+	"hyperslice.command.already_there": "You are already on slice w=%s.",
+	"hyperslice.command.blocked": "Slice w=%s is solid here. No free space was found within %s blocks up or down, so the move was cancelled.",
+	"hyperslice.command.no_such_slice": "Slice w=%s does not exist (this world has %s slices).",
+	"hyperslice.command.no_slices": "No HyperSlice dimensions are loaded in this world.",
+	"hyperslice.command.not_in_hyperslice": "You are not inside a HyperSlice dimension (this world has %s slices).",
+	"hyperslice.command.player_only": "This command has to be run by a player.",
+
+	"hyperslice.entity.drifter": "Drifter",
+	"hyperslice.entity.unknown_type": "Unknown hyper-entity type \"%s\".",
+	"hyperslice.entity.not_in_hyperslice": "You have to be inside a HyperSlice dimension to do that.",
+	"hyperslice.entity.spawned": "Spawned %s at w=%s drifting %s per tick (id %s).",
+	"hyperslice.entity.list_header": "%s nearby hyper-entities (%s total). Your observation plane is w=%s.",
+	"hyperslice.entity.list_line": "  %s  %s  w=%s  dw=%s  r=%s",
+	"hyperslice.entity.cleared": "Removed %s hyper-entities.",
+	"hyperslice.entity.spread": "Placed %s stationary hyper-entities from w=%s to w=%s (centred on w=%s), spread around you on a horizontal circle of radius %s.",
+
+	"hyperslice.bswap.header": "/bswap w=%s r=%s : %s chunks, %s sections (gen %s, light %s)",
+	"hyperslice.bswap.timings": "  this run [ms]  generate %s  swap %s  light %s  send %s  total %s",
+	"hyperslice.bswap.median": "  median n=%s [ms]  generate %s  swap %s  light %s  send %s  total %s",
+	"hyperslice.bswap.block_entities": "  removed %s block entities from the replaced range.",
+	"hyperslice.bswap.not_in_hyperslice": "You have to be inside a HyperSlice dimension to do that.",
+	"hyperslice.bswap.no_chunks": "No loaded chunks to swap here (nothing was changed).",
+	"hyperslice.bswap.set_gen": "Generation mode: %s. Timing history cleared.",
+	"hyperslice.bswap.set_light": "Lighting mode: %s. Timing history cleared.",
+	"hyperslice.bswap.reset": "Discarded %s timing samples.",
+	"hyperslice.bswap.gen.parallel": "parallel",
+	"hyperslice.bswap.gen.sequential": "sequential",
+	"hyperslice.bswap.light.wait": "wait",
+	"hyperslice.bswap.light.nowait": "no-wait",
+
+	"hyperslice.info.title": "HyperSlice",
+	"hyperslice.info.line1": "A 4D voxel world sliced along w.",
+	"hyperslice.info.line2": "Every slice comes from one 4D terrain function,",
+	"hyperslice.info.line3": "so neighbouring slices show the same landscape."
+}

@@ -1,0 +1,53 @@
+{
+	"hyperslice.hud.label": "w",
+	"hyperslice.hud.entities": "4次元エンティティ: %s",
+	"hyperslice.hud.nearest": "最寄り  dw %s  半径 %s",
+	"hyperslice.hud.observer_w": "観測面 w %s  (スライス %s・ズレ %s)",
+	"hyperslice.hud.key_debug": "キー  −:%s [%s]   ＋:%s [%s]",
+	"hyperslice.hud.key_on": "ON",
+	"hyperslice.hud.key_off": "off",
+
+	"key.hyperslice.observer_w_decrease": "観測面 w  −",
+	"key.hyperslice.observer_w_increase": "観測面 w  ＋",
+	"key.categories.hyperslice.observer": "HyperSlice (観測面)",
+
+	"hyperslice.observer.value": "観測面 w=%s (このスライス本来の観測面は w=%s)。",
+	"hyperslice.observer.not_in_hyperslice": "HyperSlice のディメンション内にいません。",
+
+	"hyperslice.command.status": "スライス w=%s / 全 %s 枚。",
+	"hyperslice.command.moved": "スライス w=%s へ移動しました (全 %s 枚)。",
+	"hyperslice.command.already_there": "すでにスライス w=%s にいます。",
+	"hyperslice.command.blocked": "スライス w=%s のその位置は地形で埋まっています。上下 %s ブロックに空きが無いため移動を中止しました。",
+	"hyperslice.command.no_such_slice": "スライス w=%s は存在しません (このワールドのスライスは %s 枚)。",
+	"hyperslice.command.no_slices": "このワールドには HyperSlice のディメンションがありません。",
+	"hyperslice.command.not_in_hyperslice": "HyperSlice のディメンション内にいません (このワールドのスライスは %s 枚)。",
+	"hyperslice.command.player_only": "このコマンドはプレイヤーが実行する必要があります。",
+
+	"hyperslice.entity.drifter": "ドリフター",
+	"hyperslice.entity.unknown_type": "不明な4次元エンティティ型 \"%s\"。",
+	"hyperslice.entity.not_in_hyperslice": "HyperSlice のディメンション内で実行してください。",
+	"hyperslice.entity.spawned": "%s を w=%s に生成しました (w 速度 %s/tick・id %s)。",
+	"hyperslice.entity.list_header": "近傍の4次元エンティティ %s 体 (全 %s 体)。観測面は w=%s。",
+	"hyperslice.entity.list_line": "  %s  %s  w=%s  dw=%s  半径=%s",
+	"hyperslice.entity.cleared": "4次元エンティティを %s 体削除しました。",
+	"hyperslice.entity.spread": "静止した4次元エンティティを %s 体、w=%s 〜 w=%s に配置しました (中心 w=%s)。半径 %s の水平円周上に散らしています。",
+
+	"hyperslice.bswap.header": "/bswap w=%s r=%s : %s チャンク・%s セクション (生成 %s・光 %s)",
+	"hyperslice.bswap.timings": "  今回 [ms]  生成 %s  差替 %s  光 %s  送信 %s  合計 %s",
+	"hyperslice.bswap.median": "  中央値 n=%s [ms]  生成 %s  差替 %s  光 %s  送信 %s  合計 %s",
+	"hyperslice.bswap.block_entities": "  差し替え範囲から %s 個のブロックエンティティを除去しました。",
+	"hyperslice.bswap.not_in_hyperslice": "HyperSlice のディメンション内で実行してください。",
+	"hyperslice.bswap.no_chunks": "ここには差し替えられるロード済みチャンクがありません (何も変更していません)。",
+	"hyperslice.bswap.set_gen": "生成モード: %s。計測履歴を捨てました。",
+	"hyperslice.bswap.set_light": "ライティングモード: %s。計測履歴を捨てました。",
+	"hyperslice.bswap.reset": "計測サンプルを %s 件捨てました。",
+	"hyperslice.bswap.gen.parallel": "並列",
+	"hyperslice.bswap.gen.sequential": "逐次",
+	"hyperslice.bswap.light.wait": "完了を待つ",
+	"hyperslice.bswap.light.nowait": "待たない",
+
+	"hyperslice.info.title": "HyperSlice",
+	"hyperslice.info.line1": "4 次元ボクセル世界を w で薄切りにした世界です。",
+	"hyperslice.info.line2": "全スライスが単一の 4D 地形関数から生成されるため、",
+	"hyperslice.info.line3": "隣り合うスライスには同じ地形が現れます。"
+}
