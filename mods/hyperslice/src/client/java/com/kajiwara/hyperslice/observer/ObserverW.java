@@ -2,10 +2,13 @@ package com.kajiwara.hyperslice.observer;
 
 import com.kajiwara.hyperslice.core.CrossSection;
 import com.kajiwara.hyperslice.core.SliceRegistry;
+import com.kajiwara.hyperslice.net.WInputPayload;
+import com.kajiwara.hyperslice.net.WStatePayload;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -14,26 +17,29 @@ import net.minecraft.world.level.Level;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * <b>【診断実験】</b> 観測超平面 w を連続的に動かす。
+ * <b>【方式B 中核】</b> 観測超平面 w の操作 — <b>クライアント側は入力と表示だけ</b>。
  *
- * <h2>これは出荷機能ではない</h2>
- * 「プレイヤーが w を連続的に動かせたとき、 それが面白いか」を実機で判定するためだけの
- * 実験コード。 判定結果が方式B (単一ディメンションでブロックを書き換え、 継ぎ目のない
- * w 移動) へ投資するかを決める。
+ * <h2>権威はサーバーにある</h2>
+ * 方式B では w は<b>世界の状態</b>である (地形がその w で切り直される)。 したがって
+ * この値をクライアントが持つと、 地形の w とエンティティの観測面が別々に動いて
+ * 不整合になる。 このクラスがするのは 2 つだけ:
+ * <ul>
+ *   <li>キーの押下から<b>向き</b> ({@code -1/0/+1}) を作ってサーバーへ送る
+ *       ({@link WInputPayload})</li>
+ *   <li>サーバーから配られた w ({@link WStatePayload}) を受け取って保持する</li>
+ * </ul>
+ * 速さ ({@code BStepExperiment.W_RATE_PER_TICK}) も w の値もサーバーが持つ。
  *
- * <p>したがって最優先事項は<b>差分の小ささと可逆性</b>であり、 正しさや完成度ではない。
- * 地形は整数スライスに固定されたまま、 エンティティだけが連続 w に反応するという
- * 矛盾した状態になるが、 それは<b>承知のうえで許容している</b>。
+ * <h2>診断実験だった頃からの変更点</h2>
+ * 元はクライアント権威の診断実験 (「w を連続的に動かせたとき、 それが面白いか」の判定)
+ * だった。 その判定は<b>済んでいる</b> (膨らむ球が円周を一周することを実機確認)。
+ * 判定に使った割り切り — クライアント権威・サーバー側の w 絞り込み無効化・
+ * クライアント側での w 積算 — は、 権威がサーバーへ移ったことで<b>すべて不要になった</b>。
  *
  * <h2>捨て方</h2>
- * {@link #EXPERIMENT_ENABLED} を {@code false} にすれば、 挙動は実験前と完全に一致する
- * (キー登録も tick 購読もコマンド登録も行われなくなる)。
- * 完全に消すなら {@code mods/hyperslice/README.md} の「実験を捨てる手順」を見ること。
- *
- * <h2>権威</h2>
- * この値は<b>クライアント権威</b>でサーバへ送らない (新しいパケット型を足さないため)。
- * サーバ側は代わりに w による同期の絞り込みを一時的に外す
- * ({@code HyperEntityService.EXPERIMENT_NO_W_FILTER})。
+ * {@link #EXPERIMENT_ENABLED} を {@code false} にすれば、 キーもコマンドも HUD 追加行も
+ * 現れず、 観測面は方式A の {@code slice + 0.5} に戻る。 サーバー側も
+ * {@code BStepExperiment.EXPERIMENT_ENABLED} を {@code false} にすれば w は動かない。
  */
 public final class ObserverW {
 
@@ -42,31 +48,20 @@ public final class ObserverW {
     // =================================================================
 
     /**
-     * この実験全体のスイッチ。
+     * クライアント側の w 操作・表示のスイッチ。
      *
-     * <p>{@code false} にすると観測面は従来どおり {@code slice + 0.5} に戻り、
-     * キーもコマンドも HUD 追加行も現れない (= 実験前と完全に一致する)。
+     * <p><b>意味が変わっている。</b> 元は「クライアント権威で w を積算する診断実験」の
+     * スイッチだったが、 今は「w の入力キーとサーバー w の受信を登録するか」。
+     *
+     * <p>{@code false} にすると観測面は方式A の {@code slice + 0.5} に戻り、
+     * キーもコマンドも HUD 追加行も現れない。
      */
     public static final boolean EXPERIMENT_ENABLED = true;
 
     // =================================================================
-    // ── 調整用定数 (人間が必ず触るのはここ) ──
-    // =================================================================
 
-    /**
-     * キーを押している間の w の増減レート [w/tick]。 <b>この実験で最も重要な摘み。</b>
-     *
-     * <p>速すぎると球が点滅しているようにしか見えず、 遅すぎると静止して見える。
-     * ここで得た値が、 方式B における w 移動速度の設計値になる。
-     *
-     * <p>既定 {@code 0.02} = 0.4 w/秒。 これは
-     * {@code HyperEntityType.DEFAULT_W_VELOCITY} と同じ値で、
-     * 「1 体の球が通過する速さとして読める」ことが実機確認済みの数値。
-     * まずここを基準に、 自分で動かしたときの感触で上下させる。
-     */
-    public static final double RATE_PER_TICK = 0.02;
-
-    // =================================================================
+    // 速さの摘み (RATE_PER_TICK) はここには無い。 権威と一緒にサーバー側
+    // BStepExperiment.W_RATE_PER_TICK へ移設してある (2 箇所に散らさないため)。
 
     /** キーバインドのカテゴリ (コントロール設定に出る)。 */
     private static final KeyMapping.Category CATEGORY =
@@ -96,20 +91,21 @@ public final class ObserverW {
     private static KeyMapping increaseKey;
 
     /**
-     * 現在の観測面 w。 {@link Double#NaN} は「未初期化 (所属スライスから引き直す)」。
-     * 描画スレッドからも読まれるので volatile。
+     * サーバーから配られた今の観測面 w。 {@link Double#NaN} は「まだ届いていない」。
+     *
+     * <p>ネットワークスレッドから書かれ描画スレッドから読まれるので volatile。
      */
-    private static volatile double observerW = Double.NaN;
+    private static volatile double serverW = Double.NaN;
 
-    /** 直前 tick の所属スライス。 変化したらテレポートとみなして再同期する。 */
-    private static int lastSlice = Integer.MIN_VALUE;
+    /** 直前 tick にサーバーへ送った向き。 変化を検出して「離した」速報を出すために持つ。 */
+    private static int lastSentDirection;
 
     private ObserverW() {
     }
 
     // ── 登録 ────────────────────────────────────────────────────
 
-    /** {@code HyperSliceClient} から 1 回だけ呼ぶ。 実験が無効なら何も登録しない。 */
+    /** {@code HyperSliceClient} から 1 回だけ呼ぶ。 無効なら何も登録しない。 */
     public static void register() {
         if (!EXPERIMENT_ENABLED) {
             return;
@@ -119,78 +115,96 @@ public final class ObserverW {
         increaseKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 KEY_INCREASE, InputConstants.Type.KEYSYM, DEFAULT_KEY_INCREASE, CATEGORY));
 
+        ClientPlayNetworking.registerGlobalReceiver(WStatePayload.TYPE,
+                (payload, context) -> serverW = payload.w());
+
         ClientTickEvents.END_CLIENT_TICK.register(ObserverW::onClientTick);
     }
 
     // ── tick ────────────────────────────────────────────────────
 
+    /**
+     * <b>スライスを跨いだときに受信済みの値を捨ててはならない。</b>
+     *
+     * <p>サーバーは所属ディメンションが変わった時点で新しい w を送る
+     * ({@code WStateSync} は最後に送った値を<b>ディメンションつき</b>で覚えている) ので、
+     * テレポート直後の値は<b>既に届いている</b>。 クライアント tick はパケット処理の
+     * <b>後</b>に走るため、 ここで「スライスが変わったから捨てる」と、 いま届いたばかりの
+     * 正しい値を消してしまう。 そのディメンションの w が本来の整数から動いていた場合、
+     * 次に w が変わるまで誤った観測面を表示し続けることになる。
+     *
+     * <p>捨てるのは HyperSlice の外へ出たときだけ。
+     */
     private static void onClientTick(Minecraft mc) {
         int slice = currentSlice(mc);
         if (slice < 0) {
-            // HyperSlice の外に出たら、 次に入ったとき所属スライスから引き直す。
-            lastSlice = Integer.MIN_VALUE;
-            observerW = Double.NaN;
+            // HyperSlice の外。 値も送信状態も持ち越さない。
+            serverW = Double.NaN;
+            lastSentDirection = 0;
             return;
-        }
-
-        // 初回、 またはスライスを跨ぐテレポート (/hyperslice) が起きたら再同期する。
-        if (slice != lastSlice || Double.isNaN(observerW)) {
-            observerW = CrossSection.observationPlane(slice);
-            lastSlice = slice;
         }
 
         // 画面 (チャット・インベントリ等) を開いている間は動かさない。
-        if (mc.screen != null) {
-            return;
+        int direction = 0;
+        if (mc.screen == null) {
+            if (decreaseKey != null && decreaseKey.isDown()) {
+                direction -= 1;
+            }
+            if (increaseKey != null && increaseKey.isDown()) {
+                direction += 1;
+            }
         }
 
-        double delta = 0.0;
-        if (decreaseKey != null && decreaseKey.isDown()) {
-            delta -= RATE_PER_TICK;
+        send(direction);
+    }
+
+    /**
+     * 向きをサーバーへ送る。
+     *
+     * <p>押している間は<b>毎ティック</b>送る (サーバー側が期限切れで自動的に止まれるように。
+     * {@code WInputPayload} の javadoc 参照)。 離した瞬間は {@code 0} を 1 回だけ送り、
+     * 以降は無音 — 押していないプレイヤーが常時パケットを出さないようにする。
+     */
+    private static void send(int direction) {
+        if (direction == 0 && lastSentDirection == 0) {
+            return;
         }
-        if (increaseKey != null && increaseKey.isDown()) {
-            delta += RATE_PER_TICK;
-        }
-        if (delta != 0.0) {
-            // 診断用途なので 0..slice_count には制限しない (自由に動かせてよい)。
-            observerW += delta;
+        lastSentDirection = direction;
+        if (ClientPlayNetworking.canSend(WInputPayload.TYPE)) {
+            ClientPlayNetworking.send(new WInputPayload(direction));
         }
     }
 
     // ── 値へのアクセス ──────────────────────────────────────────
 
     /**
-     * 現在の観測面 w。
+     * 今の観測面 w。
      *
-     * <p>実験が無効、 または HyperSlice の外にいるときは {@link Double#NaN}。
-     * 未初期化の場合はその場で所属スライスから引く (tick より先に描画が来ても破綻しない)。
+     * <p>実験が無効、 HyperSlice の外、 またはサーバーからまだ届いていないときは
+     * <b>そのスライス本来の観測面</b>に倒す (未受信のあいだ描画が消えないように)。
+     * HyperSlice の外なら {@link Double#NaN}。
      */
     public static double get() {
         if (!EXPERIMENT_ENABLED) {
             return Double.NaN;
         }
-        double v = observerW;
+        double v = serverW;
         if (!Double.isNaN(v)) {
             return v;
         }
-        int slice = currentSlice(Minecraft.getInstance());
-        return slice < 0 ? Double.NaN : CrossSection.observationPlane(slice);
+        return nominalPlane();
     }
 
-    /** 所属スライス本来の観測面 w ({@code slice + 0.5})。 ズレ量の表示に使う。 */
+    /**
+     * 所属スライス本来の観測面 w。 ズレ量の表示に使う。
+     *
+     * <p>方式B では地形 w に一致する規約なので<b>整数 {@code slice} そのもの</b>
+     * ({@code slice + 0.5} ではない)。 理由は
+     * {@link CrossSection#planeForTerrainW} の javadoc にある。
+     */
     public static double nominalPlane() {
         int slice = currentSlice(Minecraft.getInstance());
-        return slice < 0 ? Double.NaN : CrossSection.observationPlane(slice);
-    }
-
-    /** 直接指定 ({@code /observerw <value>})。 */
-    public static void set(double value) {
-        observerW = value;
-    }
-
-    /** 所属スライス本来の観測面へ戻す ({@code /observerw reset})。 */
-    public static void reset() {
-        observerW = nominalPlane();
+        return slice < 0 ? Double.NaN : CrossSection.planeForTerrainW(slice);
     }
 
     // ── 入力到達の切り分け ──────────────────────────────────────
@@ -198,10 +212,10 @@ public final class ObserverW {
     /**
      * <b>【一時デバッグ】</b> 2 つのキーの押下状態と、 現在の割り当てキー名。
      *
-     * <p>観測面 w の計算とは<b>独立</b>に「キー入力がそもそも届いているか」を人間が読めるようにする。
+     * <p>観測面 w の変化とは<b>独立</b>に「キー入力がそもそも届いているか」を人間が読めるようにする。
      * これが無いと次の 2 つを切り分けられない:
      * <ul>
-     *   <li>ON になるのに w が動かない → 計算側の問題</li>
+     *   <li>ON になるのに w が動かない → 送信 / サーバー側の問題</li>
      *   <li>押しても ON にならない → 入力側の問題 (キーボード配列など)</li>
      * </ul>
      * 割り当てキー名も出すのは、 「そもそも何に割り当たっているか」を同時に確かめるため

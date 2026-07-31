@@ -15,10 +15,12 @@ v0.1 のゴールは「`/hyperslice <n>` でスライス間を移動でき、 �
 
 ## 使い方
 
-| コマンド | 動作 |
+| 操作 | 動作 |
 |---|---|
+| **Page Up / Page Down** (押しっぱなし) | **w を連続的に増減する。 地形とエンティティが同時に動く** |
 | `/hyperslice` | 現在の w と N を表示 |
 | `/hyperslice <n>` | スライス n へ移動 (n は `0..N-1` に巡回。 負値・N 以上も巻き戻る) |
+| `/observerw` | 今の観測面 w / スライス本来の w / ズレ を表示 (読み取り専用) |
 | `/hyperentity spawn <type> [w] [wVelocity]` | 4 次元エンティティを実行者の位置に生成 |
 | `/hyperentity list` | 近傍のレコードを w / dw / 断面半径つきで一覧 |
 | `/hyperentity clear` | 全削除 (試行の高速化用) |
@@ -165,12 +167,27 @@ r_visible = R * sqrt(max(0, 1 - (dw/R)^2))
 
 ### 原則3: 観測面の規約
 
-ブロックは `w ∈ [n, n+1)` を占めるので、 スライス `n` の観測超平面は **`w = n + 0.5`**
-(ブロック層が観測面に対して対称になる)。 `dw = entity.w - planeW`。
-`CrossSection.observationPlane(slice)` が唯一の定義箇所。
+**方式B では観測面 = 地形 w (オフセットなし)。** `dw = entity.w - planeW`。
+
+方式A の `slice + 0.5` は「ブロックが `w ∈ [n, n+1)` という**厚み**を持つ」という
+解釈から来ていたが、 地形の実装はそうなっていない。 `slice_n` のディメンションは
+`HyperTerrain` を **`w = n` で厳密に評価**している (生成器の Codec が `"w": n` を
+そのまま `surfaceY(x, z, w)` へ渡す)。 つまりブロック層は「`w = n` で切った断面を
+w 方向に押し出したもの」であって `[n, n+1)` の体積平均ではない。
+
+方式B では w が連続になり、 地形は「今の w で切り直した断面」そのものになる。
+したがってエンティティと地形が同一の超平面を共有するには **観測面 = 地形 w** で
+なければならない。 方式A で 0.5 ずれていても無害だったのは、 その値を
+エンティティ層しか読んでいなかったため。
+
+| 定義箇所 | 用途 |
+|---|---|
+| `CrossSection.planeForTerrainW(double)` | **方式B**。 恒等関数だが、 なぜ `+0.5` が付かないかをここにだけ書いてある |
+| `CrossSection.observationPlane(int)` | **方式A**。 `slice + 0.5`。 方式B を無効化したとき挙動が完全に戻るよう残してある |
+| `LevelW.observationPlane(ServerLevel)` | サーバー側の唯一の入口。 フラグで上の 2 つを切り替える |
 
 クライアント側 API も `double w` で持つ (`ClientHyperEntities.planeW()`)。
-方式B で小数 w になっても呼び出し側は無変更で通る。
+方式B で小数 w になっても**呼び出し側は無変更で通った** (設計どおり)。
 
 ### 調整用定数
 
@@ -208,7 +225,12 @@ VisualizeGate の `HologramFrameRenderer` と同じ経路。
 
 v0.2 は**差分なしの全送信** (毎 tick・該当プレイヤーに見えるものだけ)。
 1 件 40 バイト程度で M1 は 1 体、 実用時も数十体なので帯域は問題にならない。
-絞り込みは「3 次元距離 `SYNC_RADIUS`」かつ「`|dw| < wThickness/2 + SYNC_W_MARGIN`」。
+絞り込みは「3 次元距離 `SYNC_RADIUS`」かつ「`|dw| < wThickness/2 + SYNC_W_MARGIN`」で、
+観測面はサーバーが持つ**そのレベルの今の w** (`LevelW.observationPlane`)。
+
+> 方式B 統合前は「観測面がクライアント権威でサーバーが知らない」ため w による絞り込みを
+> 丸ごと外していた (`EXPERIMENT_NO_W_FILTER`)。 サーバーが権威を持った今その回避は不要に
+> なったので**削除し、 正しい絞り込みに戻してある**。
 
 マージンがあるのは、 ネットワーク遅延で到着が遅れると「本来は小さく現れるはずの球」が
 いきなり大きい状態で出現して見えるため。 先回りして送り、 断面が 0 から立ち上がる様子を欠かさない。
@@ -249,35 +271,23 @@ cd mods/hyperslice && ./gradlew :common:test
 
 ---
 
-## 【診断実験】観測面 w の連続移動
+## 【方式B 中核】 観測面 w の操作 (Page Up / Page Down)
 
-> **これは出荷機能ではない。** 「プレイヤーが w を連続的に動かせたとき、 それが面白いか」を
-> 実機で判定するためだけの実験。 判定結果が方式B へ投資するかを決める。
-> 最優先事項は**差分の小ささと可逆性**であり、 正しさや完成度ではない。
->
-> **地形は整数スライスに固定されたまま、 エンティティだけが連続 w に反応する**という
-> 矛盾した状態になるが、 それは承知のうえで許容している。
+> **これは出荷機能である。** 元は「プレイヤーが w を連続的に動かせたとき、 それが面白いか」を
+> 実機で判定するためだけの診断実験だった。 その判定は**済んでいる** (膨らむ球が円周を一周する
+> ことを実機確認)。 方式B の統合により、 今は**地形とエンティティが同じ w で同時に動く**。
 
 ### 使い方
 
 | 操作 | 動作 |
 |---|---|
-| **Page Down** (押しっぱなし) | 観測面 w を減らす |
-| **Page Up** (押しっぱなし) | 観測面 w を増やす |
-| `/observerw` | 現在値と、 所属スライス本来の観測面を表示 |
-| `/observerw <value>` | 直接指定 (特定値での静止確認用) |
-| `/observerw reset` | 所属スライス本来の観測面へ戻す |
+| **Page Down** (押しっぱなし) | w を減らす |
+| **Page Up** (押しっぱなし) | w を増やす |
+| `/observerw` | 今の観測面 w / スライス本来の w / ズレ を表示 (**読み取り専用**) |
+| `/bstep to <w>` | w を絶対値で指定する (特定値での静止確認用。 **サーバーコマンド**) |
 | `/hyperentity spread <count> <spacing> [radius]` | **静止**球を w 方向に等間隔・水平円周上に散らす |
 
-実験手順:
-
-```
-/hyperslice 0
-/hyperentity spread 8 0.6
-```
-
-そのうえで Page Down / Page Up を押しっぱなしにして観測面をスライドさせる。
-HUD に「観測面 w / スライス本来の w / ズレ」「最寄りの dw・断面半径」、
+HUD には現在の w (連続値)、 「観測面 w / スライス本来の w / ズレ」、 最寄りの dw と断面半径、
 および**キー入力の到達状況** (`キー −:ON [Page Down] ＋:off [Page Up]`) が出る。
 
 Page Up / Page Down (GLFW 266 / 267) はバニラ既定でも既存 3 mod でも未使用
@@ -291,40 +301,66 @@ Page Up / Page Down (GLFW 266 / 267) はバニラ既定でも既存 3 mod でも
 > JIS 配列では印字が 「」」 のキーはそこに無い。 Page Up / Page Down は配列を問わず
 > 独立した物理キーなので、 この差が原理的に生じない。
 
-#### キー入力到達の切り分け行 (一時デバッグ)
+### 権威はサーバーにある
 
-HUD の `キー −:… ＋:…` 行は、 観測面 w の計算とは**独立**に 2 つの
-`KeyMapping.isDown()` と現在の割り当てキー名を出す。 これで人間が即座に切り分けられる:
+**w は世界の状態である** (地形がその w で切り直される)。 クライアントが権威を持つと、
+地形の w とエンティティの観測面が別々に動いて不整合になる。 したがって:
 
-- **押すと ON になるが w が動かない** → 計算側の問題
-- **押しても ON にならない** → 入力側の問題 (配列・別 mod による奪取・未割当)
+```
+クライアント          サーバー
+  キー押下
+   → 向き (-1/0/+1) ──→ WInputPayload
+                        w を W_RATE_PER_TICK ずつ進める (BStepSession)
+                        差分を適用 (WScheduler で対象を絞る)
+   ←── WStatePayload ── 変化したら配る
+  観測面 / HUD に使う
+```
 
-切り分けが済んだら `ObserverW.keyDebugLine()` と `SliceHudRenderer` の呼び出し 4 行、
-lang の `hyperslice.hud.key_debug` / `key_on` / `key_off` を消せばよい
-(`EXPERIMENT_ENABLED = false` でも実験本体と同時に消える)。
+| 何 | どこ |
+|---|---|
+| **w の値** (レベルごとに 1 つ) | `BStepSession.currentW` |
+| **チャンクごとの現在 w** (追い付き用) | `BStepSession.chunkW` |
+| **読み出しの唯一の入口** | `LevelW.terrainW` / `LevelW.observationPlane` |
+| **速さ** | `BStepExperiment.W_RATE_PER_TICK` (既定 `0.02` = 0.4 w/秒) |
+| キー入力の受け取り | `WDriveInput` (サーバー) |
+| w の配布 | `WStateSync` (サーバー・**値が変わったときだけ**送る) |
+| クライアント側 | `ObserverW` — **入力の送信と受信値の保持だけ**。 値も速さも持たない |
+
+同一ディメンションに複数人いれば向きの**符号の和**が採られる (逆向きに押し合えば止まる)。
+速さを人数倍にしないのは、 「押している人数」が w 移動速度という設計値に混ざらないため。
+
+**キー入力には期限がある** (`INPUT_EXPIRY_TICKS = 5`)。 クライアントは押している間ずっと
+送り続け、 サーバーは受信が途切れたら「離した」と扱う。 エッジ (押した瞬間・離した瞬間) だけを
+送る方式にすると、 離した通知が届かない状況 (画面遷移・切断・別 mod による入力奪取) で
+**世界の w が走り続ける**。
+
+### `/observerw` が読み取り専用になった理由
+
+権威がサーバーへ移ったため、 クライアントから値を書き換えてもサーバーが次に配る値で
+即座に上書きされる (= 効かないコマンドが残る)。 絶対値の指定は **`/bstep to <w>`** に移した。
+そちらなら**地形も同時に追従する**ので、 「特定の w で静止させて見比べる」用途が本当に成立する。
 
 ### 調整用定数
 
-**`ObserverW.RATE_PER_TICK`（既定 `0.02` = 0.4 w/秒）が最重要。**
-速すぎると球が点滅しているようにしか見えず、 遅すぎると静止して見える。
-**ここで得た値が方式B における w 移動速度の設計値になる。**
-
+**`BStepExperiment.W_RATE_PER_TICK`（既定 `0.02` = 0.4 w/秒）が最重要。**
+速すぎると点滅しているようにしか見えず、 遅すぎると静止して見える。
 既定値は `HyperEntityType.DEFAULT_W_VELOCITY` と同じ数値で、
 「1 体の球が通過する速さとして読める」ことが実機確認済みのもの。
 
-### 権威と、その帰結
+> クライアント側 (`ObserverW.RATE_PER_TICK`) から**サーバー側へ移設してある**。
+> 速さをクライアントに持たせると (a) 改造クライアントが任意の速さで世界の w を動かせ、
+> (b) 設計値が 2 箇所に散る。 クライアントが送るのは向きだけ。
 
-観測面 w は**クライアント権威**でサーバへ送らない (新しいパケット型を足さないため)。
-帰結として:
+#### キー入力到達の切り分け行 (一時デバッグ)
 
-- サーバ側の同期は w による絞り込みを行わず、 水平半径内の全レコードを送る
-  (`HyperEntityService.EXPERIMENT_NO_W_FILTER`)
-- `/hyperentity spread` の w 中心と `/hyperentity list` の dw は
-  **所属スライス本来の観測面 (`slice + 0.5`)** 基準。 `observerW` を反映しない。
-  実験手順どおり `/hyperslice` 直後に `spread` すれば両者は一致する。
-  **スライド中の正しい dw は HUD 側**を見ること
+HUD の `キー −:… ＋:…` 行は、 w の変化とは**独立**に 2 つの `KeyMapping.isDown()` と
+現在の割り当てキー名を出す。 これで人間が即座に切り分けられる:
 
----
+- **押すと ON になるが w が動かない** → 送信 / サーバー側の問題
+- **押しても ON にならない** → 入力側の問題 (配列・別 mod による奪取・未割当)
+
+切り分けが済んだら `ObserverW.keyDebugLine()` と `SliceHudRenderer` の呼び出し 4 行、
+lang の `hyperslice.hud.key_debug` / `key_on` / `key_off` を消せばよい。
 
 ## 【診断実験】方式B 最小実験 — フルセクション差し替え＋再ライティング (`/bswap`)
 
@@ -431,34 +467,378 @@ javac の定数畳み込みでそのバイトコードから `bswap` への参�
 
 ---
 
-### 実験を捨てる手順
+## 【診断・測定】 w の微小移動で何ブロック変わるか (`:common:wDiff`)
+
+> **これは機能ではなく測定である。** 方式B を「丸ごと差し替え」で作るか
+> 「差分適用」で作るかを、 推測ではなく実数で決めるためのもの。
+> **Minecraft を起動せずに完結する** (`HyperTerrain` が純粋 Java であるため)。
+
+```bash
+cd mods/hyperslice && ./gradlew :common:wDiff
+```
+
+報告は標準出力と `common/build/reports/wdiff/w-diff.txt` (**UTF-8・こちらが正本**) に出る。
+Windows のコンソールは既定コードページで解釈するため、 端末では日本語が化けることがある。
+
+測るのは 1 チャンクあたりの **変化ブロック数 / 変化した列数 / 変化したセクション数**を、
+delta = 0.125 / 0.25 / 0.5 / 1.0 について**中央値・p95・最大**で。
+方式B の成立可否を決めるのは最悪ケースなので、 平均だけでは判断できない。
+基準 w は 1 周期を 1/8 刻みで全点 (N=8 なら 64 点)、 領域は地形を走査して
+「山がち / 平坦 / 海面付近」を自動で選ぶ (選ばれた座標と素性は報告に出る)。
+
+地形の値は `HyperTerrain` を**そのまま呼ぶ** (複製すると測定が本番と乖離する)。
+唯一写しているのは「地表高度 → ブロック種別」の対応で、 これは
+`HyperSliceChunkGenerator.stateAt` が `BlockState` を返す = MC 依存で
+common から呼べないため。 写し間違いに備えて、 `HyperTerrain` だけで決まる
+**固体差分 (`isSolid` の変化数)** も併記してある。
+
+### 捨て方
+
+`common/src/test/java/com/kajiwara/hyperslice/diag/` と
+`common/build.gradle` の `wDiff` タスクを消すだけ。
+実体が **test ソースセット**にあるため出荷 jar には元から 1 クラスも入っていない
+(`jar tf` で `diag` が 0 件であることを確認済み)。
+
+### 連続 w について (`HyperTerrain` の恒久的な変更)
+
+測定には「小数の w」が要るため、 `noise` / `surfaceY` / `isSolid` に
+**`double w` のオーバーロードを足してある**。 これは測定用の足場ではなく
+**方式B の前提そのもの**なので、 測定を捨てても残すこと。
+
+- 整数版は double 版への委譲になっており、 **実装は 1 本しかない** (乖離しようがない)
+- 整数 w では**ビット単位で従来と同一**。 小数 w 対応前の実装から採取した
+  掃引チェックサムを `HyperTerrainFractionalWTest` が固定値で検証している。
+  **この値は更新してはならない** — 落ちたら整数 w の地形が変わったということ
+- 小数 w でも周期 N は厳密 (整数部だけを整数演算で畳み込んでいるため)
+
+---
+
+## 【方式B 中核】 w の差分適用ループ (`/bstep`)
+
+> **これは使い捨てではない。** `/bswap` が「最も危ない仮定を 1 つ叩く」使い捨てコードだったのに対し、
+> こちらは**方式B の中核ループそのもの**。 `:common:wDiff` の実測により
+> 「毎ステップ全セクション再構築」ではなく**差分適用**が正しいと数字で確定したため、
+> 本実装の原型として書いてある。 ただし `BStepExperiment.EXPERIMENT_ENABLED` による
+> 可逆性は維持する。
+>
+> **知りたいのは単発の速度ではなく持続スループット。** 連続的に w を進め続けたときに、
+> 光が追随し、 サーバーが破綻しないか。 **合否指標は MSPT / TPS** (ティック予算 50ms = 20 TPS)。
+
+### 使い方
+
+| コマンド | 動作 |
+|---|---|
+| `/bstep` | 現在の w / 位相 / 設定を表示 |
+| `/bstep <delta>` | w を delta だけ進めて差分を適用 (単発)。 delta は負値可 |
+| `/bstep to <w>` | w を絶対値で指定して適用 (単発)。 特定値での静止確認用 |
+| `/bstep auto <rate>` | rate w/秒 で連続的に進め続ける (**持続スループットの測定**) |
+| `/bstep auto off` | 停止 |
+| `/bstep reset` | 本来の w に戻して再適用し、 計測履歴を捨てる |
+| `/bstep radius <n\|all>` | 対象半径 [チャンク]。 既定 `all` = シミュレーション距離 |
+| `/bstep diff <parallel\|sequential>` | 差分計算の並列化を切り替える |
+| `/bstep schedule <on\|off>` | **更新スケジューラの on/off** (効果を実測で比べるため) |
+| `/bstep verify` | y 範囲最適化が全 y 総当たりと一致するかを検査する (**何も適用しない**) |
+
+**普段の遊び方は Page Up / Down (キー入力)。** このコマンド群は単発・計測・検証のために残してある。
+
+**単発 (`<delta>` / `to` / `reset`) はスケジューラを通さず全チャンクを更新する。**
+通すと遠方が更新されないまま残り、 下記「正しさの検証」が壊れる。
+
+`radius` は「どこで破綻するか」を探すのに実行時の摘みが要るため、 `verify` は y 範囲最適化が
+`stateAt` の将来の変更で黙って壊れないようにするため、 `diff` は「差分計算は並列」という
+要件の効果を実測できるようにするため。
+
+**初回はクラスロードと JIT で必ず遅い**ので 1 回の値で判断しないこと。 毎回「今回」と
+「直近 32 ステップの中央値 / 最大」を併記する。
+
+連続モード中は**アクションバー**に w・位相・MSPT・TPS・変化ブロック数・各フェーズ ms・
+光の追随状況が常時出る。 サーバー値なので新規パケット型もクライアント側コードも増やしていない
+(`ServerPlayer.sendSystemMessage(component, true)` = `ClientboundSystemChatPacket(component, true)`)。
+
+### 差分の求め方 — 全ブロック生成をしない (最重要)
+
+1 チャンク 98,304 ブロックを両方の w で作って比べるのは無駄が大きすぎる。 実測のとおり
+**変化は列ごとの地表高度の変化に由来する**ので:
+
+1. 列ごと (16x16 = 256 列) に旧 w / 新 w の `surfaceY` を求める
+2. **高さが変わらない列はスキップ** (実測で約半数)
+3. 変わった列だけ、 影響を受ける y 範囲のみ走査する
+
+これで 1 チャンクあたりの `HyperTerrain` 呼び出しが **98,304 → 512** (256 列 × 2 つの w) に落ちる。
+**この最適化を省いてはいけない** (省くと測定値が本来の方式B から乖離する)。
+
+#### 影響を受ける y 範囲 (`stateAt` から導出)
+
+`lo = min(s0,s1)`、 `hi = max(s0,s1)` として:
+
+- `y > hi` … 両方とも「地表より上」の枝。 値は `y` と `SEA_LEVEL` だけで決まり
+  `surface` に依存しない → **必ず同一**
+- `y <= lo - SOIL_DEPTH` … `y <= surface - SOIL_DEPTH` は `surface = hi` でも成立するので
+  両方とも STONE 枝 → **必ず同一**
+
+∴ 変化しうるのは **`y ∈ [lo - (SOIL_DEPTH-1), hi]`** のみ (`[minY, maxY]` でクランプ)。
+`underwater` は `surface < SEA_LEVEL` の従属変数なので、 **`s0 == s1` なら列全体が完全同一** (上記 2 の根拠)。
+
+範囲内でも実際に一致する y はあるため、 範囲を走査して `stateAt` の**実値を比較**し、
+異なる y だけを書き込む。
+
+`SOIL_DEPTH` は `stateAt` と同じ前例で **可視性だけ** `public` に広げてある
+(値とロジックは不変)。 複製しなかったのは、 複製すると定数を変えたときに差分の範囲が
+黙って足りなくなる (例外が出ず、 地形が中途半端に残るだけ) ため。
+
+上の導出は「証明」であって実行時保証ではないので、 **`/bstep verify`** が
+全 y 総当たりの参照実装と 7 通りの delta で突き合わせる。 `:common` の JUnit にできないのは
+`stateAt` が `BlockState` (= MC 依存) を返すため。
+
+### 適用手段 — ここは `/bswap` と逆で `setBlock` を使う
+
+変化が数百〜数千ブロックなら、 セクション丸ごと差し替えより差分適用の方が安く、 かつ
+**ライトエンジンの差分更新経路に乗る** (これが最大の狙い)。
+
+**フラグは `818` = `UPDATE_CLIENTS(2) | UPDATE_SKIP_ALL_SIDEEFFECTS(816)`**。
+これは**バニラ `/setblock <...> strict` が使うのと完全に同一の値**
+(26.1.2 の `SetBlockCommand` を逆アセンブルして確認)。
+
+| 起こすこと | 抑止すること |
+|---|---|
+| クライアントへの差分送信 | 近傍更新 (レッドストーン・観察者・`affectNeighborsAfterRemoval`) |
+| ハイトマップ 4 種の更新 (**フラグ非依存・無条件**) | **`onPlace` (512) = 砂の落下・水の流動**。 生成地形は砂と水を含むので、 近傍更新を切っただけでは止まらない |
+| 差分ライティング (**無条件**) | 形状伝播 (16。 唯一の再帰経路) |
+| セクション空判定の光への通知 (**無条件**) | ドロップ (32) と BlockEntity 除去の副作用 (256)。 **中身は黙って消える** (使い捨てワールド前提) |
+
+> `LightEngine.hasDifferentLightProperties` が比べるのは lightDampening / lightEmission /
+> useShapeForLightOcclusion だけなので、 **石↔土のような不透明同士の差し替えでは光は動かない**。
+> 光の仕事は空気/水と固体の境界に限られる。
+
+### 送信 — 26.1.2 は自動でまとまる (手当て不要)
+
+`ChunkHolder` が `changedBlocksPerSection: ShortSet[]` に溜め、
+`ServerChunkCache.broadcastChangedChunks` が**毎ティック 1 回**まとめて `broadcastChanges` を呼ぶ。
+切替は**閾値ではなく `size == 1` かどうか** (逆アセンブル実測):
+
+- `size == 1` → `ClientboundBlockUpdatePacket` 1 個
+- `size >= 2` → `ClientboundSectionBlocksUpdatePacket` 1 個で**セクション丸ごと**
+
+いずれにせよ **「触れたセクション 1 個につきパケット 1 個」**。 実測 (変化セクション 2〜4/24) と
+突き合わせると 1 チャンク・1 ステップあたり 2〜4 パケットに収束する。 旧版にあった
+「N 個超えたらフルチャンク再送」のような段階は 26.1.2 には**無い**。
+
+したがって **`/bstep` に「送信フェーズ」は存在しない**。 `Level.setBlock` が同期的に行うのは
+セクションごとの `ShortSet` への登録までで (このコストは apply に含まれる)、
+実際の送出はバニラのティック処理側 = **MSPT に現れる**。 だから合否指標が MSPT なのである。
+
+### 更新スケジューラ — クライアント負荷を予算内に収める
+
+**律速はサーバーではなくクライアントのチャンクメッシュ再構築。** 実測 (描画距離 12 /
+625 チャンク / 最悪位相) でサーバーは MSPT 1.50・TPS 20.00 (予算 50ms に対し 100 倍の余裕)
+なのに、 クライアントは描画距離 4 (約 81ch) は快適・12 (625ch) は紙芝居。
+必要な削減は **3〜4 倍**。
+
+機構は 1 つだけ: **距離帯から更新周期を引き、 座標ハッシュから位相オフセットを与える**。
+
+| Chebyshev 距離 [チャンク] | 周期 [ステップ] | 描画距離 12 での内訳 |
+|---|---|---|
+| `d <= 3` | 1 (毎ステップ) | 49 ch → 毎ステップ 49 |
+| `d <= 6` | 2 | 120 ch → 毎ステップ 60 |
+| `d <= 10` | 4 | 272 ch → 毎ステップ 68 |
+| それ以上 | 8 | 184 ch → 毎ステップ 23 |
+| | | **合計 625 → 毎ステップ 約 200 = 3.1 倍の削減** |
+
+**表の実体は `WScheduler.BAND_MAX_DISTANCE` / `BAND_PERIOD` の 2 本の配列**
+(同じ長さ・昇順・最後は `Integer.MAX_VALUE`)。 **人間が触るのはここ。**
+
+#### 位相オフセットが必須である理由
+
+遠方を一斉更新すると、 周期ごとに「同心円状の段差がまとめて動く」という目に付く破綻が起き、
+負荷も周期に 1 回だけ跳ねる。 座標ハッシュで散らせば毎ステップ遠方の `1/period` ずつが更新され、
+**負荷が平坦になり、 地形の食い違いも輪ではなくノイズとして分散する**。
+
+位相は**乱数ではなく決定論的な写像**である (同じチャンクは常に同じ位相)。 ステップごとに
+抽選し直すと、 運悪く長く選ばれないチャンクが出て遅れが偏る。
+
+算出は MC 非依存の `common/.../core/WPhase.java` に置いてある。 撹拌が甘いと「斜めの縞」
+「市松模様」という**目視でしか分からない壊れ方**をするので、 起動せずに検査できる場所に置き、
+`WPhaseTest` が (a) 各チャンクがちょうど周期に 1 回 (b) どのステップでも更新数が `1/period`
+付近 (c) 同じ距離リングが単一位相にならない (d) 隣接チャンクに相関が無い、 を検証している。
+
+#### 遅れたチャンクの追い付き — 既存の per-chunk w がそのまま担う
+
+見送られたチャンクは w が遅れる。 次に順番が来たときに当てるのは「1 ステップぶん」ではなく
+**そのチャンクの w から今の w までの蓄積分**。 これは新しい機構ではなく、 下記
+「w はチャンクごとにも持っている」がそのまま効く (`BStepDiff.compute` は delta の大きさに
+一切依存せず、 `/bstep verify` が delta 3.0 = 量子 24 個ぶんまで総当たりと突き合わせている)。
+
+> **更新したチャンクの w だけを進めること。** 見送ったチャンクまで進めると蓄積分が失われ、
+> そのチャンクは永久にずれたまま残る。
+
+#### 設計上の含意 — これは「遠方に粗い w 量子を与える」ことと同義
+
+遠方の更新頻度を落とすことは、 そのチャンクの w が階段状に飛ぶこと =
+**局所的な w 量子の粗化**である。 したがってグローバルな量子 (`STEP_QUANTUM` = 1/8) は
+**変えない**。 近傍の滑らかさはそのまま保たれ、 遠方だけが実質的に粗くなる。
+
+#### バーストは存在しない (先読み・償却機構は不要)
+
+実測でセクション数は位相にほぼ依存しない:
+
+```
+位相 0.000 →  16 ブロック / 1.80 セクション
+位相 0.125 → 107 ブロック / 2.25 セクション
+位相 0.500 → 816 ブロック / 2.13 セクション
+```
+
+ブロック数は 51 倍変動するがセクション数は 18% しか動かない (変化が地表に沿って薄く広がるため、
+量ではなく空間的な広がりがコストを決める)。 クライアントの仕事はセクション単位なので、
+**位相を先読みして重いステップを償却する機構は要らない**。
+
+### 計測値の読み方 (**ここを取り違えると必ず誤読する**)
+
+| 表示 | 意味 |
+|---|---|
+| `今回・1 ティック内でサーバースレッドを占有した実時間 [ms]` の `差分` / `適用` / `合計` | **1 回のステップ**がサーバースレッドを実際に塞いだ実時間。 差分計算はワーカープールで走るが、 サーバースレッドは `join()` で待つので占有時間に含まれる |
+| `MSPT` | `MinecraftServer.getAverageTickTimeNanos()` = **直近 100 ティックの移動平均** (`TICK_STATS_SPAN = 100`) |
+
+**この 2 つを直に比べてはいけない。** 1 ティックだけ 135ms かかっても MSPT には 1.35ms しか
+乗らない。 「MSPT 1.50 なのに適用 135ms」は矛盾ではなく、 **単発の実時間と 100 ティック平均を
+並べているだけ**である。 表示文言にその旨を書いてある。
+
+`スケジューラ` 行は距離帯ごとの更新数・見送ったチャンク数・**最も w が遅れているチャンクの
+遅れ量**を出す。 最後の値が単調に増えていくならどこかで追いつけていない。
+
+### 対象チャンク
+
+ロード済み**かつ `BLOCK_TICKING` 以上**のものだけ。 未ロードの新規生成は誘発しない
+(`/bswap` と同じ方針)。 `BLOCK_TICKING` を要求するのは、 `Level.setBlock` が
+`UPDATE_CLIENTS` を効かせる条件が `chunk.getFullStatus().isOrAfter(BLOCK_TICKING)` であり、
+`ChunkHolder.blockChanged` も `getTickingChunk() == null` なら即 return するため
+(どちらも逆アセンブルで確認)。 満たさないチャンクに書くと
+**サーバー側だけ変わってクライアントへ届かない**ので、 最初から除外して除外数を報告に出す。
+
+**w はチャンクごとにも持っている。** 途中でロードされたチャンクはそのディメンション本来の
+整数 w で生成されるため、 全チャンク一律に「前回の w」から差分を取ると、 後から入ってきた
+チャンクだけ永久にずれた地形が残り下記の検証が壊れる。 キーは `LevelChunk` の**参照同一性**
+(`equals`/`hashCode` は上書きされていない。 javap で確認) なので、 アンロード → 再ロードで
+別インスタンスになったチャンクは自動的に本来の整数 w へ戻る。
+
+### 正しさの検証 (方式A が正解データを持っている)
+
+**ディメンション `slice_n` は `HyperTerrain` を `w = n` で評価している** (`n + 0.5` ではない)。
+`generateSliceData` が `slice_<i>.json` に `"w": i` を焼き、 Codec の `Codec.INT.fieldOf("w")` が
+それを受けて `terrain.surfaceY(x, z, w)` にそのまま渡す。
+`n + 0.5` は `CrossSection.observationPlane(slice)` = **エンティティの観測面規約だけ**のもので、
+地形とは無関係。
+
+```
+/hyperslice 0      ← 地形 w=0
+/bstep 0.125 を 24 回   （または /bstep 3.0 で 1 回）
+/hyperslice 3      ← 本当に w=3 のディメンションへ
+```
+
+この 2 つで**同じ座標の地形が一致するはず**。 `HyperTerrain` は整数 w でビット単位一致が
+保証されている (チェックサム `503660030094200896`) ので、 w=3.0 と w=3 は同一値になる。
+
+一致が保証される理由は `/bswap` と同じで、 ブロックの選び方を独自に持たず
+`HyperSliceChunkGenerator.stateAt` に委ねているため。
+
+### 既知の制約
+
+- **後からロードされたチャンクは本来の整数 w のまま**。 次に順番が来たとき蓄積分で一気に
+  追いつくが、 それまでの間は周囲とずれる
+- **遠方のチャンクは常に w が遅れている** (これはスケジューラの意図した動作であり不具合ではない。
+  上記「設計上の含意」を参照)。 遅れ量は報告行に出る
+- **プレイヤーの改変差分は永続化しない** (再生成で上書きされる)。 スコープ外
+- **ChunkGenerator は可変の現在 w を読まない**。 新規生成チャンクは本来の整数 w で作られ、
+  次の更新で追いつく。 生成器側を可変 w にするのは別タスク
+- 1 ティックに出すステップは**最大 1 回**に固定 (負荷を青天井にしないため)。 したがって
+  `rate / STEP_QUANTUM` が tickrate を超えると出し切れない (既定では **2.5 w/秒**が上限)。
+  超えたぶんは黙って溜めず**捨てて、 捨てた量を報告する**
+
+### 調整用定数
+
+**`BStepExperiment`** に集約 (人間が触るのはここ):
+
+| 定数 | 既定 | 意味 |
+|---|---|---|
+| **`SET_BLOCK_FLAGS`** | **`818`** | **最重要**。 上表の意味。 変えるなら何が起きるかを上表で確認すること |
+| **`W_RATE_PER_TICK`** | **`0.02`** | **キーを押している間の w の増減レート [w/tick] = 0.4 w/秒。 体験の一次判定を決める最重要の摘み** |
+| `STEP_QUANTUM` | `0.125` | 1 ステップの w 幅。 `:common:wDiff` の測定基準と揃えてある。 変えたら測定も取り直す。 **スケジューラで遠方を間引いてもここは変えない** |
+| `INPUT_EXPIRY_TICKS` | `5` | キー入力の有効期限。 これを超えて来なければ「離した」と扱う |
+| `MAX_RATE` | `4.0` | `/bstep auto <rate>` の上限 [w/秒] |
+| `MAX_RADIUS` | `32` | `/bstep radius <n>` の上限 [チャンク] |
+| `HISTORY_SIZE` | `32` | 中央値 / 最大の母数 [ステップ] |
+| `HUD_INTERVAL_TICKS` | `5` | アクションバーの更新間隔 |
+
+**距離帯 → 周期の表は `WScheduler.BAND_MAX_DISTANCE` / `BAND_PERIOD`** (上記
+「更新スケジューラ」参照)。 **クライアント負荷を触るならまずここ。**
+
+実行時に切り替えるもの (再ビルド不要) は `radius` / `parallelDiff` / `scheduler` の 3 つで、
+すべてコマンドから触る。
+
+### 捨て方 (`BStepExperiment.EXPERIMENT_ENABLED`)
+
+**このフラグは意味が広がっている。** 導入当初は「`/bstep` を登録するか」だけだったが、
+観測面 w の統合により以下すべてを一括で切り替える:
+
+- `/bstep` コマンドの登録
+- **w のサーバー権威** (キー入力の受信 + 各プレイヤーへの配布)
+- **更新スケジューラ**
+- **観測面の規約** (`LevelW.observationPlane` が地形 w を返すか方式A の `slice + 0.5` を返すか)
+
+`false` にすれば挙動は方式B 導入前 (= 方式A) と完全に一致する。 javap で実測確認済み:
+
+- `HyperSliceCommands` から `bstep` への**実行コード参照が 0 件**
+- `LevelW` から `BStepSession` への参照が **0 件**になり、
+  `terrainW` は整数 w を、 `observationPlane` は `CrossSection.observationPlane(slice)` を返すだけになる
+
+完全に削除するなら `src/main/java/.../bstep/` を消し、 `HyperSliceCommands` の
+`if (BStepExperiment.EXPERIMENT_ENABLED)` ブロック 2 箇所と import を消し、
+`HyperSlice` の w パケット登録と `WDriveInput.register()` を消し、
+`slice/LevelW.java` と `net/WStatePayload.java` / `net/WInputPayload.java` を消し、
+`HyperEntityService` / `HyperEntityCommands` の `LevelW.observationPlane(...)` を
+`CrossSection.observationPlane(slice)` に戻し、
+`HyperSliceChunkGenerator.SOIL_DEPTH` を `private` へ戻し、
+lang から `hyperslice.bstep.*` を消す。
+
+**`ObserverW` / `BSwapExperiment` とはフラグを共有していない** (三者は独立に捨てられる)。
+ただし w が動くには**サーバー側 (`BStepExperiment`) とクライアント側 (`ObserverW`) の
+両方が有効**である必要がある (権威がサーバー・入力がクライアントなので当然)。
+
+---
+
+### 観測面 w の機構を捨てる手順
 
 **一時的に無効化** — 定数 2 つを `false` にするだけ:
 
-| ファイル | 定数 |
-|---|---|
-| `ObserverW.java` | `EXPERIMENT_ENABLED = false` |
-| `HyperEntityService.java` | `EXPERIMENT_NO_W_FILTER = false` |
+| ファイル | 定数 | 何が戻るか |
+|---|---|---|
+| `ObserverW.java` | `EXPERIMENT_ENABLED = false` | キー / `/observerw` / HUD 追加行が消える |
+| `BStepExperiment.java` | `EXPERIMENT_ENABLED = false` | w が動かなくなり、 観測面が `slice + 0.5` に戻る |
 
-これで挙動は実験前と**完全に一致**する。`static final boolean` なので javac が定数畳み込みし、
-`ClientHyperEntities` / `SliceHudRenderer` のコンパイル結果から `ObserverW` への参照が
-**0 件**になることを javap で確認済み (`planeW()` は元の
-`CrossSection.observationPlane(slice)` そのものに戻る)。
+これで挙動は方式B 導入前と**完全に一致**する。 `static final boolean` なので javac が
+定数畳み込みし、 `ClientHyperEntities` / `SliceHudRenderer` のコンパイル結果から
+`ObserverW` への参照が **0 件**になることを javap で確認済み
+(`planeW()` は `CrossSection.observationPlane(slice)` そのものに戻る)。
+
+> `HyperEntityService.EXPERIMENT_NO_W_FILTER` は**もう無い**。 「観測面がクライアント権威で
+> サーバーが知らない」ための回避策だったが、 サーバーが権威を持ったので削除し、
+> 正しい w 絞り込みに戻してある。
 
 **完全に削除** — 以下だけを消せば元に戻る:
 
 1. `src/client/java/.../observer/` を削除 (`ObserverW` / `ObserverWCommands`)
 2. `ClientHyperEntities.planeW()` の三項を `CrossSection.observationPlane(slice)` に戻し、
    `ObserverW` の import を削除
-3. `SliceHudRenderer.entityDebugLines()` の先頭の実験ブロックと `ObserverW` の import を削除
+3. `SliceHudRenderer` の `ObserverW` 参照 (w の表示の三項・`entityDebugLines()` 先頭のブロック)
+   と import を削除
 4. `HyperSliceClient` の `ObserverW.register()` / `ObserverWCommands.register()` と import を削除
-5. `HyperEntityService` の `EXPERIMENT_NO_W_FILTER` と `wMargin` 変数を削除し、
-   `SYNC_W_MARGIN` を直接渡す形に戻す
-6. `HyperEntityCommands` の `spread` / `MAX_SPREAD` を削除 (診断専用のため)
-7. lang から `hyperslice.hud.observer_w` / `hyperslice.hud.key_debug` /
+5. `HyperEntityCommands` の `spread` / `MAX_SPREAD` を削除 (診断専用のため)
+6. lang から `hyperslice.hud.observer_w` / `hyperslice.hud.key_debug` /
    `hyperslice.hud.key_on` / `hyperslice.hud.key_off` / `key.hyperslice.*` /
    `key.categories.hyperslice.observer` / `hyperslice.observer.*` /
    `hyperslice.entity.spread` を削除
+
+サーバー側 (`bstep` パッケージ・`LevelW`・w パケット) の削除手順は
+「【方式B 中核】 w の差分適用ループ」の**捨て方**に書いてある。
 
 **地形・エンティティ層本体・断面数学には一切触れていない**ので、 どちらの手順でも
 `HyperTerrain` / `HyperSliceChunkGenerator` / `generateSliceData` / `CrossSection` /

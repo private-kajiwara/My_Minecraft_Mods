@@ -80,8 +80,11 @@ public final class ClientHyperEntities {
      * 現在のクライアントの観測超平面 w。
      *
      * <p>HyperSlice のスライス内にいなければ {@link Double#NaN}。
-     * 方式B へ移行したら「プレイヤーの連続 w」を返すように変えるだけで、
-     * 呼び出し側 (描画・HUD) は無変更で通る。
+     *
+     * <p>方式B では {@code ObserverW.get()} が<b>サーバーから配られた連続 w</b> を返す
+     * (地形が切り直されている w そのもの) ので、 このメソッドの形は方式A のときから
+     * 変わっていない。 「方式B へ移行しても呼び出し側は無変更で通る」という設計が
+     * そのとおりになった箇所。
      */
     public static double planeW() {
         Minecraft mc = Minecraft.getInstance();
@@ -97,8 +100,8 @@ public final class ClientHyperEntities {
         if (slice < 0) {
             return Double.NaN;
         }
-        // 【診断実験】観測面 w の連続移動。 ObserverW.EXPERIMENT_ENABLED=false のときは
-        // 下の三項が従来どおり observationPlane(slice) に落ちる (= 実験前と完全一致)。
+        // ObserverW.EXPERIMENT_ENABLED=false のときは下の三項が方式A の
+        // observationPlane(slice) = slice + 0.5 に落ちる (= 方式B 導入前と完全一致)。
         return ObserverW.EXPERIMENT_ENABLED
                 ? ObserverW.get()
                 : CrossSection.observationPlane(slice);

@@ -55,3 +55,22 @@ tasks.withType(JavaCompile).configureEach {
 test {
     useJUnitPlatform()
 }
+
+// =====================================================================
+// 【診断・使い捨て】 w の微小移動でブロックが何個変わるかの実測
+// ---------------------------------------------------------------------
+//   ./gradlew :common:wDiff
+//
+//   出荷 jar には影響しない: 実体は test ソースセット
+//   (common/src/test/java/com/kajiwara/hyperslice/diag/) に置いてあり、
+//   jar / sourcesJar のどちらにも入らない。
+//   捨てるときは diag パッケージとこのタスクを消すだけでよい。
+// =====================================================================
+tasks.register('wDiff', JavaExec) {
+    group = 'diagnostics'
+    description = 'w を微小に動かしたときの変化ブロック数を実測する (方式B の設計判断用・出荷物に影響しない)'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.kajiwara.hyperslice.diag.WDiffProbe'
+    // 既定の N は gradle.properties の slice_count に追随させる。
+    args = [(project.findProperty('slice_count') ?: rootProject.findProperty('slice_count') ?: '8').toString()]
+}

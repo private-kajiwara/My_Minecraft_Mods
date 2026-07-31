@@ -4,11 +4,11 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-import com.kajiwara.hyperslice.core.CrossSection;
 import com.kajiwara.hyperslice.core.HyperEntityRecord;
 import com.kajiwara.hyperslice.core.HyperEntityType;
 import com.kajiwara.hyperslice.core.HyperVec;
 import com.kajiwara.hyperslice.entity.HyperEntityService;
+import com.kajiwara.hyperslice.slice.LevelW;
 import com.kajiwara.hyperslice.slice.SliceTeleporter;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -127,7 +127,7 @@ public final class HyperEntityCommands {
         }
 
         // w 未指定なら「観測面の手前ぎりぎり」から出発させ、 通過する様子を最初から見せる。
-        double planeW = CrossSection.observationPlane(slice);
+        double planeW = LevelW.observationPlane(player.level());
         double w = (wOverride != null) ? wOverride : planeW - type.wThickness() * 0.5;
         double wVel = (wVelocityOverride != null)
                 ? wVelocityOverride : HyperEntityType.DEFAULT_W_VELOCITY;
@@ -160,10 +160,10 @@ public final class HyperEntityCommands {
      *
      * <p>y は実行者と同じ。 地形にめり込むことはあるが診断用途では許容する。
      *
-     * <p>w の中心は<b>所属スライス本来の観測面</b> ({@code slice + 0.5})。
-     * サーバはクライアント権威の {@code ObserverW} を知らないため
-     * (新しいパケット型を足さない方針)、 実験開始時点 ({@code /hyperslice} 直後で
-     * observerW がまだ再同期されている状態) では両者が一致する。
+     * <p>w の中心は<b>今の観測面</b> ({@code LevelW.observationPlane})。 方式B 統合により
+     * サーバーが w の権威を持つので、 プレイヤーが Page Up/Down でずらした先で撃っても
+     * 「今見ている面」を中心に並ぶ。 統合前はサーバーがクライアント権威の
+     * {@code ObserverW} を知らず、 常にスライス本来の面が中心になっていた。
      */
     private static int spread(CommandContext<CommandSourceStack> c, int count, double spacing,
                               double radius) {
@@ -179,7 +179,7 @@ public final class HyperEntityCommands {
             src.sendFailure(Component.translatable("hyperslice.entity.not_in_hyperslice"));
             return 0;
         }
-        double centreW = CrossSection.observationPlane(slice);
+        double centreW = LevelW.observationPlane(player.level());
 
         // count 体を centreW を中心に等間隔で並べる (偶数個なら中心を挟む形になる)。
         double firstW = centreW - spacing * (count - 1) / 2.0;
@@ -222,7 +222,7 @@ public final class HyperEntityCommands {
             src.sendFailure(Component.translatable("hyperslice.entity.not_in_hyperslice"));
             return 0;
         }
-        double planeW = CrossSection.observationPlane(slice);
+        double planeW = LevelW.observationPlane(player.level());
 
         // 交差していないものも見たいので margin を大きく取る (list は診断用)。
         var records = HyperEntityService.get().manager().visibleFrom(

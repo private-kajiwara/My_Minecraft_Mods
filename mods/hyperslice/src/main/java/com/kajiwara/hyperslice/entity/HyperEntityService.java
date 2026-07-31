@@ -6,12 +6,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import com.kajiwara.hyperslice.core.CrossSection;
 import com.kajiwara.hyperslice.core.HyperEntityManager;
 import com.kajiwara.hyperslice.core.HyperEntityRecord;
 import com.kajiwara.hyperslice.core.HyperTerrainQuery;
 import com.kajiwara.hyperslice.net.HyperEntitySyncPayload;
-import com.kajiwara.hyperslice.slice.SliceTeleporter;
+import com.kajiwara.hyperslice.slice.LevelW;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -45,20 +44,6 @@ public final class HyperEntityService {
      * 先回りして送っておくことで、 断面が 0 から立ち上がる様子を欠かさない。
      */
     public static final double SYNC_W_MARGIN = 1.0;
-
-    /**
-     * <b>【診断実験】</b> w による同期の絞り込みを行わない。
-     *
-     * <p>観測面 w の連続移動実験では、 観測面はクライアント権威で
-     * ({@code ObserverW}) サーバはその値を知らない。 そのまま絞り込むと、
-     * プレイヤーが w をずらした先の球が「送られてきていない」ために見えない。
-     *
-     * <p>そこで有効時は<b>水平半径内の全レコードを送る</b>。 新しいパケット型を
-     * 足さずに済ませるための措置で、 テスト用エンティティは数体なので帯域は問題にならない。
-     *
-     * <p>この定数を {@code false} にすれば元の絞り込みに完全に戻る。
-     */
-    public static final boolean EXPERIMENT_NO_W_FILTER = true;
 
     // ────────────────────────────────────────────────────────
 
@@ -104,22 +89,25 @@ public final class HyperEntityService {
      *
      * <p>絞り込み自体は common 側 ({@link HyperEntityManager#visibleFrom}) にある純粋な計算で、
      * ここは「プレイヤーの観測面 w を求めて渡す」だけ。
+     *
+     * <p>観測面はサーバーが持つ<b>そのレベルの今の w</b> ({@link LevelW#observationPlane})。
+     * 方式B 統合前は「観測面がクライアント権威でサーバーは知らない」ため w による
+     * 絞り込みを丸ごと外していた ({@code EXPERIMENT_NO_W_FILTER}) が、 サーバーが
+     * 権威を持った今その回避は不要になったので<b>正しい絞り込みに戻してある</b>。
      */
     private void broadcast(MinecraftServer server) {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             UUID playerId = player.getUUID();
 
-            int slice = SliceTeleporter.sliceWOf(player.level());
+            double planeW = LevelW.observationPlane(player.level());
             List<HyperEntityRecord> visible;
-            if (slice < 0) {
+            if (Double.isNaN(planeW)) {
                 // HyperSlice の外にいるプレイヤーには 4 次元エンティティは存在しない。
                 visible = List.of();
             } else {
-                // 実験時は w マージンを実質無限にして、 水平半径内の全レコードを送る。
-                double wMargin = EXPERIMENT_NO_W_FILTER ? Double.POSITIVE_INFINITY : SYNC_W_MARGIN;
                 visible = manager.visibleFrom(
                         player.getX(), player.getY(), player.getZ(),
-                        CrossSection.observationPlane(slice), SYNC_RADIUS, wMargin);
+                        planeW, SYNC_RADIUS, SYNC_W_MARGIN);
             }
 
             if (visible.isEmpty()) {

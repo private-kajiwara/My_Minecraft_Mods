@@ -60,15 +60,19 @@ public final class SliceHudRenderer {
             return;
         }
 
-        int w = currentSliceW(mc.level);
-        if (w < 0) {
+        int slice = currentSliceW(mc.level);
+        if (slice < 0) {
             // HyperSlice の外 (通常世界など) では何も出さない。
             return;
         }
 
         Font font = mc.font;
         Component label = Component.translatable("hyperslice.hud.label");
-        String value = Integer.toString(w);
+        // 方式B では w は連続なので小数で出す。 EXPERIMENT_ENABLED=false のときは
+        // 下の三項が定数畳み込みで消え、 従来どおり整数のスライス番号だけになる
+        // (コンパイル結果から ObserverW への参照が 0 件になることを javap で確認済み)。
+        double live = ObserverW.EXPERIMENT_ENABLED ? ObserverW.get() : Double.NaN;
+        String value = Double.isNaN(live) ? Integer.toString(slice) : fmt(live);
 
         // 2 行目以降: 近傍 4 次元エンティティのデバッグ表示 (居なければ行ごと出さない)。
         List<Component> extra = entityDebugLines();

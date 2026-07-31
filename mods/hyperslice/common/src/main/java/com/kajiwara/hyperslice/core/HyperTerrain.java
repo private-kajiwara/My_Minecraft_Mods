@@ -144,12 +144,22 @@ public final class HyperTerrain {
      * <p>この値 <b>以下</b> の y が固体、 それより上が空気 (または海面以下なら水)。
      */
     public int surfaceY(int x, int z, int w) {
+        return surfaceY(x, z, (double) w);
+    }
+
+    /** {@link #surfaceY(int, int, int)} の連続 w 版。 整数 w では int 版と完全に一致する。 */
+    public int surfaceY(int x, int z, double w) {
         double n = noise(x, z, w);
         return (int) Math.floor(BASE_HEIGHT + n * HEIGHT_AMPLITUDE);
     }
 
     /** {@code (x,y,z,w)} が固体地形かどうか。 */
     public boolean isSolid(int x, int y, int z, int w) {
+        return isSolid(x, y, z, (double) w);
+    }
+
+    /** {@link #isSolid(int, int, int, int)} の連続 w 版。 */
+    public boolean isSolid(int x, int y, int z, double w) {
         return y >= MIN_Y && y <= surfaceY(x, z, w);
     }
 
@@ -164,6 +174,20 @@ public final class HyperTerrain {
      * <p>w について厳密に周期 {@link #sliceCount} を持つ。
      */
     public double noise(int x, int z, int w) {
+        return noise(x, z, (double) w);
+    }
+
+    /**
+     * {@link #noise(int, int, int)} の連続 w 版。
+     *
+     * <p><b>整数 w では int 版とビット単位で完全に同一の値を返す</b> (int 版は
+     * この実装への委譲になっており、 実装は 1 本しかない)。 根拠は
+     * {@link #octave(int, double, double, double, int)} の説明を参照。
+     *
+     * <p>周期性も整数版と同じく厳密で、 小数 w に対しても
+     * {@code noise(x,z,w) == noise(x,z,w+N)} がビット単位で成立する。
+     */
+    public double noise(int x, int z, double w) {
         double total = 0.0;
         double amp = 1.0;
         int xzFreq = 1;
@@ -183,20 +207,42 @@ public final class HyperTerrain {
     // ── 値ノイズ本体 ────────────────────────────────────────────
 
     /**
-     * 1 オクターブ分の 3D 値ノイズ (x, z は連続・w は周期 {@code wPeriod} の格子)。
+     * 1 オクターブ分の 3D 値ノイズ (x, z は連続・w も連続・w 格子は周期 {@code wPeriod})。
+     *
+     * <h3>整数 w での厳密な同一性</h3>
+     * w を {@code 整数部 wi + 小数部 f} に分け、 <b>整数部だけを整数演算で</b>
+     * 周期に畳み込む。 {@code f == 0.0} のとき {@code f * wPeriod} は厳密に
+     * {@code 0.0} なので {@code u} は {@code rem / (double) sliceCount} そのものに
+     * 帰着し、 {@code u < 1} より {@code step == 0}・{@code w0 == base} となる。
+     * すなわち小数 w 対応前の整数専用実装と <b>ビット単位で同一</b>の式に落ちる
+     * (整数 w の経路が別実装として残っていないので乖離しようがない)。
+     *
+     * <h3>小数 w でも周期は厳密</h3>
+     * {@code w} → {@code w + N} で {@code wi} が {@code N} 増え {@code scaled} が
+     * {@code N * wPeriod} 増えるため、 {@code base} は {@code wPeriod} だけずれる
+     * (= {@code mod wPeriod} で不変) 一方 {@code rem} と {@code f} は完全に一致する。
+     * したがって浮動小数の丸めを経由せずに周期性が保たれる。
      *
      * @param wPeriod このオクターブにおける w 格子点数。 添字はこれで畳み込まれる。
      */
-    private double octave(int octaveIndex, double fx, double fz, int w, int wPeriod) {
+    private double octave(int octaveIndex, double fx, double fz, double w, int wPeriod) {
         int x0 = (int) Math.floor(fx);
         int z0 = (int) Math.floor(fz);
         double tx = fade(fx - x0);
         double tz = fade(fz - z0);
 
-        // w 格子は整数演算で厳密に周期化する (下の wLattice を参照)。
-        long scaled = (long) w * wPeriod;
-        int w0 = (int) Math.floorDiv(scaled, sliceCount);
-        double tw = fade(Math.floorMod(scaled, (long) sliceCount) / (double) sliceCount);
+        // w 格子: 整数部は整数演算で厳密に周期化する (下の wLattice を参照)。
+        int wi = (int) Math.floor(w);
+        double f = w - wi;                                  // [0, 1)
+        long scaled = (long) wi * wPeriod;
+        int base = (int) Math.floorDiv(scaled, sliceCount);
+        long rem = Math.floorMod(scaled, (long) sliceCount);
+
+        // 小数部はここでだけ効く。 f == 0.0 なら u == rem / sliceCount に厳密一致。
+        double u = (rem + f * wPeriod) / (double) sliceCount;
+        int step = (int) Math.floor(u);
+        double tw = fade(u - step);
+        int w0 = base + step;
 
         int w0m = Math.floorMod(w0, wPeriod);
         int w1m = Math.floorMod(w0 + 1, wPeriod);

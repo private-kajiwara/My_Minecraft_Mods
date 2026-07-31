@@ -1,5 +1,8 @@
 package com.kajiwara.hyperslice.command;
 
+import com.kajiwara.hyperslice.bstep.BStepCommands;
+import com.kajiwara.hyperslice.bstep.BStepExperiment;
+import com.kajiwara.hyperslice.bstep.BStepSession;
 import com.kajiwara.hyperslice.bswap.BSwapCommands;
 import com.kajiwara.hyperslice.bswap.BSwapExperiment;
 import com.kajiwara.hyperslice.core.SliceRegistry;
@@ -45,7 +48,17 @@ public final class HyperSliceCommands {
             if (BSwapExperiment.EXPERIMENT_ENABLED) {
                 BSwapCommands.build(dispatcher);
             }
+            // 【方式B 中核】差分適用ループ。 同じく呼び出し側で定数判定する。
+            if (BStepExperiment.EXPERIMENT_ENABLED) {
+                BStepCommands.build(dispatcher);
+            }
         });
+
+        // 【方式B 中核】連続ステップの駆動とセッションの後始末。 コマンド登録コールバックの
+        // 中でやると /reload のたびに二重登録されるのでここ (init 時 1 回)。
+        if (BStepExperiment.EXPERIMENT_ENABLED) {
+            BStepSession.register();
+        }
     }
 
     private static void build(CommandDispatcher<CommandSourceStack> dispatcher) {

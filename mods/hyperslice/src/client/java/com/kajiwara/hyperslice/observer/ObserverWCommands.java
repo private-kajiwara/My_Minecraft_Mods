@@ -3,7 +3,6 @@ package com.kajiwara.hyperslice.observer;
 import java.util.Locale;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 
@@ -13,17 +12,21 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.network.chat.Component;
 
 /**
- * <b>【診断実験】</b> {@code /observerw} — 観測面 w の直接指定とリセット。
- *
- * <p><b>クライアントコマンド</b>である点が要点。 {@link ObserverW} はクライアント権威なので、
- * サーバコマンドにするとパケットが必要になる (新しいパケット型を足さない方針に反する)。
- * WorldChange の {@code /worldChange} と同じ {@link ClientCommandRegistrationCallback} 経路。
+ * {@code /observerw} — 今の観測面 w の<b>表示</b>。
  *
  * <pre>
- *   /observerw           現在値を表示
- *   /observerw &lt;value&gt;   直接指定 (特定値での静止確認用)
- *   /observerw reset     所属スライス本来の観測面 (slice + 0.5) へ戻す
+ *   /observerw           サーバーから届いている観測面 w / スライス本来の w / ズレ を表示
  * </pre>
+ *
+ * <h2>読み取り専用になった理由</h2>
+ * 方式B の統合で w の権威が<b>サーバー</b>へ移った。 クライアントコマンドから値を
+ * 書き換えると、 サーバーが次に配る値で即座に上書きされる (= 効かないコマンドが残る)。
+ * 絶対値の指定はサーバー側の <b>{@code /bstep to <w>}</b> に移してある。
+ * そちらなら地形も同時に追従するので、 特定の w で静止させて見比べる用途が本当に成立する。
+ *
+ * <p>クライアントコマンドのまま残しているのは、 これがクライアントが今どう見えているかを
+ * 出すもの (= サーバーへ問い合わせる意味がない) だから。 WorldChange の
+ * {@code /worldChange} と同じ {@link ClientCommandRegistrationCallback} 経路。
  *
  * <p>{@link ObserverW#EXPERIMENT_ENABLED} が {@code false} なら<b>登録もされない</b>。
  */
@@ -45,15 +48,6 @@ public final class ObserverWCommands {
         LiteralArgumentBuilder<FabricClientCommandSource> root = ClientCommands.literal("observerw");
 
         root.executes(ObserverWCommands::show);
-        root.then(ClientCommands.literal("reset").executes(c -> {
-            ObserverW.reset();
-            return show(c);
-        }));
-        root.then(ClientCommands.argument("value", DoubleArgumentType.doubleArg())
-                .executes(c -> {
-                    ObserverW.set(DoubleArgumentType.getDouble(c, "value"));
-                    return show(c);
-                }));
 
         dispatcher.register(root);
     }

@@ -68,8 +68,16 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
     private static final BlockState BEDROCK = Blocks.BEDROCK.defaultBlockState();
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 
-    /** 地表からこの深さまでを土に、 最上段を草にする。 */
-    private static final int SOIL_DEPTH = 4;
+    /**
+     * 地表からこの深さまでを土に、 最上段を草にする。
+     *
+     * <p>【方式B 中核】{@code /bstep} の差分計算が「影響を受ける y 範囲」を
+     * {@code [min(s0,s1) - (SOIL_DEPTH-1), max(s0,s1)]} と導くのに要るため public。
+     * <b>値とロジックは一切変えていない</b> ({@link #stateAt} と同じく可視性のみ)。
+     * 複製しなかったのは、 複製するとこの定数を変えたときに差分の範囲が黙って
+     * 足りなくなる (壊れても例外が出ず、 地形が中途半端に残るだけ) ため。
+     */
+    public static final int SOIL_DEPTH = 4;
 
     private final int w;
     private final int sliceCount;

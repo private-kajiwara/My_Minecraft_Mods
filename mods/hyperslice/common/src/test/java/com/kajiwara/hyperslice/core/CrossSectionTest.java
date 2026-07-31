@@ -130,10 +130,45 @@ class CrossSectionTest {
 
     @Test
     void observationPlaneIsSliceCentre() {
-        // ブロックは w ∈ [n, n+1) を占めるので、 観測面は層の中心 n+0.5
+        // 【方式A】ブロックは w ∈ [n, n+1) を占めるので、 観測面は層の中心 n+0.5
         assertEquals(0.5, CrossSection.observationPlane(0), EPS);
         assertEquals(3.5, CrossSection.observationPlane(3), EPS);
         assertEquals(-0.5, CrossSection.observationPlane(-1), EPS);
+    }
+
+    /**
+     * 【方式B】観測面は地形 w と<b>厳密に一致</b>する (オフセットは付かない)。
+     *
+     * <p>方式B では地形が今の w で切り直されるので、 エンティティと地形が同一の
+     * 超平面を共有していなければならない。 ここに {@code +0.5} が混ざると、
+     * 「地形は動いているのに球の断面が半スライスぶんずれて膨らむ」という、
+     * 実機では原因が非常に見えにくい壊れ方になる。
+     */
+    @Test
+    void planeForTerrainWHasNoOffset() {
+        assertEquals(0.0, CrossSection.planeForTerrainW(0.0), EPS);
+        assertEquals(3.0, CrossSection.planeForTerrainW(3.0), EPS);
+        assertEquals(3.125, CrossSection.planeForTerrainW(3.125), EPS);
+        assertEquals(-1.5, CrossSection.planeForTerrainW(-1.5), EPS);
+    }
+
+    /**
+     * 方式B: 地形 w に居る物体の断面が最大になる。
+     *
+     * <p>{@code slice_n} のディメンションは {@code HyperTerrain} を {@code w = n} で
+     * 評価している (n+0.5 ではない) ので、 整数スライスに静止しているときも
+     * 「地形の w = 観測面」が成り立つ。
+     */
+    @Test
+    void entityAtTerrainWIsFullSizeUnderMethodB() {
+        double terrainW = 3.0;
+        double plane = CrossSection.planeForTerrainW(terrainW);
+        HyperEntityRecord r = new HyperEntityRecord(
+                java.util.UUID.randomUUID(), HyperEntityType.DRIFTER,
+                new HyperVec(0, 64, 0, terrainW), HyperVec.ZERO);
+        assertEquals(HyperEntityType.DRIFTER.wThickness() / 2.0,
+                r.crossSectionRadius(plane), EPS);
+        assertEquals(0.0, r.dw(plane), EPS);
     }
 
     /** スライス n の観測者から見て、 w=n+0.5 にいる物体の断面が最大になる。 */

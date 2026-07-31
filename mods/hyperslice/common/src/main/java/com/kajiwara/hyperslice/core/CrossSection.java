@@ -18,9 +18,16 @@ package com.kajiwara.hyperslice.core;
  * 正しい 4 次元物理がそのまま最小実装になる。
  *
  * <h2>観測面の規約</h2>
- * ブロックは {@code w ∈ [n, n+1)} を占める。 よってスライス {@code n} にいる
- * プレイヤーの観測超平面は {@code w = n + 0.5} (ブロック層が観測面に対して対称になる)。
- * {@code dw = entity.w - observationPlaneW}。
+ * {@code dw = entity.w - observationPlaneW}。 観測面の求め方は<b>方式A と方式B で違う</b>ので
+ * 下記 2 つのメソッドを取り違えないこと。
+ *
+ * <ul>
+ *   <li><b>方式A</b> ({@link #observationPlane(int)}) … スライスが別ディメンションで、
+ *       ブロックは {@code w ∈ [n, n+1)} を占めると解釈する。 よって観測面は
+ *       {@code w = n + 0.5} (ブロック層が観測面に対して対称になる)</li>
+ *   <li><b>方式B</b> ({@link #planeForTerrainW(double)}) … 地形自体が連続な w で
+ *       切り直されるので、 観測面は<b>地形 w そのもの</b>。 オフセットは付かない</li>
+ * </ul>
  */
 public final class CrossSection {
 
@@ -28,13 +35,41 @@ public final class CrossSection {
     }
 
     /**
-     * スライス番号から観測超平面の w を返す。
+     * <b>方式A</b>: スライス番号から観測超平面の w を返す ({@code slice + 0.5})。
      *
-     * <p>方式A では {@code slice + 0.5}。 方式B で小数 w になっても
-     * 呼び出し側の API は変わらない。
+     * <p>スライスが別ディメンションであり、 そのディメンションのブロックが
+     * {@code w ∈ [n, n+1)} を占めると解釈したときの観測面。
+     *
+     * <p><b>方式B では使わない</b> ({@link #planeForTerrainW(double)} を使う)。
+     * 方式B へ移行してもこのメソッドを残すのは、 方式B を無効化したときに
+     * 挙動が完全に元へ戻る (= 可逆性) ようにするため。
      */
     public static double observationPlane(int slice) {
         return slice + 0.5;
+    }
+
+    /**
+     * <b>方式B</b>: 地形の w から観測超平面の w を返す。 <b>オフセットは付かない</b>。
+     *
+     * <h2>なぜ {@code +0.5} しないのか</h2>
+     * 方式A の {@code +0.5} は「ブロックが {@code w ∈ [n, n+1)} という<b>厚み</b>を持つ」
+     * という解釈から来ている。 しかし地形の実装はそうなっていない:
+     * {@code slice_n} のディメンションは {@code HyperTerrain} を
+     * <b>{@code w = n} で厳密に評価</b>している (生成器の Codec が {@code "w": n} を
+     * そのまま {@code surfaceY(x, z, w)} へ渡す)。 つまりブロック層は
+     * 「{@code w = n} で切った断面を w 方向に押し出したもの」であって、
+     * {@code [n, n+1)} の体積平均ではない。
+     *
+     * <p>方式B では w が連続になり、 地形は「今の w で切り直した断面」そのものになる。
+     * したがってエンティティと地形が同一の超平面を共有するには
+     * <b>観測面 = 地形 w</b> でなければならない。 方式A で {@code +0.5} ずれていても
+     * 無害だったのは、 その値をエンティティ層しか読んでいなかったため。
+     *
+     * <p>恒等関数だが<b>規約を書く場所を 1 箇所に決めるため</b>にメソッドにしてある
+     * (呼び出し側に {@code +0.5} を書かせない・書かないことの理由が読める)。
+     */
+    public static double planeForTerrainW(double terrainW) {
+        return terrainW;
     }
 
     /**

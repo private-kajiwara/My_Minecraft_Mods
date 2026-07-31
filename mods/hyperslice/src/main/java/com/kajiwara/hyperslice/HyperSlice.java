@@ -1,9 +1,13 @@
 package com.kajiwara.hyperslice;
 
+import com.kajiwara.hyperslice.bstep.BStepExperiment;
+import com.kajiwara.hyperslice.bstep.WDriveInput;
 import com.kajiwara.hyperslice.command.HyperSliceCommands;
 import com.kajiwara.hyperslice.core.SliceRegistry;
 import com.kajiwara.hyperslice.entity.HyperEntityService;
 import com.kajiwara.hyperslice.net.HyperEntitySyncPayload;
+import com.kajiwara.hyperslice.net.WInputPayload;
+import com.kajiwara.hyperslice.net.WStatePayload;
 import com.kajiwara.hyperslice.worldgen.HyperSliceChunkGenerator;
 
 import net.fabricmc.api.ModInitializer;
@@ -40,13 +44,31 @@ public class HyperSlice implements ModInitializer {
         Registry.register(BuiltInRegistries.CHUNK_GENERATOR,
                 CHUNK_GENERATOR_ID, HyperSliceChunkGenerator.CODEC);
 
-        // 4 次元エンティティ層: パケット型の登録と、 自前 tick の駆動。
+        // 4 次元エンティティ層のパケット型。
         // バニラ Entity には一切載せない (エンティティ層を ServerLevel 非依存に保つため)。
         PayloadTypeRegistry.clientboundPlay().register(
                 HyperEntitySyncPayload.TYPE, HyperEntitySyncPayload.STREAM_CODEC);
-        HyperEntityService.register();
 
+        // 【方式B 中核】w のサーバー権威。 型の登録はフラグに関係なく行う:
+        // 登録はチャンネル一覧の広告に出るだけで挙動を変えないのに対し、 片側だけ
+        // 登録されていない状態で送ると例外になるため、 条件付きにすると
+        // 「クライアントは有効・サーバーは無効」の組み合わせで壊れる。
+        PayloadTypeRegistry.clientboundPlay().register(
+                WStatePayload.TYPE, WStatePayload.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(
+                WInputPayload.TYPE, WInputPayload.STREAM_CODEC);
+        if (BStepExperiment.EXPERIMENT_ENABLED) {
+            WDriveInput.register();
+        }
+
+        // ── tick の登録順に意味がある ──────────────────────────────
+        //   Fabric の END_SERVER_TICK は登録順に呼ばれる。 w を進める側
+        //   (HyperSliceCommands 経由で BStepSession) を先に登録することで、
+        //   同じティックの中で「w が進む → その w で観測面を決めて配る」順になる。
+        //   逆にすると 4 次元エンティティの断面が常に 1 ティックぶん古い w で
+        //   計算され、 地形と観測面が僅かにずれ続ける。
         HyperSliceCommands.register();
+        HyperEntityService.register();
 
         LOGGER.info("[{}] chunk generator registered as {}", MOD_ID, CHUNK_GENERATOR_ID);
     }
