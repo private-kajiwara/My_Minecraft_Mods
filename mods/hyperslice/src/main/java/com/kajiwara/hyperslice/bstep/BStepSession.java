@@ -8,11 +8,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.WeakHashMap;
 
 import com.kajiwara.hyperslice.core.HyperTerrain;
 import com.kajiwara.hyperslice.slice.SliceTeleporter;
+import com.kajiwara.hyperslice.worldgen.HyperSliceChunkGenerator;
 
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.network.chat.Component;
@@ -22,7 +23,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
  * <b>【方式B 中核】</b> レベルの w の<b>権威</b>と、 それを進める駆動。
@@ -41,18 +41,30 @@ import net.minecraft.world.level.chunk.LevelChunk;
  *
  * <h2>w の持ち方</h2>
  * <ul>
- *   <li>レベルごとに 1 つの「今の w」。 初期値はそのスライス本来の整数 w</li>
+ *   <li>レベルごとに 1 つの「今の w」。 初期値は<b>保存値</b>、 無ければそのスライス本来の
+ *       整数 w ({@link WSavedState})。 保存しないと、 地形だけがセーブに焼かれた状態で
+ *       開き直すことになり、 次の 1 ステップで巨大な差分が出る</li>
  *   <li>さらに<b>チャンクごとに</b>「そのチャンクが今どの w の地形か」を持つ。
- *       {@link WeakHashMap} のキーは {@link LevelChunk} の<b>参照同一性</b>
- *       ({@code LevelChunk} は {@code equals}/{@code hashCode} を上書きしていない。 javap で確認)
- *       なので、 アンロード → 再ロードで別インスタンスになったチャンクは
- *       自動的に「本来の整数 w」へ戻る。 これが無いと、 途中でロードされたチャンクだけ
- *       永久にずれた地形が残り {@code /hyperslice n} との比較が壊れる</li>
+ *       実体はチャンク自身に貼る永続 attachment ({@link ChunkW})。 これが無いと、
+ *       途中でロードされたチャンクや再ロードされたチャンクだけ永久にずれた地形が残り
+ *       {@code /hyperslice n} との比較が壊れる</li>
+ *   <li>生成器にも同じ値を渡す ({@link LiveW})。 新規チャンクが<b>生成時点で今の w</b>で
+ *       作られるので、 「一瞬だけ違う w の地形が見えてから直る」ちらつきが起きない</li>
  * </ul>
  *
- * <h2>スケジューラとの関係 — 追い付きは per-chunk w がそのまま担う</h2>
- * {@link WScheduler} が見送ったチャンクは w が遅れる。 次に順番が来たときに当てるのは
- * 「1 ステップぶん」ではなく<b>そのチャンクの w から今の w までの蓄積分</b>である。
+ * <h2>w は毎ティック連続に進む — 「ステップ」という単位は存在しない</h2>
+ * かつては量子 ({@link BStepExperiment#STEP_QUANTUM}) が溜まるたびに w を飛ばし、
+ * その瞬間に全対象へ一括で差分を当てていた。 これが実測でサーバースレッドを単発 81.97ms
+ * 占有し、 ティック実周期を 127.73ms へ伸ばしていた (ティック予算 50ms)。
+ *
+ * <p>今は w を毎ティック {@link BStepExperiment#W_RATE_PER_TICK} ずつ連続に進め、
+ * 適用は<b>毎ティック時間予算の範囲だけ</b>行う ({@link #catchUp})。 量子は
+ * 「w をどう進めるか」ではなく<b>「どれだけ遅れてよいか」の単位</b>になった
+ * ({@link WScheduler#BAND_QUANTA})。
+ *
+ * <h2>追い付きは per-chunk w がそのまま担う</h2>
+ * 予算に入らなかったチャンクは w が遅れる。 次に順番が来たときに当てるのは
+ * 「1 ティックぶん」ではなく<b>そのチャンクの w から今の w までの蓄積分</b>である。
  * これは新しい機構ではなく、 上の per-chunk w がそのまま効く:
  * {@code BStepDiff.compute(chunk, terrain, そのチャンクの w, 今の w)} は
  * delta の大きさに一切依存しない (y 範囲の導出が {@code lo=min(s0,s1)} /
@@ -80,33 +92,26 @@ public final class BStepSession {
     /** このレベルの「今の観測 w」。 */
     private double currentW;
 
-    /** チャンクごとの「今の地形 w」。 未登録なら {@link #nominalW}。 */
-    private final WeakHashMap<LevelChunk, Double> chunkW = new WeakHashMap<>();
+    /** セーブに焼く先。 {@link #currentW} が変わるたびに書き写す。 */
+    private final WSavedState saved;
+
+    /** 生成器へ渡す「今の w」。 ワーカースレッドから読まれる。 */
+    private final LiveW liveW;
 
     /**
-     * このセッションが出した通算ステップ数。 {@link WScheduler} の位相の基準。
+     * 前回の追い付き走査で<b>予算に入りきらなかった対象が居たか</b>。
      *
-     * <p>単発 ({@code /bstep <delta>}) では増やさない。 単発はスケジューラを通さず
-     * 全チャンクを更新するので、 位相の基準を動かす意味がないうえ、
-     * 動かすと連続駆動の位相がコマンドを撃つたびにずれる。
+     * <p>w が動いておらずこれも偽なら、 毎ティック 625 回の {@code getChunkNow} を
+     * 回す意味は無い ({@link WScheduler#IDLE_RESCAN_TICKS} を参照)。
      */
-    private long stepIndex;
+    private boolean catchUpPending;
+
+    /** 直近の適用の実績。 空振りのティックでも上書きするので、 表示は常に「今」を指す。 */
+    private BStepRunner.StepResult last;
 
     // ── auto の状態 ────────────────────────────────────────────
 
     private double rate;
-    /** まだステップに変換していない w の残り。 */
-    private double pending;
-    /**
-     * 出し切れずに捨てた w の合計。
-     *
-     * <p>1 ティックに出すステップは<b>最大 1 回</b>に固定してある (負荷を青天井にしないため)。
-     * したがって {@code rate / STEP_QUANTUM} が tickrate を超えると出し切れない。
-     * 既定 (量子 0.125・20 TPS) では <b>2.5 w/秒</b>が上限。 これを超えたぶんを黙って
-     * 溜めると「w は進んでいるのに地形が追いつかない」状態が測定値に見えないまま進むので、
-     * 捨てて<b>捨てた量を報告する</b>。
-     */
-    private double droppedW;
     private java.util.UUID driverId;
     private int hudCountdown;
 
@@ -114,9 +119,11 @@ public final class BStepSession {
      * このティックで既にキー入力によって駆動済みか。
      *
      * <p>キー入力と {@code /bstep auto} が同じレベルで同時に走っているとき、
-     * 1 ティックに 2 回 {@link #tick} を呼ぶと量子が 2 回出てしまう。
+     * 1 ティックに 2 回 {@link #tick} を呼ぶと w が 2 回進んでしまう。
      * キー入力側が先に走り、 その場合 auto 側の呼び出しを飛ばす
      * (レートはキー入力側の {@link #tick} が合算して扱っている)。
+     *
+     * <p>駆動していないレベルの追い付き ({@link #catchUp}) を回すかどうかの判定にも使う。
      */
     private boolean drivenThisTick;
 
@@ -132,7 +139,24 @@ public final class BStepSession {
         this.level = level;
         this.nominalW = nominalW;
         this.sliceCount = sliceCount;
-        this.currentW = nominalW;
+        this.saved = WSavedState.of(level, nominalW);
+        this.currentW = saved.currentW();
+        this.liveW = new LiveW(currentW);
+    }
+
+    /**
+     * 生成器に「今の w」を差し込む (方式B)。
+     *
+     * <p>セッションを作るたびに ({@link #of} の中で) 1 回呼ぶ。 これ以降、 そのディメンションで
+     * 新規生成されるチャンクは<b>整数 w ではなく今の連続 w</b>で作られ、 使った w が
+     * {@link ChunkW} に記録される。 方式A ではセッションそのものが作られない
+     * ({@code BStepExperiment.EXPERIMENT_ENABLED} が偽なら {@link #of} の呼び出し側が
+     * すべて定数畳み込みで消える) ので、 生成器は Codec の整数 w のまま。
+     */
+    private void installLiveW() {
+        if (level.getChunkSource().getGenerator() instanceof HyperSliceChunkGenerator generator) {
+            generator.setWSource(liveW);
+        }
     }
 
     // ── 取得 ────────────────────────────────────────────────────
@@ -162,6 +186,10 @@ public final class BStepSession {
         }
         BStepSession fresh = new BStepSession(level, w, n);
         SESSIONS.put(level.dimension(), fresh);
+        // 生成器への差し込みはセッションの生成と<b>必ず対</b>にする。 レベル読み込みイベント側
+        // だけで行うと、 何らかの理由でそこを通らずに作られたセッションの生成器が
+        // 整数 w のまま取り残される (= そのディメンションだけ新規チャンクがちらつく)。
+        fresh.installLiveW();
         return fresh;
     }
 
@@ -202,7 +230,7 @@ public final class BStepSession {
         return rate;
     }
 
-    // ── 単発ステップ ────────────────────────────────────────────
+    // ── 単発適用 (コマンド専用・分散しない) ────────────────────
 
     /**
      * w を {@code delta} だけ進めて<b>全チャンク</b>に差分を適用する (単発)。
@@ -216,20 +244,14 @@ public final class BStepSession {
     /**
      * w を絶対値で指定して<b>全チャンク</b>に差分を適用する (単発。 {@code reset} も使う)。
      *
-     * <p><b>単発ではスケジューラを通さない。</b> 通すと遠方が更新されないまま残り、
+     * <p><b>単発では優先度も時間予算も通さない。</b> 通すと遠方が更新されないまま残り、
      * 「{@code /bstep 3.0} してから {@code /hyperslice 3} と見比べる」という
-     * 正しさの検証手段が壊れる。 スケジューラが効くのは連続駆動のときだけ。
+     * 正しさの検証手段が壊れる。 分散が効くのは連続駆動のときだけ。
+     *
+     * <p>差分計算も 1 バッチ (= 全対象を一度に並列化) で行う。 連続駆動と同じ
+     * バッチ分割にすると並列度が変わり、 過去の実測値と比較できなくなる。
      */
     public BStepRunner.StepResult stepTo(ServerPlayer player, double targetW) {
-        return apply(player, targetW, false);
-    }
-
-    /**
-     * 差分を適用する。
-     *
-     * @param scheduled {@code true} なら {@link WScheduler} で今回更新するチャンクを絞る
-     */
-    private BStepRunner.StepResult apply(ServerPlayer player, double targetW, boolean scheduled) {
         HyperTerrain terrain = BStepRunner.terrainOf(level);
         if (terrain == null) {
             return null;
@@ -239,31 +261,139 @@ public final class BStepSession {
         ChunkPos centre = ChunkPos.containing(player.blockPosition());
         List<BStepRunner.Candidate> candidates = BStepRunner.collectCandidates(
                 level, centre, BStepExperiment.radius(),
-                chunk -> chunkW.getOrDefault(chunk, (double) nominalW), skipped);
+                chunk -> ChunkW.of(chunk, nominalW), skipped);
         if (candidates.isEmpty()) {
             return null;
         }
 
-        WScheduler.Selection selection = WScheduler.select(
-                candidates, stepIndex, scheduled && BStepExperiment.scheduler(), targetW);
+        List<BStepRunner.Target> targets = new ArrayList<>(candidates.size());
+        for (BStepRunner.Candidate candidate : candidates) {
+            targets.add(new BStepRunner.Target(candidate.chunk(), candidate.currentW(),
+                    WScheduler.bandOf(candidate.distance())));
+        }
 
         double fromW = currentW;
-        BStepRunner.StepResult result = BStepRunner.step(
-                level, selection, terrain, sliceCount, fromW, targetW, skipped[0]);
+        setCurrentW(targetW);
 
-        currentW = targetW;
-        // 見送ったチャンクの w は<b>進めない</b>。 進めると蓄積分が失われ、
-        // そのチャンクは永久にずれた地形のまま残る。
-        for (BStepRunner.Target target : selection.targets()) {
-            chunkW.put(target.chunk(), targetW);
-        }
-        if (scheduled) {
-            stepIndex++;
+        // 締め切り無し・個数無制限・1 バッチ (= 全対象を一度に並列化)。
+        BStepRunner.Applied applied = BStepRunner.apply(
+                level, targets, terrain, targetW,
+                Long.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        for (int i = 0; i < applied.chunks(); i++) {
+            ChunkW.set(targets.get(i).chunk(), targetW);
         }
 
+        BStepRunner.StepResult result = new BStepRunner.StepResult(
+                fromW, targetW, BStepDiff.phase(targetW, sliceCount),
+                applied.chunks(), skipped[0], targets.size() - applied.chunks(),
+                applied.blocks(), applied.columns(), applied.sections(),
+                WScheduler.bandCounts(targets, applied.chunks()), 0.0,
+                applied.diffNs(), applied.applyNs());
+
+        // 全チャンクを今の w に揃えたので、 追い付き待ちは無い。
+        catchUpPending = false;
+        last = result;
         record(result);
+        // この適用がサーバースレッドを占有した実時間をティック単位で積む。
+        // バニラの計測窓は我々の仕事を含まないので、 自分で測るしかない ({@link TickPeak})。
+        TickPeak.recordOccupancy(result.total());
         probeLight(centre);
         return result;
+    }
+
+    /**
+     * このレベルの w を動かす。 <b>currentW を書き換える唯一の場所。</b>
+     *
+     * <p>セーブと生成器へ必ず同時に書き写す。 生成器へ渡すのは volatile 1 個への代入で、
+     * 以後に生成されるチャンクはこの w で作られる ({@link LiveW})。
+     */
+    private void setCurrentW(double w) {
+        currentW = w;
+        saved.set(w);
+        liveW.set(w);
+    }
+
+    // ── 追い付き (毎ティック・時間予算つき) ──────────────────
+
+    /**
+     * <b>【方式B 中核】</b> このティックぶんの追い付き。
+     *
+     * <p>やることは 3 つだけ:
+     * <ol>
+     *   <li>ロード済み対象を集め、 それぞれの遅れ ({@code |今の w - そのチャンクの w|}) を測る</li>
+     *   <li>{@code 遅れ / その帯が許す粒度} の降順に並べる ({@link WScheduler#plan})</li>
+     *   <li><b>時間予算の範囲だけ</b>当てる。 残りは次のティックで優先度が上がって戻ってくる</li>
+     * </ol>
+     *
+     * <p>持ち越しのキューは持たない。 当てたチャンクの w だけを進めるので、
+     * 残りは次のティックの候補収集で「遅れが大きいまま」自動的に現れる。 キューを持つと
+     * 「アンロードされた・半径外へ出た対象をいつ捨てるか」という答えの無い問いが増える。
+     *
+     * @param wMoved このティックで w が動いたか (動いていなければ間引いてよい)
+     */
+    private void catchUp(MinecraftServer server, ServerPlayer centrePlayer, boolean wMoved) {
+        if (!wMoved && !catchUpPending
+                && server.getTickCount() % WScheduler.IDLE_RESCAN_TICKS != 0) {
+            // 誰も w を触っておらず追い付き待ちも無い。 それでも完全には止めない:
+            // アンロードされていたチャンクは古い w を焼いたまま戻ってくる。
+            return;
+        }
+
+        HyperTerrain terrain = BStepRunner.terrainOf(level);
+        if (terrain == null) {
+            return;
+        }
+
+        int[] skipped = new int[1];
+        ChunkPos centre = ChunkPos.containing(centrePlayer.blockPosition());
+        List<BStepRunner.Candidate> candidates = BStepRunner.collectCandidates(
+                level, centre, BStepExperiment.radius(),
+                chunk -> ChunkW.of(chunk, nominalW), skipped);
+        if (candidates.isEmpty()) {
+            catchUpPending = false;
+            return;
+        }
+
+        WScheduler.Plan plan = WScheduler.plan(candidates, currentW, BStepExperiment.scheduler());
+        if (plan.due().isEmpty()) {
+            // 全員が粒度の範囲内 = 設計上追い付いている。
+            catchUpPending = false;
+            last = idleResult(plan, skipped[0]);
+            return;
+        }
+
+        BStepRunner.Applied applied = BStepRunner.apply(
+                level, plan.due(), terrain, currentW,
+                System.nanoTime() + WScheduler.budgetNanos(),
+                WScheduler.MAX_CHUNKS_PER_TICK, WScheduler.DIFF_BATCH_CHUNKS);
+
+        for (int i = 0; i < applied.chunks(); i++) {
+            ChunkW.set(plan.due().get(i).chunk(), currentW);
+        }
+        catchUpPending = applied.chunks() < plan.due().size();
+
+        BStepRunner.StepResult result = new BStepRunner.StepResult(
+                currentW, currentW, BStepDiff.phase(currentW, sliceCount),
+                applied.chunks(), skipped[0], plan.due().size() - applied.chunks(),
+                applied.blocks(), applied.columns(), applied.sections(),
+                WScheduler.bandCounts(plan.due(), applied.chunks()),
+                WScheduler.residualLag(plan, applied.chunks(), currentW),
+                applied.diffNs(), applied.applyNs());
+
+        last = result;
+        if (applied.chunks() > 0) {
+            record(result);
+            TickPeak.recordOccupancy(result.total());
+            probeLight(centre);
+        }
+    }
+
+    /** 当てるものが無かったティックの表示用 (遅れの数字だけは正しく出す)。 */
+    private BStepRunner.StepResult idleResult(WScheduler.Plan plan, int skipped) {
+        return new BStepRunner.StepResult(
+                currentW, currentW, BStepDiff.phase(currentW, sliceCount),
+                0, skipped, 0, 0, 0, 0,
+                new int[WScheduler.bandCount()], plan.maxLagNotDue(), 0L, 0L);
     }
 
     // ── 駆動 (キー入力 / auto) ──────────────────────────────────
@@ -272,25 +402,35 @@ public final class BStepSession {
      * イベント登録。 {@code HyperSliceCommands} からフラグ判定つきで 1 回だけ呼ぶ。
      *
      * <p>誰も w を動かしていないときの {@code END_SERVER_TICK} は、
-     * {@code WDriveInput.isIdle()} と {@code active == null} と
-     * {@code WStateSync} のプレイヤー走査 (値が変わっていなければ何も送らない) だけで
-     * 抜ける。 全レベル走査は入力があるときにしか起きない。
+     * {@code WDriveInput.isIdle()} と {@code active == null} と、 各セッションの
+     * {@link #catchUp} の頭にある間引き ({@link WScheduler#IDLE_RESCAN_TICKS}) と、
+     * {@code WStateSync} のプレイヤー走査 (値が変わっていなければ何も送らない) だけで抜ける。
+     * <b>625 回の {@code getChunkNow} が回るのは、 w が動いているか追い付き待ちがあるか、
+     * さもなくば 1 秒に 1 回だけ</b>である。
      */
     public static void register() {
+        // レベル読み込み時にセッションを<b>先出しで</b>作る。 遅延生成のままだと、
+        // ワールドを開き直したあと誰かが w を動かすまで LevelW が本来の整数 w を返し、
+        // 「地形は保存された w なのに観測面と HUD は整数 w」という不整合が残る。
+        // ここで作れば保存値の復元と生成器への差し込みが同時に済む。
+        ServerLevelEvents.LOAD.register((server, level) -> {
+            if (SliceTeleporter.isSlice(level)) {
+                // 生成 = 保存値の復元 + 生成器への差し込み (of の中で対にしてある)。
+                of(level);
+            }
+        });
         ServerTickEvents.END_SERVER_TICK.register(BStepSession::onServerTick);
         // ディメンションキーはワールドを作り直しても同じなので、 サーバー停止時に必ず捨てる
         // (捨てないと ServerLevel の参照をスライス枚数ぶん握ったままになる)。
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> clear());
     }
 
-    /** 連続ステップを開始する。 既に別セッションが走っていればそれを止める。 */
+    /** 連続駆動を開始する。 既に別セッションが走っていればそれを止める。 */
     public void startAuto(ServerPlayer player, double rate) {
         if (active != null && active != this) {
             active.stopAuto();
         }
         this.rate = rate;
-        this.pending = 0.0;
-        this.droppedW = 0.0;
         this.driverId = player.getUUID();
         this.hudCountdown = 0;
         active = this;
@@ -298,7 +438,6 @@ public final class BStepSession {
 
     public void stopAuto() {
         this.rate = 0.0;
-        this.pending = 0.0;
         this.driverId = null;
         if (active == this) {
             active = null;
@@ -313,8 +452,9 @@ public final class BStepSession {
     /**
      * 毎ティックの駆動。
      *
-     * <p>順序に意味がある: <b>期限切れの入力を落とす → w を進める → 進んだ結果を配る</b>。
-     * 配布を先にすると、 クライアントの観測面が常に 1 ティック古い w になる。
+     * <p>順序に意味がある: <b>期限切れの入力を落とす → w を進める → プレイヤーを地形に乗せる
+     * → 進んだ結果を配る</b>。 配布を先にすると、 クライアントの観測面が常に 1 ティック古い w に
+     * なる。 地形に乗せるのを w より先にすると、 1 ティック前の地表へ載せてしまう。
      */
     private static void onServerTick(MinecraftServer server) {
         WDriveInput.expire(server);
@@ -324,11 +464,29 @@ public final class BStepSession {
         if (auto != null && auto.rate > 0.0 && !auto.drivenThisTick) {
             auto.tick(server, 0);
         }
+        // 駆動していないレベルも追い付きだけは回す。 w を誰も触っていなくても、
+        // アンロードされていたチャンクは古い w を焼いたまま戻ってくるため
+        // (走査そのものの間引きは catchUp が判断する)。
         for (BStepSession session : SESSIONS.values()) {
+            if (!session.drivenThisTick) {
+                ServerPlayer centre = session.centrePlayer(server);
+                if (centre != null) {
+                    session.catchUp(server, centre, false);
+                }
+            }
             session.drivenThisTick = false;
         }
 
+        // 地形に乗る。 適用が出なかったティックでも呼ぶ (SMOOTH の追従と、
+        // 遅れていたチャンクが追い付いた場合のため)。
+        WRide.tick(server);
+
         WStateSync.broadcast(server);
+
+        // ティックの締め。 <b>この handler の最後</b>でなければならない。 ここまでの経過が
+        // そのままティックの実周期になり、 それが「サーバーが締め切りに間に合ったか」を
+        // 答える唯一の数字である ({@link TickPeak} の javadoc を参照)。
+        TickPeak.endTick();
     }
 
     /**
@@ -354,16 +512,21 @@ public final class BStepSession {
                 continue;
             }
             session.tick(server, direction);
-            session.drivenThisTick = true;
         }
     }
 
     /**
-     * このセッションの 1 ティック。
+     * このセッションの 1 ティック: <b>w を進める → 予算ぶんだけ追い付かせる</b>。
+     *
+     * <p>w は量子に丸めずそのまま進める。 「量子ぶん溜まったら一括で当てる」構造こそが
+     * バーストの発生源だったので、 適用側から「ステップ」という単位を無くしてある
+     * (クラス javadoc を参照)。 量子は {@link WScheduler} で「どれだけ遅れてよいか」の
+     * 単位として生きている。
      *
      * @param inputDirection キー入力の向き ({@code -1} / {@code 0} / {@code +1})
      */
     private void tick(MinecraftServer server, int inputDirection) {
+        drivenThisTick = true;
         if (rate > 0.0) {
             ServerPlayer driver = driverId == null ? null
                     : server.getPlayerList().getPlayer(driverId);
@@ -387,19 +550,9 @@ public final class BStepSession {
         }
 
         if (perTick != 0.0) {
-            pending += perTick;
-            // 量子は符号つきで取り出す (キー入力は負方向にも進む)。
-            if (Math.abs(pending) >= BStepExperiment.STEP_QUANTUM) {
-                double quantum = Math.copySign(BStepExperiment.STEP_QUANTUM, pending);
-                pending -= quantum;
-                apply(centre, currentW + quantum, true);
-                if (Math.abs(pending) >= BStepExperiment.STEP_QUANTUM) {
-                    // 出し切れないぶんは溜めずに捨てる (droppedW の説明を参照)。
-                    droppedW += Math.abs(pending);
-                    pending = 0.0;
-                }
-            }
+            setCurrentW(currentW + perTick);
         }
+        catchUp(server, centre, perTick != 0.0);
 
         if (--hudCountdown <= 0) {
             hudCountdown = BStepExperiment.HUD_INTERVAL_TICKS;
@@ -482,7 +635,6 @@ public final class BStepSession {
         int n = history.size();
         history.clear();
         lightLatency.clear();
-        droppedW = 0.0;
         return n;
     }
 
@@ -545,17 +697,28 @@ public final class BStepSession {
 
     // ── 報告 ────────────────────────────────────────────────────
 
-    /** アクションバー 1 行 (連続ステップ中に人間が目で追うためのもの)。 */
+    /**
+     * アクションバー 1 行 (連続駆動中に人間が目で追うためのもの)。
+     *
+     * <p><b>時間の意味を必ず併記すること。</b> ここには性質の違う 3 つの時間が並んでいる:
+     * {@code avg100} = 100 ティック平均 (バニラ・我々の仕事を含まない)、
+     * {@code 占有} = この mod の単発の実時間のウィンドウ最大、
+     * {@code 周期} = ティック間隔の実時間のウィンドウ最大。 混同すると
+     * 「平均が小さいから単発も小さい」という誤った読みに戻る。
+     */
     public Component hudLine(MinecraftServer server) {
-        BStepRunner.StepResult last = history.peekLast();
         double mspt = server.getAverageTickTimeNanos() / 1_000_000.0;
+        double targetMs = server.tickRateManager().millisecondsPerTick();
         return Component.translatable("hyperslice.bstep.hud",
                 fmt(currentW), fmt(phase()),
                 num(mspt), num(tps(server)),
+                num(TickPeak.peakOccupancyNanos() / 1_000_000.0),
+                num(TickPeak.peakSpacingNanos() / 1_000_000.0),
+                TickPeak.overrunTicks(targetMs),
                 last == null ? 0 : last.blocks(),
                 last == null ? 0 : last.chunks(),
                 last == null ? 0 : last.chunksDeferred(),
-                fmt(last == null ? 0.0 : last.maxLagW()),
+                fmt(last == null ? 0.0 : last.residualLagW()),
                 num(median(BStepRunner.StepResult::diffNs) / 1_000_000.0),
                 num(median(BStepRunner.StepResult::applyNs) / 1_000_000.0),
                 num(medianLight() / 1_000_000.0),
@@ -572,7 +735,8 @@ public final class BStepSession {
         lines.add(Component.translatable("hyperslice.bstep.changed",
                 r.blocks(), r.columns(), r.sections()));
         lines.add(Component.translatable("hyperslice.bstep.schedule",
-                bandSummary(r.updatedPerBand()), r.chunksDeferred(), fmt(r.maxLagW())));
+                bandSummary(r.updatedPerBand()), r.chunksDeferred(), fmt(r.residualLagW()),
+                num(WScheduler.budgetMs())));
         lines.add(Component.translatable("hyperslice.bstep.timings",
                 num(r.diffNs() / 1_000_000.0), num(r.applyNs() / 1_000_000.0),
                 num(r.total() / 1_000_000.0)));
@@ -581,6 +745,16 @@ public final class BStepSession {
                 num(max(BStepRunner.StepResult::diffNs) / 1_000_000.0),
                 num(median(BStepRunner.StepResult::applyNs) / 1_000_000.0),
                 num(max(BStepRunner.StepResult::applyNs) / 1_000_000.0)));
+        // ピークは平均と<b>別の行</b>に出す。 同じ行に混ぜると、 かつてのように
+        // 「MSPT が小さいから単発も小さい」と読まれる。
+        double targetMs = server.tickRateManager().millisecondsPerTick();
+        lines.add(Component.translatable("hyperslice.bstep.peak",
+                TickPeak.samples(),
+                num(TickPeak.peakOccupancyNanos() / 1_000_000.0),
+                num(TickPeak.peakSpacingNanos() / 1_000_000.0),
+                TickPeak.overrunTicks(targetMs), num(targetMs),
+                num(TickPeak.vanillaPeakNanos(server) / 1_000_000.0),
+                TickPeak.vanillaOverrunTicks(server, targetMs)));
         lines.add(Component.translatable("hyperslice.bstep.server",
                 num(server.getAverageTickTimeNanos() / 1_000_000.0), num(tps(server)),
                 lightLatency.isEmpty()
@@ -590,10 +764,6 @@ public final class BStepSession {
                                 Component.translatable(lightFallingBehind()
                                         ? "hyperslice.bstep.light.behind"
                                         : "hyperslice.bstep.light.ok"))));
-        if (droppedW > 0.0) {
-            lines.add(Component.translatable("hyperslice.bstep.dropped", fmt(droppedW),
-                    num(BStepExperiment.STEP_QUANTUM * server.tickRateManager().tickrate())));
-        }
         return lines;
     }
 
@@ -651,5 +821,6 @@ public final class BStepSession {
         active = null;
         WDriveInput.clear();
         WStateSync.clear();
+        TickPeak.clear();
     }
 }

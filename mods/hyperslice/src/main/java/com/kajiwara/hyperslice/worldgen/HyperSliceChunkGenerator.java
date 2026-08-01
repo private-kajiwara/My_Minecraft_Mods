@@ -83,6 +83,68 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
     private final int sliceCount;
 
     /**
+     * <b>【方式B 中核】</b> 生成時に読む「今の w」の供給元。 {@code null} なら方式A。
+     *
+     * <p>Codec には整数 {@link #w} が焼かれたままである。 これは<b>そのスライス本来の w</b>で
+     * あり、 データ側の定義として正しい。 方式B が必要とするのは「生成した瞬間の連続 w」で、
+     * これは世界の実行時状態なのでデータではなく<b>差し込み口</b>で受け取る。
+     *
+     * <p>差し込むのはサーバー側 ({@code BStepSession}) がレベル読み込み時に 1 回だけ。
+     * 生成器インスタンスは dimension と 1:1 (LevelStem が slice ごとに別インスタンス) なので、
+     * この 1 本のフィールドで「そのディメンションの今の w」が一意に決まる。
+     */
+    private volatile WSource wSource;
+
+    /**
+     * 生成時の w を供給し、 使った w をチャンクへ記録する差し込み口。
+     *
+     * <p><b>このインタフェースは方式B への唯一の接点</b>であり、 実装は
+     * {@code bstep} パッケージにある。 生成器側から {@code bstep} も
+     * Fabric の attachment API も参照していないのは、 方式B を捨てるときに
+     * このインタフェースと {@link #wSource} を消すだけで済むようにするため。
+     *
+     * <h2>スレッド</h2>
+     * {@link #w()} は<b>ワールド生成のワーカースレッド</b>から呼ばれる。 実装は
+     * volatile な値を 1 つ読むだけにすること (書き手はサーバースレッドのみ)。
+     */
+    public interface WSource {
+
+        /** 今この瞬間の連続 w。 ワーカースレッドから呼ばれる。 */
+        double w();
+
+        /**
+         * このチャンクを {@code w} で生成したことを記録する。
+         *
+         * <p>記録が無いと、 後段の差分適用が「本来の整数 w からの差分」を当ててしまい
+         * 生成直後のチャンクだけ地形が食い違う。
+         */
+        void record(ChunkAccess chunk, double w);
+    }
+
+    /**
+     * 生成時 w の供給元を差し込む (方式B)。 {@code null} を渡せば方式A に戻る。
+     *
+     * <p>方式A では<b>一度も呼ばれない</b>ので {@link #wSource} は永久に {@code null} のまま、
+     * {@link #generationW()} は Codec の整数 {@link #w} をそのまま返す
+     * (= 方式B 導入前とバイト等価)。
+     */
+    public void setWSource(WSource source) {
+        this.wSource = source;
+    }
+
+    /**
+     * 生成に使う w。 方式B では今の連続 w、 方式A ではこのスライス本来の整数 w。
+     *
+     * <p>整数 w のときの結果は {@link HyperTerrain} が<b>ビット単位で</b>整数版と一致する
+     * (int オーバーロードが double 版への委譲になっており実装が 1 本しかない)。
+     * したがって方式B が有効でも、 w を動かしていないスライスの生成結果は方式A と同一である。
+     */
+    private double generationW() {
+        WSource source = wSource;
+        return source == null ? w : source.w();
+    }
+
+    /**
      * 地形シードを導出するための固定キー。
      *
      * <p>26.1.2 の {@link RandomState} はワールドシードを直接公開していない
@@ -150,6 +212,9 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
                                                         StructureManager structureManager,
                                                         ChunkAccess chunk) {
         HyperTerrain terrain = terrainFor(randomState);
+        // 【方式B 中核】生成する w は 1 回だけ読んで固定する。 途中で読み直すと
+        // 同じチャンクの中で列ごとに違う w の地形が混ざる。
+        double genW = generationW();
 
         int minY = chunk.getMinY();
         int maxY = minY + chunk.getHeight() - 1;
@@ -166,7 +231,7 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
                 int worldX = baseX + lx;
                 int worldZ = baseZ + lz;
 
-                int surface = Math.min(terrain.surfaceY(worldX, worldZ, w), maxY);
+                int surface = Math.min(terrain.surfaceY(worldX, worldZ, genW), maxY);
                 boolean underwater = surface < HyperTerrain.SEA_LEVEL;
 
                 for (int y = minY; y <= maxY; y++) {
@@ -180,6 +245,14 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
                     worldSurface.update(lx, y, lz, state);
                 }
             }
+        }
+
+        // 【方式B 中核】どの w で作ったかをチャンク自身に記録する。 これが無いと
+        // 差分適用が「本来の整数 w からの差分」を当て、 生成直後のチャンクだけ地形が食い違う。
+        // 方式A では wSource が null なので 1 行も走らない。
+        WSource source = wSource;
+        if (source != null) {
+            source.record(chunk, genW);
         }
         return CompletableFuture.completedFuture(chunk);
     }
@@ -213,7 +286,7 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
     @Override
     public int getBaseHeight(int x, int z, Heightmap.Types type, LevelHeightAccessor level,
                              RandomState randomState) {
-        int surface = terrainFor(randomState).surfaceY(x, z, w);
+        int surface = terrainFor(randomState).surfaceY(x, z, generationW());
         // 「最初の空きブロック」を返す契約なので地表の 1 つ上。
         // 水面下は水柱の上端 (= 海面の 1 つ上) を地表扱いにする。
         int top = Math.max(surface, HyperTerrain.SEA_LEVEL);
@@ -225,7 +298,7 @@ public class HyperSliceChunkGenerator extends ChunkGenerator {
                                      RandomState randomState) {
         int minY = level.getMinY();
         int height = level.getHeight();
-        int surface = terrainFor(randomState).surfaceY(x, z, w);
+        int surface = terrainFor(randomState).surfaceY(x, z, generationW());
         boolean underwater = surface < HyperTerrain.SEA_LEVEL;
 
         BlockState[] column = new BlockState[height];

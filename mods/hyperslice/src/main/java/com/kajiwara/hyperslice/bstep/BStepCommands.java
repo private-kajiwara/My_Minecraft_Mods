@@ -30,15 +30,16 @@ import net.minecraft.world.level.chunk.LevelChunk;
  *   /bstep auto off                 停止
  *   /bstep reset                    本来の w に戻して再適用し、 計測履歴を捨てる
  *   /bstep radius &lt;n|all&gt;           対象半径 [チャンク] (既定 all = シミュレーション距離)
+ *   /bstep budget &lt;ms&gt;              1 ティックの適用時間予算 [ms] (カクつきの主な摘み)
  *   /bstep diff &lt;parallel|sequential&gt;  差分計算の並列化を切り替える
- *   /bstep schedule &lt;on|off&gt;        更新スケジューラの on/off (効果を実測で比べるため)
+ *   /bstep schedule &lt;on|off&gt;        距離帯の表の on/off (効果を実測で比べるため)
  *   /bstep verify                   y 範囲最適化が全 y 総当たりと一致するかを検査する
  * </pre>
  *
  * <p><b>普段の遊び方は Page Up / Down (キー入力) である。</b> このコマンド群は
  * 単発・計測・検証のために残してある。
  *
- * <p><b>単発 ({@code <delta>} / {@code to} / {@code reset}) はスケジューラを通さない。</b>
+ * <p><b>単発 ({@code <delta>} / {@code to} / {@code reset}) は優先度も時間予算も通さない。</b>
  * 通すと遠方が更新されないまま残り、 「{@code /bstep 3.0} してから
  * {@code /hyperslice 3} と見比べる」という正しさの検証手段が壊れる。
  *
@@ -46,6 +47,15 @@ import net.minecraft.world.level.chunk.LevelChunk;
  * {@link BStepExperiment#EXPERIMENT_ENABLED} が {@code false} なら<b>登録もされない</b>。
  */
 public final class BStepCommands {
+
+    /**
+     * {@code /bstep budget <ms>} で指定できる上限 [ms]。
+     *
+     * <p>ティック予算 (既定 50ms) を超える値を許しても意味が無い — 予算いっぱいまで使えば
+     * ティックの実周期は必ず延びる。 上限に張り付けても直らないなら、 摘みは予算ではなく
+     * {@code WScheduler.BAND_QUANTA} の側である。
+     */
+    private static final double MAX_BUDGET_MS = 50.0;
 
     private BStepCommands() {
     }
@@ -85,6 +95,11 @@ public final class BStepCommands {
                 .then(Commands.argument("chunks",
                                 IntegerArgumentType.integer(0, BStepExperiment.MAX_RADIUS))
                         .executes(c -> setRadius(c, IntegerArgumentType.getInteger(c, "chunks")))));
+
+        root.then(Commands.literal("budget")
+                .then(Commands.argument("ms",
+                                DoubleArgumentType.doubleArg(0.1, MAX_BUDGET_MS))
+                        .executes(c -> setBudget(c, DoubleArgumentType.getDouble(c, "ms")))));
 
         root.then(Commands.literal("diff")
                 .then(Commands.literal("parallel").executes(c -> setDiff(c, true)))
@@ -134,7 +149,9 @@ public final class BStepCommands {
                 String.format(java.util.Locale.ROOT, "%.3f", session.currentW()),
                 String.format(java.util.Locale.ROOT, "%.3f", session.phase()),
                 session.nominalW(), session.sliceCount(),
-                radiusLabel(), modeLabel(), scheduleLabel(),
+                radiusLabel(),
+                String.format(java.util.Locale.ROOT, "%.2f", WScheduler.budgetMs()),
+                modeLabel(), scheduleLabel(),
                 session.isAuto()
                         ? Component.translatable("hyperslice.bstep.auto.on",
                                 String.format(java.util.Locale.ROOT, "%.2f", session.rate()))
@@ -238,11 +255,15 @@ public final class BStepCommands {
             return 0;
         }
         session.startAuto(player, rate);
+        // 量子ではなく「許される遅れ」を見せる。 w は連続に進むので「毎秒何ステップ」は
+        // もう存在しない (最近傍と最遠帯が何 w まで遅れてよいか、 が実際の粗さ)。
         src.sendSuccess(() -> Component.translatable("hyperslice.bstep.auto_started",
                 String.format(java.util.Locale.ROOT, "%.2f", rate),
-                String.format(java.util.Locale.ROOT, "%.3f", BStepExperiment.STEP_QUANTUM),
-                String.format(java.util.Locale.ROOT, "%.2f",
-                        rate / BStepExperiment.STEP_QUANTUM)), false);
+                String.format(java.util.Locale.ROOT, "%.3f",
+                        WScheduler.granularityOf(0, BStepExperiment.scheduler())),
+                String.format(java.util.Locale.ROOT, "%.3f",
+                        WScheduler.granularityOf(Integer.MAX_VALUE, BStepExperiment.scheduler()))),
+                false);
         return 1;
     }
 
@@ -264,6 +285,23 @@ public final class BStepCommands {
         BStepExperiment.setRadius(radius);
         c.getSource().sendSuccess(
                 () -> Component.translatable("hyperslice.bstep.set_radius", radiusLabel()), false);
+        return 1;
+    }
+
+    /**
+     * {@code /bstep budget <ms>}: 1 ティックの適用時間予算。
+     *
+     * <p><b>実機での調整レバーその 1</b>。 「追い付けていない遅れ」が最遠帯の粒度
+     * (既定 1.0) より大きいまま安定するなら、 ここが足りていない。
+     * レバーその 2 は {@code WScheduler.BAND_QUANTA} (こちらはリビルドが要る)。
+     */
+    private static int setBudget(CommandContext<CommandSourceStack> c, double ms) {
+        WScheduler.setBudgetMs(ms);
+        c.getSource().sendSuccess(
+                () -> Component.translatable("hyperslice.bstep.set_budget",
+                        String.format(java.util.Locale.ROOT, "%.2f", ms),
+                        String.format(java.util.Locale.ROOT, "%.2f", WScheduler.TICK_BUDGET_MS),
+                        WScheduler.MAX_CHUNKS_PER_TICK), false);
         return 1;
     }
 

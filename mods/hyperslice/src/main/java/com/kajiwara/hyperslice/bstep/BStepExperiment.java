@@ -58,6 +58,9 @@ public final class BStepExperiment {
     // =================================================================
     // ── 人間が触る定数 ──
     // =================================================================
+    //   <b>1 ティックの時間予算・チャンク数上限・距離帯の表は {@link WScheduler} にある。</b>
+    //   カクつきを触るならまずそちら (時間予算 TICK_BUDGET_MS が最重要の摘み)。
+    //   ここにあるのは「w をどう動かすか」と「どう書き込むか」の定数。
 
     /**
      * <b>{@code setBlockState} に渡すフラグ。 方式B の成否を左右する最重要の選択。</b>
@@ -107,15 +110,17 @@ public final class BStepExperiment {
     public static final int SET_BLOCK_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS;
 
     /**
-     * {@code /bstep auto} が 1 回のステップで進める w の量子 [スライス]。
+     * w 量子 [スライス] — <b>チャンクが遅れてよい量の単位</b>。
+     *
+     * <p><b>意味が変わっている。</b> かつては「1 ステップで進める w の量」で、 w は
+     * これを単位に飛んでいた。 今は w は毎ティック連続に進み、 この値は
+     * {@link WScheduler#BAND_QUANTA} と掛け合わされて<b>「その帯のチャンクが今の w から
+     * どれだけ遅れてよいか」</b>を決める (最近傍が 1 個ぶん = 0.125 w)。
+     * 更新の頻度としては同じ粗さになるので、 既定値も測定との対応もそのまま。
      *
      * <p>{@code :common:wDiff} の測定が delta=0.125 を基準に取ってあるので、 既定を
      * それに合わせてある。 変えると測定値との対応が崩れるので、 変えたら
      * {@code :common:wDiff} も同じ delta で取り直すこと。
-     *
-     * <p>要求水準の逆算: 観測面の移動レートは実機で {@code 0.4 w/秒} が妥当と判定された
-     * ({@code ObserverW.RATE_PER_TICK})。 {@code 0.4 / 0.125 = 3.2 回/秒} →
-     * <b>約 300ms に 1 回</b>ロード済み範囲全体へ差分を当てることになる。
      */
     public static final double STEP_QUANTUM = 0.125;
 
@@ -149,8 +154,15 @@ public final class BStepExperiment {
     /** {@code /bstep radius <n>} の上限 [チャンク]。 */
     public static final int MAX_RADIUS = 32;
 
-    /** 移動中央値・最大値を出すための履歴の長さ [ステップ]。 */
-    public static final int HISTORY_SIZE = 32;
+    /**
+     * 移動中央値・最大値を出すための履歴の長さ [適用回数]。
+     *
+     * <p>適用は<b>毎ティック</b>起きるので、 これはおおよそ「直近 N ティック」である。
+     * 既定 100 は {@link TickPeak#WINDOW_TICKS} と同じ = 約 5 秒で、
+     * ピーク欄と中央値欄が同じ時間窓を指すようにしてある
+     * (かつては 1 ステップ = 6.25 ティックだったので 32 でも約 10 秒あった)。
+     */
+    public static final int HISTORY_SIZE = 100;
 
     /** アクションバーへの表示間隔 [tick]。 */
     public static final int HUD_INTERVAL_TICKS = 5;
@@ -183,13 +195,15 @@ public final class BStepExperiment {
     private static volatile boolean parallelDiff = true;
 
     /**
-     * 更新スケジューラ ({@link WScheduler}) を効かせるか。
+     * <b>距離帯の表</b> ({@link WScheduler#BAND_QUANTA}) を効かせるか。
      *
      * <p>実行時に切れるようにしてあるのは、 <b>効果を実測で比べるため</b>。
-     * 「描画距離 12 で紙芝居が解消するか」はクライアント側の体感で判定するしかないので、
+     * カクつきが消えたかはクライアント側の体感で判定するしかないので、
      * 同じ場所・同じレートで on/off を往復できないと判断できない。
      *
-     * <p>{@code off} にすると毎ステップ全チャンクを更新する (= スケジューラ導入前)。
+     * <p>{@code off} にすると全帯の粒度が {@link #STEP_QUANTUM} に揃い、 優先度が
+     * 遅れそのものになる (近方と遠方が対等)。 <b>時間予算は効いたまま</b>なので
+     * サーバーは止まらず、 「距離別に粗くすることに意味があるか」だけを比べられる。
      */
     private static volatile boolean scheduler = true;
 

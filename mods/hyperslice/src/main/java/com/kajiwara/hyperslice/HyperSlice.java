@@ -1,6 +1,7 @@
 package com.kajiwara.hyperslice;
 
 import com.kajiwara.hyperslice.bstep.BStepExperiment;
+import com.kajiwara.hyperslice.bstep.ChunkW;
 import com.kajiwara.hyperslice.bstep.WDriveInput;
 import com.kajiwara.hyperslice.command.HyperSliceCommands;
 import com.kajiwara.hyperslice.core.SliceRegistry;
@@ -59,6 +60,10 @@ public class HyperSlice implements ModInitializer {
                 WInputPayload.TYPE, WInputPayload.STREAM_CODEC);
         if (BStepExperiment.EXPERIMENT_ENABLED) {
             WDriveInput.register();
+            // チャンクごとの w を持つ attachment 型。 ワールド (= チャンク) を読む前に
+            // 登録しておく必要があるのでここ。 フラグが false なら登録自体が起きない
+            // (= 既存ワールドのチャンク NBT に何も足さない)。
+            ChunkW.register();
         }
 
         // ── tick の登録順に意味がある ──────────────────────────────

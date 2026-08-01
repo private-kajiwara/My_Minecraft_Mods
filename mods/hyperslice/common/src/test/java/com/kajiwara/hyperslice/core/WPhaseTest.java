@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  */
 class WPhaseTest {
 
-    /** 実際に使われうる周期 ({@code WScheduler.BAND_PERIOD} の想定域)。 */
+    /** 実際に使われうる周期 ({@code WScheduler.BAND_QUANTA} の想定域)。 */
     private static final int[] PERIODS = { 2, 3, 4, 8, 16 };
 
     private static final int SPAN = 64;   // -32..31 チャンク四方
@@ -192,5 +192,86 @@ class WPhaseTest {
                     "period " + period + ": adjacent chunks share a phase " + ratio
                             + " of the time, expected around " + ideal);
         }
+    }
+
+    // ── タイブレーク (優先度方式の中核で使う役割) ──────────────
+
+    @Test
+    @DisplayName("タイブレーク値は同じ座標なら常に同じ (ティックごとに抽選し直さない)")
+    void scatterIsDeterministic() {
+        for (int x = -SPAN / 2; x < SPAN / 2; x++) {
+            for (int z = -SPAN / 2; z < SPAN / 2; z++) {
+                assertEquals(WPhase.scatter(x, z), WPhase.scatter(x, z));
+            }
+        }
+    }
+
+    /**
+     * <b>これがタイブレークに求める唯一の性質</b>: 大小関係が空間的に散っていること。
+     *
+     * <p>{@code /bstep to <w>} の直後や大量ロード直後は、 同じ帯のチャンクの遅れが
+     * <b>厳密に同着</b>になる。 このときの順序が収集順 (ラスタ走査) だと、 予算で切った
+     * 上位 K 個が<b>空間的に連続した帯</b>になり、 更新の走査線が地形を舐めていくように見える。
+     *
+     * <p>ここでは「全体の 1/8 を取る」という現実的な予算比で切り、 選ばれた集合が
+     * 四分割のどこにも偏らないこと、 および隣接チャンクが一緒に選ばれる率が
+     * 偶然 (1/8) の範囲に収まる (= 塊にならない) ことを検査する。
+     */
+    @Test
+    @DisplayName("同着を割った上位集合が空間的に散る (走査線にならない)")
+    void tieBreakIsSpatiallyScattered() {
+        int half = SPAN / 2;
+        int total = SPAN * SPAN;
+        int take = total / 8;
+
+        // scatter の昇順で上位 take 個を選ぶ = 実装のタイブレークと同じ順序。
+        int[] keys = new int[total];
+        int n = 0;
+        for (int x = -half; x < half; x++) {
+            for (int z = -half; z < half; z++) {
+                keys[n++] = WPhase.scatter(x, z);
+            }
+        }
+        int[] sorted = keys.clone();
+        java.util.Arrays.sort(sorted);
+        int threshold = sorted[take - 1];
+
+        boolean[][] chosen = new boolean[SPAN][SPAN];
+        int[] quadrant = new int[4];
+        int chosenCount = 0;
+        for (int x = -half; x < half; x++) {
+            for (int z = -half; z < half; z++) {
+                if (WPhase.scatter(x, z) > threshold) {
+                    continue;
+                }
+                chosen[x + half][z + half] = true;
+                chosenCount++;
+                quadrant[(x < 0 ? 0 : 1) + (z < 0 ? 0 : 2)]++;
+            }
+        }
+
+        double perQuadrant = chosenCount / 4.0;
+        for (int q = 0; q < 4; q++) {
+            assertTrue(quadrant[q] > perQuadrant * 0.75 && quadrant[q] < perQuadrant * 1.25,
+                    "quadrant " + q + " holds " + quadrant[q] + " of " + chosenCount
+                            + " selected chunks, expected around " + perQuadrant);
+        }
+
+        int adjacentPairs = 0;
+        int pairs = 0;
+        for (int x = 0; x < SPAN - 1; x++) {
+            for (int z = 0; z < SPAN; z++) {
+                if (chosen[x][z]) {
+                    pairs++;
+                    if (chosen[x + 1][z]) {
+                        adjacentPairs++;
+                    }
+                }
+            }
+        }
+        double ratio = adjacentPairs / (double) pairs;
+        assertTrue(ratio < 0.25,
+                "selected chunks clump together: " + ratio
+                        + " of them have a selected east neighbour (chance would be 0.125)");
     }
 }
