@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.client;
 
 import com.kajiwara.omnichest.classify.AutoDepositManager;
 import com.kajiwara.omnichest.client.gui.SearchScreen;
+import com.kajiwara.omnichest.client.input.TextInputState;
 import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.distribution.ui.DistributionScreen;
 import com.kajiwara.omnichest.i18n.Keys;
@@ -279,7 +280,11 @@ public final class ClientKeyBindings {
                     || InputConstants.isKeyDown(winC, InputConstants.KEY_RALT);
             boolean cDown = InputConstants.isKeyDown(winC, GLFW.GLFW_KEY_C);
             boolean nowDown = altDownC && cDown;
-            if (altCEnabled && nowDown && !lastAltCDown) {
+            // 文字入力中は抑止する。 GLFW 生ポーリングは Screen の有無に関係なく毎 tick 走るため、
+            // テキスト欄に打っている最中でも条件が揃えば発火してしまう (= タイプ中に別メニューが開く)。
+            // エッジ検出フラグ (lastAltCDown) は抑止中も毎 tick 更新する
+            // (= 入力欄から抜けた瞬間に押しっぱなしが暴発しない)。
+            if (altCEnabled && nowDown && !lastAltCDown && !TextInputState.isTextInputActive()) {
                 com.kajiwara.omnichest.client.gui.DimensionMenuScreen.toggle();
             }
             lastAltCDown = nowDown;
@@ -303,10 +308,12 @@ public final class ClientKeyBindings {
                     || InputConstants.isKeyDown(win, InputConstants.KEY_RALT);
             boolean dDown = InputConstants.isKeyDown(win, GLFW.GLFW_KEY_D);
             boolean nowDown = altDown && dDown;
+            // screen == null ガードで既にテキスト入力中は除外されるが、 「生ポーリングの
+            // ホットキーは TextInputState を必ず参照する」 という規則を明示的に守る。
             //? if >=26.2 {
-            /*if (nowDown && !lastAltDDown && mc.gui.screen() == null) {*/
+            /*if (nowDown && !lastAltDDown && mc.gui.screen() == null && !TextInputState.isTextInputActive()) {*/
             //?} else {
-            if (nowDown && !lastAltDDown && mc.screen == null) {
+            if (nowDown && !lastAltDDown && mc.screen == null && !TextInputState.isTextInputActive()) {
             //?}
                 // 全ピン解除。 ChestHighlighter.clear() は active map を空にするだけで、
                 // 配下の ChestNetworkManager スナップショットや SearchIndex には触れない (= 検索状態は保持)。

@@ -4,6 +4,45 @@ OmniChest の主要な修正・変更の記録。新しいエントリを上に�
 
 ## [Unreleased]
 
+### Fixed — mod 画面のテキスト入力中に、押したキーでインベントリが閉じる / 別メニューが開く
+
+- **症状**（外部報告）: mod のメニューでタイプ中に、押したキーで別のメニューが開いたり、
+  "Shell" や "enderchest" と打とうとするとインベントリが閉じてしまう。
+- **原因**: チェスト GUI に載せている検索欄（`GenericContainerScreenMixin#cits$searchBox`）が
+  **キー入力を消費していなかった**。 `EditBox` は印字キーを `keyPressed` では消費しない（文字は
+  `charTyped` 経由で入る）ため、フォーカスがあってもバニラ `AbstractContainerScreen#keyPressed` の
+  続き — `options.keyInventory.matches()` → **`onClose()`**（既定 <b>E</b>）、`checkHotbarKeyPressed()`、
+  `keyPickItem` / `keyDrop` — にそのまま到達していた。 "Shell" / "enderchest" はどちらも `e` を含むため
+  インベントリが閉じる。 閉じた瞬間 `minecraft.screen == null` になるので**以降の打鍵は生の
+  `KeyMapping` に届き**、`e` でインベントリが開き直る / `g`・`j`・`h` を含む語で検索・振り分け・
+  Smart Deposit が発火する＝「別のメニューが開く」の正体（同一原因の連鎖）。
+- **修正**:
+  1. **画面側**: バニラ `CreativeModeInventoryScreen` と同じ流儀で、入力ウィジェットにフォーカスが
+     ある間はキー入力を入力ウィジェットで処理して **true を返して消費**する（判定は
+     `EditBox#canConsumeInput()`）。 通すのは **Esc**（フォーカス解除 / 画面を閉じる＝現行挙動のまま）と
+     **Tab**（フォーカス移動）のみ。 **フォーカスしていない時は素通り**なので、`e` で閉じる等の
+     バニラ挙動は不変。 入力欄を持つ全画面に同じ扱いを適用（チェスト GUI の検索欄・`SearchScreen`・
+     `TemplateManagerScreen`・`SetCategoryScreen`・`TemplateSaveScreen`）。
+     `charTyped` は対処不要（`AbstractContainerScreen` は override しておらず、`Screen` の
+     フォーカス委譲で EditBox が確実に消費する＝IME / dead key も従来経路のまま）。
+  2. **ポーリング側**: 「今テキスト入力を受け付けているか」を返す単一のヘルパ
+     `TextInputState#isTextInputActive()` を新設し、**GLFW 生ポーリングのホットキー全経路**
+     （Alt+C ディメンションメニュー / Alt+D 全ピン解除）と、スロットロック ホットキーの
+     キーボード判定がこれを参照して抑止する。 判定は「現在の Screen のフォーカス連鎖の先が
+     `EditBox` で、かつ入力を受け取れる状態」＝ウィジェット型のみで判断し、画面ごとの登録は不要。
+     このヘルパは **OmniChest 自身のホットキーを黙らせるためだけ**に使い、バニラの入力処理
+     （看板 / 本 / チャット / 金床）には一切介入しない。
+- **どちらが効いていたか**: 実際に症状を出していたのは **(1) 画面側の未消費**。 (2) のポーリング経路は
+  Alt+D が `screen == null` ガード付き、Alt+C も `DimensionMenuScreen#toggle()` が `screen == null` の
+  ときしか開かないため**現状は発火していなかった**（screen の有無で偶然守られていた状態）。 指示どおり
+  単一ヘルパ参照へ寄せ、「テキスト入力中は抑止」という規則を明示化した。 KeyMapping 経由のホットキー
+  （G / J / H など）は、バニラが Screen 表示中に KeyMapping を tick しないため元から発火しない。
+- **影響範囲**: キー入力のルーティングのみ。 検索 / ハイライト / ピン / ビーム / HUD 描画・Smart Deposit・
+  カテゴリソート・テンプレ・GUI スケール処理・マウスクリックによるスロット操作は不変。
+  新規 Mixin なし（既存 `GenericContainerScreenMixin` に `keyPressed` 注入を追加＝Mixin 数不変）。
+  lang 追加なし。 版差なし（`AbstractContainerScreen#keyPressed(KeyEvent)` は 1.21.10〜26.2 の
+  全 6 ノードに実在＝javap / tiny mappings で実測）。
+
 ### Fixed — スロットロックのホットキーが再割当できず中クリック固定（クリエイティブのピックブロック複製を潰す）
 
 - **症状**（外部報告）: コントロール設定にスロットロックのキーバインドがあるのに **未割当** と表示され、

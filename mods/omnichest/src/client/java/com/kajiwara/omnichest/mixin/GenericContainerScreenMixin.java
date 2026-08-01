@@ -30,6 +30,7 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
@@ -40,6 +41,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractContainerScreen.class)
 public abstract class GenericContainerScreenMixin extends Screen implements OmniChestScaledScreen {
@@ -793,6 +795,56 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         }
     }*/
     //?}
+
+    // ────────────────────────────────────────────────────────────────────
+    // チェスト GUI に載せた検索欄への入力を、 バニラのインベントリ操作から守る
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * {@link #cits$searchBox} にフォーカスがある間、 キー入力を検索欄で処理して<b>消費</b>する。
+     *
+     * <p>
+     * <b>症状</b>: 検索欄に "Shell" / "enderchest" などを打つとインベントリが閉じ、
+     * 続く打鍵で別のメニューが開いてしまう。
+     *
+     * <p>
+     * <b>原因</b>: {@link EditBox} は印字キーを {@code keyPressed} では消費しない (= 文字は
+     * {@code charTyped} 経由で入る) ため、 バニラ {@code AbstractContainerScreen#keyPressed} の
+     * 続き —
+     * <ol>
+     * <li>{@code options.keyInventory.matches(event)} → {@code onClose()} … 既定 <b>E</b> で閉じる</li>
+     * <li>{@code checkHotbarKeyPressed(event)} … 数字キーでホットバー入替</li>
+     * <li>{@code keyPickItem} / {@code keyDrop} … ホバー中スロットへの複製 / ドロップ</li>
+     * </ol>
+     * にそのまま到達していた。 閉じた瞬間 {@code minecraft.screen == null} になるので、
+     * 以降の打鍵は生の {@link net.minecraft.client.KeyMapping} に届き、 別メニューが開く
+     * (= 「タイプ中に別のメニューが開く」 の正体)。
+     *
+     * <p>
+     * <b>対処</b>: バニラ {@code CreativeModeInventoryScreen} と同じ流儀で、 フォーカス中は
+     * 入力ウィジェットへ渡したうえで <b>true を返して消費</b>する。 通すのは
+     * <b>Esc</b> (フォーカス解除 / 画面を閉じる) と <b>Tab</b> (フォーカス移動) のみ。
+     * <b>フォーカスしていない時は素通り</b>なので、 E で閉じる等の従来のバニラ挙動は不変。
+     *
+     * <p>
+     * {@code charTyped} 側は対処不要: {@code AbstractContainerScreen} は charTyped を override
+     * しておらず、 {@code Screen} のフォーカス委譲で EditBox が確実に消費するため
+     * (= バニラのインベントリ操作へは元々流れない)。 IME / dead key もこの経路のまま。
+     */
+    @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
+    private void cits$searchBoxKeyGuard(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        EditBox box = this.cits$searchBox;
+        // canConsumeInput() = 可視 + フォーカス + 有効 (= 「今まさに打てる」)。
+        if (box == null || !box.canConsumeInput())
+            return;
+        int key = event.key();
+        if (key == InputConstants.KEY_ESCAPE || key == InputConstants.KEY_TAB)
+            return;
+        // 編集キー (矢印 / Backspace / Ctrl+A,C,V,X …) は EditBox が処理する。
+        // 処理されなかったキーも、 バニラのインベントリ操作へは渡さず黙って消費する。
+        box.keyPressed(event);
+        cir.setReturnValue(true);
+    }
 
     @Inject(method = "init", at = @At("TAIL"))
     private void cits$initWidgets(CallbackInfo ci) {

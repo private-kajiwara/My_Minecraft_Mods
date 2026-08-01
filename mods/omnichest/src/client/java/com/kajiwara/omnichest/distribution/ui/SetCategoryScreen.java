@@ -320,13 +320,13 @@ public final class SetCategoryScreen extends Screen {
             onClose();
             return true;
         }
-        if (this.nameBox != null && this.nameBox.isFocused()) {
-            if (this.nameBox.keyPressed(event)) {
-                return true;
-            }
-            if (this.nameBox.canConsumeInput()) {
-                return false;
-            }
+        // Tab はフォーカス移動として画面 (Screen) 側に通す。 Esc は上で処理済み。
+        if (event.key() != GLFW.GLFW_KEY_TAB
+                && this.nameBox != null && this.nameBox.canConsumeInput()) {
+            // 名前欄にフォーカスがある間は、 EditBox が処理しなかったキーも消費する
+            // (= 素通りさせると他ハンドラへ届き、 タイプ中に暴発する)。
+            this.nameBox.keyPressed(event);
+            return true;
         }
         return super.keyPressed(event);
     }
