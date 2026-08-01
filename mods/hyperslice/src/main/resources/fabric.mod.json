@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 1,
+	"id": "hyperslice",
+	"version": "${version}",
+	"name": "HyperSlice",
+	"description": "A 4D voxel world discretised along w into N three-dimensional slices. Every slice is a custom dimension, and all of them are generated from a single 4D terrain function, so neighbouring slices show the same landscape seen from a different w.",
+	"authors": [
+		"kajiwara"
+	],
+	"contact": {
+		"homepage": "https://github.com/private-kajiwara/My_Minecraft_Mods",
+		"sources": "https://github.com/private-kajiwara/My_Minecraft_Mods",
+		"issues": "https://github.com/private-kajiwara/My_Minecraft_Mods/issues"
+	},
+	"license": "CC0-1.0",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.kajiwara.hyperslice.HyperSlice"
+		],
+		"client": [
+			"com.kajiwara.hyperslice.HyperSliceClient"
+		],
+		"modmenu": [
+			"com.kajiwara.hyperslice.modmenu.HyperSliceModMenuApi"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	},
+	"recommends": {
+		"modmenu": "*"
+	}
+}

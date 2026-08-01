@@ -1,0 +1,25 @@
+# =====================================================================
+# stonecutter.properties.toml (Stonecutter centralized + per-node props)
+# ---------------------------------------------------------------------
+#   正本は mc-meta/versions.json + mc-meta/<MC>.properties。
+#   build.gradle.kts は sc.properties["deps.*"] で読む。
+#
+#   v0.1 は 26.1.2 の単一ノード。 実値は同一 MC の WorldChange /
+#   VisualizeGate / OmniChest と共通 (= MC 由来)。
+#
+#   deps.iris / deps.sodium は持たない (HyperSlice は独自シェーダも
+#   在世界描画も行わないため dev runtime 注入が不要)。
+# =====================================================================
+
+# loom-back-compat が使う Loom バージョン (全ノード共通)
+loomx.loom_version = "1.16-SNAPSHOT"
+
+# ---- MC 26.1.2 (非難読化版・Java25・非remap Loom) ----
+["26.1.2"]
+deps.fabric_loader = "0.19.3"
+deps.fabric_api = "0.150.0+26.1.2"
+deps.mod_menu = "18.0.0-beta.1"
+mod.java = "25"
+mod.mc_compat = "~26.1"
+mod.stable = "true"
+mod.recommended = "true"

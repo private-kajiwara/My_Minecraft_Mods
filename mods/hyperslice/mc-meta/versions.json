@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "Minecraft Java Edition の '実在する正式リリース' のみを列挙する。",
+    "新しいパッチを追加するときは:",
+    "  1. このファイルの 'versions' 配列に追記",
+    "  2. mc-meta/<MC>.properties を作成",
+    "  3. ./gradlew validateVersions で Mojang / Fabric Meta の解決可否を検証",
+    "Mojang manifest:  https://launchermeta.mojang.com/mc/game/version_manifest_v2.json",
+    "Fabric Meta API:  https://meta.fabricmc.net/v2/versions"
+  ],
+
+  "schema": 1,
+
+  "$era_note": [
+    "HyperSlice v0.1 は 26.1.2 の単一ノード構成。 4 次元ボクセル世界を w 整数で",
+    "離散化した N 枚の custom dimension として実装し、 全スライスを単一の 4D",
+    "地形関数から生成する。 サーバー側 worldgen + サーバーコマンドを持つため",
+    "既存 3 mod (client 専用) とは environment が異なる ('*')。",
+    "",
+    "多版展開を v0.1 では行わない理由: 26.1 で worldgen/dimension まわりに",
+    "大きな断絶がある (空/霧色が BiomeSpecialEffects から EnvironmentAttributes",
+    "へ移動、 ResourceLocation → Identifier 等)。 旧世代へ降ろすときは実 API を",
+    "現物確認したうえで //? と replacements を個別に足すこと。",
+    "レイアウトは他 3 mod と同型に保ってあるので versions(...) を増やすだけでよい。"
+  ],
+
+  "versions": [
+    {
+      "minecraft": "26.1.2",
+      "properties": "26.1.2.properties",
+      "stable": true,
+      "recommended": true,
+      "buildable": true,
+      "notes": "26.1 系最新安定版・非難読化版 (Java 25)。推奨ビルド (active base)。v0.1 唯一の対象ノード。"
+    }
+  ],
+
+  "policy": {
+    "default": "26.1.2",
+    "build_only_validated": true,
+    "warn_on_deprecated_loader": true,
+    "warn_on_unsupported_version": true
+  }
+}
