@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.mixin;
 
 import com.kajiwara.omnichest.catsort.engine.CategorySortEngine;
 import com.kajiwara.omnichest.catsort.ui.SortButtonWidget;
+import com.kajiwara.omnichest.client.ClientKeyBindings;
 import com.kajiwara.omnichest.client.gui.CategoryBadgeRenderer;
 import com.kajiwara.omnichest.client.gui.OmniChestScaledScreen;
 import com.kajiwara.omnichest.client.gui.SearchScreen;
@@ -19,6 +20,7 @@ import com.kajiwara.omnichest.util.ContainerSorter;
 import com.kajiwara.omnichest.util.DepositMatchingHelper;
 import com.kajiwara.omnichest.util.StackCompactor;
 import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -268,7 +270,8 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // 各行の対応コード:
         //   (1) Alt + 左クリック   → SlotLockScreenMixin#cits_slotLock$onMouseClicked
         //                            (button=0, hasAltDown, !hasShiftDown)
-        //   (2) 中クリック          → 同上 (button=2)
+        //   (2) ロック ホットキー   → 同上 (KeyMapping.matchesMouse / keyPressed の matches。
+        //                            既定は中マウスボタン・Controls で再割当/未割当可)
         //   (3) Shift + Alt + 左   → 同上 (button=0, hasAltDown, hasShiftDown) サイクル モード
         //   (4) Alt + ドラッグ      → SlotLockScreenMixin#cits_slotLock$onMouseDragged
         //                            (Alt 押下中の drag)
@@ -282,9 +285,12 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
             lines.add(OmniChestLocale.get(Keys.CONTROLS_LINE_SLOT_LOCK_ALT_CLICK,
                     "Alt + Left Click: Toggle slot lock"));
         }
-        if (lockCfg.toggleWithMiddleClick) {
-            lines.add(OmniChestLocale.get(Keys.CONTROLS_LINE_SLOT_LOCK_MIDDLE_CLICK,
-                    "Middle Click: Toggle slot lock"));
+        // スロットロック ホットキーは vanilla Controls が唯一の源。 実際に割り当てられている
+        // キー名をそのまま出し、 未割当なら行ごと消す (= 「効く入力」 と説明の 1:1 を維持)。
+        KeyMapping slotLockHotkey = ClientKeyBindings.slotLockToggleMapping();
+        if (slotLockHotkey != null && !slotLockHotkey.isUnbound()) {
+            lines.add(OmniChestLocale.get(Keys.CONTROLS_LINE_SLOT_LOCK_HOTKEY,
+                    "%1$s: Toggle slot lock", slotLockHotkey.getTranslatedKeyMessage()));
         }
         if (lockCfg.cycleWithShiftAltClick) {
             lines.add(OmniChestLocale.get(Keys.CONTROLS_LINE_ITEM_LOCK_CYCLE,

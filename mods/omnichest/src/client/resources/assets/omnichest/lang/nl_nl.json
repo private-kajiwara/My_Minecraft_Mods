@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Alle sloten wissen: %1$s",
   "omnichest.controls.title": "Besturing",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klik: vak vergrendelen",
-  "omnichest.controls.line.slot_lock_middle_click": "Middelste klik: vak vergrendelen",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klik: item vergrendelen",
   "omnichest.controls.line.alt_drag": "Alt+Slepen: doorlopend vergrendelen",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Boven Shulkerdoos: voorbeeld inhoud",

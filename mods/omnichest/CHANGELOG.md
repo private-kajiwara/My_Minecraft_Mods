@@ -4,6 +4,38 @@ OmniChest の主要な修正・変更の記録。新しいエントリを上に�
 
 ## [Unreleased]
 
+### Fixed — スロットロックのホットキーが再割当できず中クリック固定（クリエイティブのピックブロック複製を潰す）
+
+- **症状**（外部報告）: コントロール設定にスロットロックのキーバインドがあるのに **未割当** と表示され、
+  それでも **中マウスボタンでロックが発動する**。 設定で別のキーへ割り当て直しても中クリックのまま。
+  結果として **クリエイティブのインベントリで中クリックによるスタック複製（ピックブロック / `CLONE`）ができない**。
+  Mod を外すと起きない。
+- **原因**: 発火判定が KeyMapping ではなく **ボタン番号の直書き比較** だった。
+  `SlotLockScreenMixin#cits_slotLock$onMouseClicked` が `button == 2 && cfg.toggleWithMiddleClick`
+  でマッチさせ、マッチすると `cir.setReturnValue(true)` でバニラ `mouseClicked` を丸ごと打ち切っていたため、
+  その先の `keyPickItem` → `slotClicked(..., ContainerInput.CLONE)` に到達できなかった。
+  一方 `key.omnichest.toggle_slot_lock` は **未割当で登録され、判定には一切使われていなかった**
+  （唯一の参照は `ClientKeyBindings#onTick` の `consumeClick()` ループだが、バニラは
+  `KeyboardHandler#keyPress` で `KeyMapping.set/click` を `minecraft.screen == null` のときだけ呼ぶため、
+  インベントリ GUI の中では永久に発火しない＝到達不能コード）。 つまり **設定は飾りで、実挙動は常に中クリック固定**。
+- **修正**: 発火判定を **KeyMapping 一本**に統一。
+  - `key.omnichest.toggle_slot_lock` の **既定バインドを「中マウスボタン」**（`Type.MOUSE` / button 2）に変更。
+  - マウスは `KeyMapping#matchesMouse(MouseButtonEvent)`、キーボードは `KeyMapping#matches(KeyEvent)` で判定
+    （`AbstractContainerScreen#keyPressed` にも判定を追加＝GUI 内では KeyMapping が tick されないため）。
+  - **未割当（`InputConstants.UNKNOWN`）なら常に false ＝機能を発動しない**（中クリックへのフォールバックは無し）。
+  - **非マッチ時はイベントを cancel しない**ので、クリエイティブの中クリック複製と通常の中クリックが復活する。
+  - 設定の二重化を解消: `SlotLockConfig.toggleWithMiddleClick` を廃止し、**vanilla Controls を唯一の源**にした
+    （旧 JSON に残る同名プロパティは読み飛ばされるだけで無害）。操作ヘルプの行も、実際に割り当てられている
+    キー名を表示し、未割当なら行ごと消えるようにした（新規キー `omnichest.controls.line.slot_lock_hotkey`）。
+- **既存ユーザーへの影響**: 更新前の `options.txt` にはこのキーが `key.keyboard.unknown` で保存されているため、
+  **更新後は中クリックが効かなくなる**（コントロール設定の表示と実挙動が初めて一致する状態）。
+  中クリックを使いたい場合はコントロール設定で割り当て直す。 これは報告された不具合そのものの是正であり、
+  「未割当なのに効く」状態へ戻す移行処理は意図的に入れていない。
+- **影響範囲**: 発火の入力判定のみ。 ロック機能そのもののロジック・永続化・オーバーレイ描画、
+  Alt+左クリック / Shift+Alt+左クリック / Alt+ドラッグの各ジェスチャ（修飾コンボは KeyMapping で表現不能なため
+  従来どおり `SlotLockConfig` 制御）は不変。 新規 Mixin なし（Mixin 数不変）。 版差は無し
+  （`matchesMouse` / `matches` / `isUnbound` は 1.21.10〜26.2 の全 6 ノードに実在＝javap / tiny mappings で実測）。
+
 ### Fixed — シェーダ下で在世界ワイヤーハイライトが消える問題（描画経路を VisualizeGate 実装へ移植・1.0.5→1.0.6）
 
 - **症状**: Iris / Sodium+Iris + シェーダパック（Complementary / BSL / SEUS 等）有効時、 倉庫検索ハイライトの

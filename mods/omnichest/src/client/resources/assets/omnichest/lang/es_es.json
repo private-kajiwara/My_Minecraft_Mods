@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "Ordena el cofre por categorías.\n\nAgrupa por significado — construcción, madera, mineral, comida…\ny fusiona pilas iguales en una sola.\n\nLos huecos bloqueados no se mueven.",
   "omnichest.controls.title": "Controles",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Clic: Bloquear hueco",
-  "omnichest.controls.line.slot_lock_middle_click": "Clic central: Bloquear hueco",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Clic: Bloqueo de objeto",
   "omnichest.controls.line.alt_drag": "Alt+Arrastrar: Bloqueo continuo",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Pasar por Caja shulker: vista previa",

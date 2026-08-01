@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "Ordena o conteúdo do baú por categoria.\n\nAgrupa por sentido — construção, madeira, minério, comida…\ne junta pilhas iguais em uma só.\n\nSlots travados não saem do lugar.",
   "omnichest.controls.title": "Controles",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Clique: Travar slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Clique do meio: Travar slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Clique: Travar item",
   "omnichest.controls.line.alt_drag": "Alt+Arrastar: Trava contínua",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Passar sobre Caixa de shulker: prévia do conteúdo",

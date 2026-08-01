@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Gỡ tất cả khóa: %1$s",
   "omnichest.controls.title": "Điều khiển",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Nhấp: khóa ô",
-  "omnichest.controls.line.slot_lock_middle_click": "Nhấp giữa: khóa ô",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Nhấp: khóa vật phẩm",
   "omnichest.controls.line.alt_drag": "Alt+Kéo: khóa liên tục",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Di chuột lên Hộp Shulker: xem trước nội dung",

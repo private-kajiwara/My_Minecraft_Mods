@@ -64,8 +64,11 @@ public final class SlotLockConfig {
     /** Alt + Click でロック切替を有効にするか。 */
     public boolean toggleWithAltClick = true;
 
-    /** Middle (= ホイール) Click でロック切替を有効にするか。 */
-    public boolean toggleWithMiddleClick = true;
+    // 注: 「中クリックでロック切替」 は <b>ここには無い</b>。 中クリックは
+    // {@link com.kajiwara.omnichest.client.ClientKeyBindings#TOGGLE_SLOT_LOCK_KEY} の
+    // <b>既定バインド</b> であり、 有効 / 無効 / 再割当は vanilla の Controls 画面が唯一の源。
+    // (旧 toggleWithMiddleClick は、 Controls で未割当にしても中クリックが効き続ける原因だったため廃止。
+    //  既存の slot_lock_config.json に残っている同名プロパティは読み飛ばされるだけで無害。)
 
     /** Shift + Alt + Click で SLOT → ITEM → 解除の 3 状態サイクルにするか。 */
     public boolean cycleWithShiftAltClick = true;
@@ -150,7 +153,6 @@ public final class SlotLockConfig {
             if (o.has("pulseAnimation")) this.pulseAnimation = o.get("pulseAnimation").getAsBoolean();
             if (o.has("showTooltipLine")) this.showTooltipLine = o.get("showTooltipLine").getAsBoolean();
             if (o.has("toggleWithAltClick")) this.toggleWithAltClick = o.get("toggleWithAltClick").getAsBoolean();
-            if (o.has("toggleWithMiddleClick")) this.toggleWithMiddleClick = o.get("toggleWithMiddleClick").getAsBoolean();
             if (o.has("cycleWithShiftAltClick")) this.cycleWithShiftAltClick = o.get("cycleWithShiftAltClick").getAsBoolean();
             if (o.has("protectHotbarByDefault")) this.protectHotbarByDefault = o.get("protectHotbarByDefault").getAsBoolean();
             if (o.has("protectOffhandByDefault")) this.protectOffhandByDefault = o.get("protectOffhandByDefault").getAsBoolean();
@@ -178,7 +180,6 @@ public final class SlotLockConfig {
             o.addProperty("pulseAnimation", pulseAnimation);
             o.addProperty("showTooltipLine", showTooltipLine);
             o.addProperty("toggleWithAltClick", toggleWithAltClick);
-            o.addProperty("toggleWithMiddleClick", toggleWithMiddleClick);
             o.addProperty("cycleWithShiftAltClick", cycleWithShiftAltClick);
             o.addProperty("protectHotbarByDefault", protectHotbarByDefault);
             o.addProperty("protectOffhandByDefault", protectOffhandByDefault);

@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "Trie le contenu du coffre par catégorie.\n\nRegroupe par thème — construction, bois, minerai, nourriture…\net fusionne les piles identiques.\n\nLes cases verrouillées ne bougent pas.",
   "omnichest.controls.title": "Commandes",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Clic : Verrouiller case",
-  "omnichest.controls.line.slot_lock_middle_click": "Clic du milieu : Verrouiller case",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Clic : Verrouiller objet",
   "omnichest.controls.line.alt_drag": "Alt+Glisser : Verrouillage continu",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Survoler la Boîte de shulker : aperçu du contenu",

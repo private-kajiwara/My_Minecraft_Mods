@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Poista kaikki lukot: %1$s",
   "omnichest.controls.title": "Säätimet",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klikkaus: lukitse paikka",
-  "omnichest.controls.line.slot_lock_middle_click": "Keskiklikkaus: lukitse paikka",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klikkaus: esinelukko",
   "omnichest.controls.line.alt_drag": "Alt+Vedä: jatkuva lukitus",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Shulker-laatikon yllä: sisällön esikatselu",

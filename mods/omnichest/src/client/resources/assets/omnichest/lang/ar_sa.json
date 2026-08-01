@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• إزالة كل الأقفال: %1$s",
   "omnichest.controls.title": "التحكم",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+نقر: قفل الخانة",
-  "omnichest.controls.line.slot_lock_middle_click": "نقر بالعجلة: قفل الخانة",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+نقر: قفل العنصر",
   "omnichest.controls.line.alt_drag": "Alt+سحب: قفل متتابع",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+التحويم فوق صندوق شالكر: معاينة المحتويات",

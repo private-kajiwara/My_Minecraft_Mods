@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "按种类整理箱子里的物品。\n\n按 建筑·木材·矿物·食物 等含义分组,\n相同物品自动合并为一组。\n\n被锁定的槽位不会被移动。",
   "omnichest.controls.title": "操作方法",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+左键: 锁定槽位",
-  "omnichest.controls.line.slot_lock_middle_click": "中键: 锁定槽位",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+左键: 物品锁定",
   "omnichest.controls.line.alt_drag": "Alt+拖动: 连续锁定",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+悬停潜影盒: 预览内容",

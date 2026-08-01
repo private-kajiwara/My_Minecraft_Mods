@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "Sortiert den Truheninhalt nach Kategorie.\n\nGruppiert nach Bedeutung – Bau, Holz, Erz, Nahrung …\nund fasst gleiche Stapel zusammen.\n\nGesperrte Slots bleiben unberührt.",
   "omnichest.controls.title": "Steuerung",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klick: Slot sperren",
-  "omnichest.controls.line.slot_lock_middle_click": "Mittelklick: Slot sperren",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klick: Item sperren",
   "omnichest.controls.line.alt_drag": "Alt+Ziehen: Reihen sperren",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Über Shulker: Inhaltsvorschau",

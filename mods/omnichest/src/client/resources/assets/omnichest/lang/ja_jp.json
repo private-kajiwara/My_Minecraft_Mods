@@ -249,7 +249,7 @@
   "omnichest.editbox.search.tooltip": "チェスト内のアイテムを名前で検索してハイライトします。",
   "omnichest.controls.title": "操作方法",
   "omnichest.controls.line.slot_lock_alt_click": "Alt + 左クリック: スロットロックを切替",
-  "omnichest.controls.line.slot_lock_middle_click": "中クリック: スロットロックを切替",
+  "omnichest.controls.line.slot_lock_hotkey": "%1$s: スロットロック切替",
   "omnichest.controls.line.item_lock_cycle": "Shift + Alt + クリック: スロット/アイテム ロックを切替",
   "omnichest.controls.line.alt_drag": "Alt + ドラッグ: 複数スロットを連続切替",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt + シュルカーボックスにホバー: 中身プレビュー",

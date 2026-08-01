@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "Сортирует содержимое сундука по категориям.\n\nГруппирует по смыслу — стройка, дерево, руда, еда…\nодинаковые стопки объединяются.\n\nЗаблокированные слоты не двигаются.",
   "omnichest.controls.title": "Управление",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+ЛКМ: Блок. слот",
-  "omnichest.controls.line.slot_lock_middle_click": "СКМ: Блок. слот",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+ЛКМ: Блок. предмет",
   "omnichest.controls.line.alt_drag": "Alt+Тащить: Серия блок.",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Навести на ящик шалкера: предпросмотр",

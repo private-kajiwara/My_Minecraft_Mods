@@ -6,20 +6,14 @@ import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.distribution.ui.DistributionScreen;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
-import com.kajiwara.omnichest.mixin.AbstractContainerScreenAccessor;
 import com.kajiwara.omnichest.slotlock.MenuSlotLockSession;
-import com.kajiwara.omnichest.slotlock.SlotIndexMapper;
 import com.kajiwara.omnichest.slotlock.SlotLockManager;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.inventory.Slot;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -46,8 +40,14 @@ public final class ClientKeyBindings {
     public static final String SMART_DEPOSIT_KEY = "key.omnichest.smart_deposit";
     /**
      * Favorite Slot Lock: GUI 内のホバー中スロットをロック切替するキー。
-     * Alt+Click / Middle-Click 操作が使えない (= キーボード派) ユーザー向けの代替入口。
-     * デフォルトは <b>未バインド</b> (= 衝突を避けるため、ユーザー任意設定)。
+     * デフォルトは <b>中マウスボタン</b> (= 従来の固定挙動をそのまま既定値にしたもの)。
+     *
+     * <p>
+     * <b>これがスロットロック ホットキーの唯一の真実の源</b>。 マウス / キーボードのどちらにも
+     * 割り当てられ、 「未割当」 にすれば機能ごと止まる。 判定は
+     * {@link com.kajiwara.omnichest.mixin.SlotLockScreenMixin} が
+     * {@link KeyMapping#matchesMouse} / {@link KeyMapping#matches} で行う
+     * (= ボタン番号の直書き比較はしない)。
      */
     public static final String TOGGLE_SLOT_LOCK_KEY = "key.omnichest.toggle_slot_lock";
 
@@ -135,11 +135,12 @@ public final class ClientKeyBindings {
                 GLFW.GLFW_KEY_H,
                 CATEGORY));
 
-        // Slot Lock 切替キー (= 未バインドで登録: ユーザーが好みのキーを割当可能)。
+        // Slot Lock 切替キー。 既定は「中マウスボタン」 (= 従来の固定挙動を既定値として保存)。
+        // KeyMapping なので Controls から再割当も未割当もできる (= 未割当ならロックは発動しない)。
         toggleSlotLock = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 TOGGLE_SLOT_LOCK_KEY,
-                InputConstants.Type.KEYSYM,
-                InputConstants.UNKNOWN.getValue(),
+                InputConstants.Type.MOUSE,
+                GLFW.GLFW_MOUSE_BUTTON_MIDDLE,
                 CATEGORY));
 
         // Slot Lock 全解除キー (= 未バインド)。
@@ -165,6 +166,24 @@ public final class ClientKeyBindings {
                 CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientKeyBindings::onTick);
+    }
+
+    /**
+     * スロットロック切替キーの {@link KeyMapping} を返す (= GUI 内から入力判定するため)。
+     *
+     * <p>
+     * <b>なぜ getter が要るか</b>: バニラは <b>Screen が開いている間 KeyMapping を tick しない</b>
+     * ({@code KeyboardHandler#keyPress} が {@code KeyMapping.set/click} を
+     * {@code minecraft.screen == null} のときだけ呼ぶ) ため、 インベントリ GUI の中では
+     * {@link KeyMapping#consumeClick()} は永久に false を返す。 よって GUI 内では
+     * {@link com.kajiwara.omnichest.mixin.SlotLockScreenMixin} が受け取った
+     * イベントに対して {@code matchesMouse} / {@code matches} を直接評価する。
+     *
+     * <p>
+     * 初期化前 (= {@link #register()} 前) は null を返しうるので、 呼び出し側で null を許容すること。
+     */
+    public static KeyMapping slotLockToggleMapping() {
+        return toggleSlotLock;
     }
 
     private static void onTick(Minecraft mc) {
@@ -234,32 +253,12 @@ public final class ClientKeyBindings {
             }
         }
 
-        if (toggleSlotLock != null) {
-            while (toggleSlotLock.consumeClick()) {
-                // インベントリ系の Screen で、ホバー中のスロットを toggle する。
-                // toggleSlotLock は ContainerScreen 外では何もしない (= 暴発防止)。
-                //? if >=26.2 {
-                /*if (mc.gui.screen() instanceof AbstractContainerScreen<?> acs) {*/
-                //?} else {
-                if (mc.screen instanceof AbstractContainerScreen<?> acs) {
-                //?}
-                    Slot hovered = ((AbstractContainerScreenAccessor) acs).cits$getHoveredSlot();
-                    if (hovered != null && hovered.container instanceof Inventory) {
-                        int playerSlot = hovered.getContainerSlot();
-                        if (playerSlot >= SlotIndexMapper.PLAYER_INV_SLOT_MIN
-                                && playerSlot <= SlotIndexMapper.PLAYER_INV_SLOT_MAX) {
-                            SlotLockManager.get().toggleSlotLock(playerSlot);
-                            if (mc.gui != null) {
-                                Component msg = OmniChestLocale.get(
-                                        Keys.SLOT_LOCK_CHAT_TOGGLED,
-                                        "[Slot Lock] toggled slot %1$d", playerSlot);
-                                if (mc.player != null) mc.player.sendSystemMessage(msg);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // 注: スロットロック切替キー (toggleSlotLock) をここで consumeClick しても意味が無い。
+        // バニラは Screen が開いている間 KeyMapping を tick しない (= KeyboardHandler#keyPress が
+        // KeyMapping.set/click を minecraft.screen == null のときだけ呼ぶ) ので、
+        // 「インベントリ GUI の中でホバー中スロットを切り替える」 このキーは tick 経路では絶対に
+        // 発火しない。 判定は SlotLockScreenMixin が mouseClicked / keyPressed で直接行う
+        // (= 真実の源は KeyMapping 一本のまま)。
 
         // ─── グローバル Alt+C = ディメンション別メニューをトグル (= 既定操作) ───
         //

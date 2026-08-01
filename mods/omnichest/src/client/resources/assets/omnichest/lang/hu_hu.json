@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Összes zár eltávolítása: %1$s",
   "omnichest.controls.title": "Vezérlés",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Kattintás: slot zárolása",
-  "omnichest.controls.line.slot_lock_middle_click": "Középső kattintás: slot zárolása",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Kattintás: tárgy-zár",
   "omnichest.controls.line.alt_drag": "Alt+Húzás: folyamatos zárolás",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Shulker-doboz fölé: tartalom előnézete",

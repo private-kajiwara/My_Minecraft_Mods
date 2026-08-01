@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "상자 안을 종류별로 정리합니다.\n\n건축·목재·광물·식량 등으로 묶고,\n같은 아이템은 하나로 합칩니다.\n\n잠긴 칸은 그대로 둡니다.",
   "omnichest.controls.title": "조작 방법",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+클릭: 슬롯 잠금",
-  "omnichest.controls.line.slot_lock_middle_click": "휠 클릭: 슬롯 잠금",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+클릭: 아이템 잠금",
   "omnichest.controls.line.alt_drag": "Alt+드래그: 연속 잠금",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+셜커 상자 위에 마우스: 내용물 미리 보기",

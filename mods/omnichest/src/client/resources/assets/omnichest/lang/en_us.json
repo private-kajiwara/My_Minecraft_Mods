@@ -285,7 +285,7 @@
 
   "omnichest.controls.title": "Controls",
   "omnichest.controls.line.slot_lock_alt_click": "Alt + Left Click: Toggle slot lock",
-  "omnichest.controls.line.slot_lock_middle_click": "Middle Click: Toggle slot lock",
+  "omnichest.controls.line.slot_lock_hotkey": "%1$s: Toggle slot lock",
   "omnichest.controls.line.item_lock_cycle": "Shift + Alt + Click: Cycle slot/item lock",
   "omnichest.controls.line.alt_drag": "Alt + Drag: Multi-slot lock toggle",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt + Hover Shulker Box: Preview contents",

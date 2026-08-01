@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Hapus semua kunci: %1$s",
   "omnichest.controls.title": "Kontrol",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klik: kunci slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Klik tengah: kunci slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klik: kunci item",
   "omnichest.controls.line.alt_drag": "Alt+Seret: kunci berurutan",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Arahkan ke Kotak shulker: pratinjau isi",

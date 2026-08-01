@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Зняти усі блокування: %1$s",
   "omnichest.controls.title": "Керування",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Клік: блокувати слот",
-  "omnichest.controls.line.slot_lock_middle_click": "Середній клік: блокувати слот",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Клік: блок предмета",
   "omnichest.controls.line.alt_drag": "Alt+Тягнення: безперервне блокування",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Навести на шалкеровий ящик: попередній перегляд вмісту",
