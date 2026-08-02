@@ -322,6 +322,13 @@ public abstract class SlotLockScreenMixin extends Screen {
      * 文字入力中 ({@link TextInputState#isTextInputActive()}) は発火しない
      * (= チェスト GUI の検索欄に打っている最中にロックが暴発しない)。
      * マッチしない場合は何も cancel せず、 バニラの keyInventory / hotbar / drop 処理に素通りさせる。
+     *
+     * <p>
+     * <b>キーリピート</b>: バニラは PRESS と REPEAT の両方で {@code keyPressed} を呼ぶため、
+     * 押しっぱなしだと同じスロットが連射トグルされる。
+     * {@link ClientKeyBindings#acceptSlotLockKeyPress(int)} のエッジ検出で <b>1 押下 = 1 トグル</b>
+     * に揃える。 リピートと判定した場合もイベントは<b>消費</b>する (= 押下時と挙動を揃え、
+     * 割り当て先がバニラのキー (drop 等) と衝突していても押しっぱなしで暴発しないようにする)。
      */
     @Inject(method = "keyPressed",
             at = @At("HEAD"),
@@ -337,6 +344,13 @@ public abstract class SlotLockScreenMixin extends Screen {
             return;
         if (cits_slotLock$isCreativeNonPlayerSlot(hovered))
             return;
+        // OS キーリピートは消費するだけで再トグルしない。
+        // 武装は「実際にトグルする押下」でのみ行う (= ここまで来た時点で必ずトグルする) ので、
+        // スロットに乗っていない押下は初回もリピートも一様にバニラへ素通りする。
+        if (!ClientKeyBindings.acceptSlotLockKeyPress(event.key())) {
+            cir.setReturnValue(true);
+            return;
+        }
 
         AbstractContainerMenu menu = this.getMenu();
         if (hovered.container instanceof Inventory) {

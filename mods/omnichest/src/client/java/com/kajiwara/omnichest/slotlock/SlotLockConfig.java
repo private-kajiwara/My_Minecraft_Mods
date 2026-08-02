@@ -116,6 +116,30 @@ public final class SlotLockConfig {
     public boolean blockSmartDepositOfItemLocked = true;
 
     // ────────────────────────────────────────────────────────────────────
+    // 一度きりの移行フラグ (= 設定ではない。 GUI にも出さない)
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * スロットロック ホットキーの「未割当 → 中マウスボタン」移行を実施済みか。
+     *
+     * <p>
+     * <b>背景</b>: 旧版では {@code key.omnichest.toggle_slot_lock} が <b>未割当</b> で登録され、
+     * 実際の発火はコード内のボタン番号直書き (= 中クリック固定) だった。 そのため既存ユーザーの
+     * {@code options.txt} には一律 {@code key.keyboard.unknown} が保存されている。
+     * 既定を中マウスボタンに直しただけでは保存値が優先され、 <b>更新した全員が中クリックロックを失う</b>。
+     *
+     * <p>
+     * <b>移行</b>: このフラグが false の起動時に限り、 キーが<b>未割当のときだけ</b>中マウスボタンを
+     * 設定して options を保存する。 何か割り当て済みなら一切触らない。 実施の成否に関わらずフラグは
+     * true にし、 <b>二度と再設定しない</b> (= ユーザーが後から未割当にしたら、 その意思を恒久的に尊重する)。
+     *
+     * <p>
+     * 名前の {@code V2} は「発火判定を KeyMapping に一本化した世代」の意味。 将来また既定を変える場合は
+     * 新しいフラグを足すこと (= このフラグを再利用して二重移行しない)。
+     */
+    public boolean slotLockKeyMigratedV2 = false;
+
+    // ────────────────────────────────────────────────────────────────────
     // load / save (= 他 Config と同パターン)
     // ────────────────────────────────────────────────────────────────────
 
@@ -160,6 +184,7 @@ public final class SlotLockConfig {
             if (o.has("blockManualOverride")) this.blockManualOverride = o.get("blockManualOverride").getAsBoolean();
             if (o.has("persistItemModeReassignment")) this.persistItemModeReassignment = o.get("persistItemModeReassignment").getAsBoolean();
             if (o.has("blockSmartDepositOfItemLocked")) this.blockSmartDepositOfItemLocked = o.get("blockSmartDepositOfItemLocked").getAsBoolean();
+            if (o.has("slotLockKeyMigratedV2")) this.slotLockKeyMigratedV2 = o.get("slotLockKeyMigratedV2").getAsBoolean();
         } catch (Exception ioe) {
             OmniChest.LOGGER.warn(
                     "[omnichest] SlotLockConfig: 読み込みエラー {} (デフォルト設定で続行)",
@@ -187,6 +212,7 @@ public final class SlotLockConfig {
             o.addProperty("blockManualOverride", blockManualOverride);
             o.addProperty("persistItemModeReassignment", persistItemModeReassignment);
             o.addProperty("blockSmartDepositOfItemLocked", blockSmartDepositOfItemLocked);
+            o.addProperty("slotLockKeyMigratedV2", slotLockKeyMigratedV2);
 
             try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 w.write(o.toString());
