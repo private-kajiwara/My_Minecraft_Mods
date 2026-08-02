@@ -80,6 +80,26 @@ public final class SidePanelFit {
     }
 
     /**
+     * 望ましい幅を「実際に空いている幅」 へ収める。 <b>下限は割らない</b>。
+     *
+     * <p>
+     * <b>重なりの不変条件</b>: パネルの x は
+     * {@code natural = leftPos + imageWidth + GAP} に置かれ、
+     * {@code maxX = screenW - EDGE - SHADOW - MARGIN - panelWidth} でクランプされる。
+     * ここで {@code room = screenW - (leftPos+imageWidth) - GAP - MARGIN - SHADOW - EDGE}
+     * と定義すると、 {@code panelWidth <= room} のとき {@code maxX >= natural} となり
+     * <b>クランプは発火しない</b> (= チェスト枠へ食い込まない)。 逆に下限で床打ちして
+     * {@code panelWidth == min > room} になった場合だけクランプが効くが、 それは
+     * 可変幅化前 (= 常に min) と同じ挙動なので<b>従来より悪化しない</b>。
+     *
+     * <p>
+     * 単調減少なので冪等: {@code clampToRoom(clampToRoom(d, r, m), r, m) == clampToRoom(d, r, m)}。
+     */
+    public static int clampToRoom(int desiredWidth, int room, int min) {
+        return Math.max(min, Math.min(desiredWidth, room));
+    }
+
+    /**
      * 2 列の行を 1 列 (縦積み) へ落とすべきか。
      *
      * <p>

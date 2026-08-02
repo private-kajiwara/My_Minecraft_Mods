@@ -207,6 +207,81 @@ class SidePanelFitTest {
         }
     }
 
+    // ── 幅解決の決定順・冪等性・重なり不変条件 ────────────────────
+
+    /** {@code GenericContainerScreenMixin} の定数と同じ値 (重なり判定の再現用)。 */
+    private static final int PANEL_GAP = 8;
+    private static final int PANEL_MARGIN = 3;
+    private static final int SHADOW = 2;
+    private static final int EDGE_PAD = 2;
+
+    private static int roomFor(int screenW, int leftPos, int imageWidth) {
+        return screenW - (leftPos + imageWidth) - PANEL_GAP - PANEL_MARGIN - SHADOW - EDGE_PAD;
+    }
+
+    @Test
+    void clampToRoomIsIdempotent() {
+        // 単一パスで確定させるため、 2 回目以降の適用が結果を動かさないこと。
+        for (int desired = MIN_W; desired <= MAX_W; desired++) {
+            for (int room = -50; room <= 260; room += 3) {
+                int once = SidePanelFit.clampToRoom(desired, room, MIN_W);
+                int twice = SidePanelFit.clampToRoom(once, room, MIN_W);
+                assertEquals(once, twice, "desired=" + desired + " room=" + room);
+                assertTrue(once >= MIN_W, "下限割れ");
+                assertTrue(once <= Math.max(MIN_W, Math.min(desired, room)) , "広がっている");
+            }
+        }
+    }
+
+    @Test
+    void resolvedWidthNeverPullsPanelIntoChestMoreThanBefore() {
+        // maxX >= natural (= クランプ不発 = チェストへ食い込まない) が
+        // 「room >= MIN のとき」 常に成り立つこと。 room < MIN のときだけ従来と同じ食い込みになる。
+        final int imageWidth = 176;
+        for (int screenW = 320; screenW <= 1200; screenW += 7) {
+            for (int leftPos = 0; leftPos + imageWidth <= screenW; leftPos += 11) {
+                int room = roomFor(screenW, leftPos, imageWidth);
+                int panel = SidePanelFit.clampToRoom(MAX_W, room, MIN_W);
+                int natural = leftPos + imageWidth + PANEL_GAP;
+                int maxX = screenW - EDGE_PAD - SHADOW - PANEL_MARGIN - panel;
+                if (room >= MIN_W) {
+                    assertTrue(maxX >= natural,
+                            "room>=MIN なのにパネルが左へ引かれた screenW=" + screenW
+                                    + " leftPos=" + leftPos + " panel=" + panel);
+                } else {
+                    // 従来 (常に 146) と同一の状態に落ちること。
+                    assertEquals(MIN_W, panel,
+                            "余地不足時は下限へ戻るべき screenW=" + screenW + " leftPos=" + leftPos);
+                }
+            }
+        }
+    }
+
+    @Test
+    void widthDependsOnlyOnLabelsSoLayoutPassesConverge() {
+        // 幅の第 1 段 (ラベル起点) は幾何に依存しない → 何度呼んでも同じ値。
+        // これが「shift 量 → 余地 → 幅」 の循環を断ち、 単一パスで確定する根拠。
+        int a = SidePanelFit.panelWidth(88, 89, GAP, MIN_W, MAX_W);
+        int b = SidePanelFit.panelWidth(88, 89, GAP, MIN_W, MAX_W);
+        assertEquals(a, b);
+        // 2 回目のレイアウトでは余地が広がっている (= shift 済み) ケースでも、
+        // 第 1 段が毎回リセットされるので結果は同じに落ち着く。
+        int firstPass = SidePanelFit.clampToRoom(a, 150, MIN_W);   // 余地不足 → 150
+        int secondPass = SidePanelFit.clampToRoom(a, 150, MIN_W);  // shift は no-op なので同じ余地
+        assertEquals(firstPass, secondPass);
+        assertEquals(150, firstPass);
+    }
+
+    @Test
+    void hiddenButtonsDoNotInflateWidth() {
+        // 非表示ボタンはラベル幅 0 として渡る (Mixin 側は null → 0)。
+        // en_us で "Sort by Category"(88) を隠したら、 残り (68/36/40/24/28) だけで決まる。
+        int maxGridWithout = Math.max(Math.max(68, 36), Math.max(40, Math.max(24, 28)));
+        assertEquals(68, maxGridWithout);
+        assertEquals(MIN_W, SidePanelFit.panelWidth(maxGridWithout, 89, GAP, MIN_W, MAX_W),
+                "隠したのに拡幅を負担してはいけない");
+    }
+
     @Test
     void hugeLabelFallsBackToTruncationNotOverflow() {
         // 上限まで広げても収まらない極端なラベルは「縦積みでも収まらない」 と判定され、

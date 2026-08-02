@@ -877,6 +877,31 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // (= resize を繰り返しても古いインスタンスを抱え込まない)。
         this.cits$fullLabels.clear();
         // ───────────────────────────────────────────────────────────
+        // 前回 init のウィジェット参照を捨てる。
+        //
+        // vanilla の {@code Screen#init(Minecraft,int,int)} は再 init 時に children/renderables を
+        // clear するが、 <b>この Mixin のフィールドは残る</b>。 各ボタンは Main Menu Visibility が
+        // ON のときだけ生成されるため、 「設定画面で非表示に切り替えて戻る」 と
+        // ({@code OmniChestSettingsScreen} は parent へ {@code setScreen} するので<b>同じ画面
+        // インスタンス</b>が再 init される) 古いボタン参照が残り、
+        //   ・パネル幅の実測 ({@link #cits$maxTwoColumnLabelWidth}) を<b>非表示ボタンのラベルが押し上げる</b>
+        //   ・背景パネルの union が見えない領域まで広がる
+        // という不整合になる。 生成前に必ず null へ戻して 「今回 init で作られたものだけ」 にする。
+        // ───────────────────────────────────────────────────────────
+        this.cits$searchBox = null;
+        this.cits$sortByTypeButton = null;
+        this.cits$sortByCountButton = null;
+        this.cits$layoutLeftButton = null;
+        this.cits$layoutRightButton = null;
+        this.cits$depositButton = null;
+        this.cits$compactButton = null;
+        this.cits$categorySortButton = null;
+        this.cits$searchNetworkButton = null;
+        this.cits$saveTemplateButton = null;
+        this.cits$manageTemplateButton = null;
+        this.cits$autoDistributeButton = null;
+        this.cits$setCategoryButton = null;
+        // ───────────────────────────────────────────────────────────
         // RTL ロケール時の初期レイアウト方向
         // ユーザーが ◀▶ で明示的に切替するまでの初期値だけ反転する。
         // 既存挙動 (LTR 言語) は cits$layoutRight=true のまま、 配置・色・動作は不変。
@@ -1508,8 +1533,8 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
                 : this.leftPos;
         int room = side - CITS_MENU_PANEL_GAP - CITS_PANEL_MARGIN
                 - CITS_PANEL_SHADOW_OVERHANG - CITS_SCREEN_EDGE_PAD;
-        this.cits$panelWidth = Math.max(CITS_MENU_PANEL_MIN_WIDTH,
-                Math.min(this.cits$panelWidth, room));
+        this.cits$panelWidth = SidePanelFit.clampToRoom(
+                this.cits$panelWidth, room, CITS_MENU_PANEL_MIN_WIDTH);
     }
 
     @Unique
