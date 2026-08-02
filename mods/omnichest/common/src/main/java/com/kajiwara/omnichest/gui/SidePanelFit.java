@@ -99,6 +99,70 @@ public final class SidePanelFit {
         return Math.max(min, Math.min(desiredWidth, room));
     }
 
+    /** 「操作方法」 パネルの配置解。 {@link #placeHelp} が返す。 */
+    public record HelpPlacement(int x, int width) {
+    }
+
+    /**
+     * 「操作方法」 パネルの置き場所を決める。 <b>置けない場合は null</b> (= 描画しない)。
+     *
+     * <p>
+     * <b>なぜ純粋関数にしたか</b>: 旧実装は OmniChest パネルの幅を定数 110px と決め打ちして
+     * 「同じ側フォールバック」 の余地と x を計算していた。 パネル幅が可変 (146〜200) になると
+     * その決め打ちがズレて<b>ヘルプがパネルに重なる</b>。 判定と配置の両方を
+     * <b>パネルの実占有域</b>から導出し、 総当たりテストで非交差を機械検証できるようにした。
+     *
+     * <p>
+     * 優先順位:
+     * <ol>
+     * <li><b>反対側</b> (= パネルと逆側の、 チェストと画面端の間)。 パネル幅に依存しない。</li>
+     * <li><b>同じ側</b> (= パネルの外側と画面端の間)。 パネルの実占有域の外へ置く。</li>
+     * <li>どちらも {@code minWidth} に満たなければ <b>null</b> = 描画しない。</li>
+     * </ol>
+     *
+     * @param screenW    論理画面幅
+     * @param chestLeft  チェスト GUI の左端 (= leftPos)
+     * @param chestRight チェスト GUI の右端 (= leftPos + imageWidth)
+     * @param panelLeft  OmniChest パネルの<b>視覚的</b>占有域の左端 (背景外周 + 影を含む)
+     * @param panelRight 同 右端。 パネルが存在しないときは {@code panelLeft > panelRight} を渡す
+     * @param panelOnRight パネルがチェストの右にあるか
+     * @param desiredWidth ヘルプの希望幅 (= テキスト最大幅 + パディング)
+     * @param minWidth   これ未満しか取れないなら描画しない下限
+     * @param margin     隣接要素との間隔
+     * @param edgePad    画面端との余白
+     */
+    public static HelpPlacement placeHelp(int screenW, int chestLeft, int chestRight,
+            int panelLeft, int panelRight, boolean panelOnRight,
+            int desiredWidth, int minWidth, int margin, int edgePad) {
+        boolean hasPanel = panelLeft <= panelRight;
+
+        // (1) 反対側: チェストの外側と画面端の間。 パネルは反対側に居ないので干渉しない。
+        int oppositeAvail = panelOnRight
+                ? chestLeft - margin - edgePad
+                : screenW - chestRight - margin - edgePad;
+        if (oppositeAvail >= minWidth) {
+            int w = Math.min(desiredWidth, oppositeAvail);
+            int x = panelOnRight ? chestLeft - w - margin : chestRight + margin;
+            return new HelpPlacement(x, w);
+        }
+
+        // (2) 同じ側: パネルの実占有域の<b>外側</b>と画面端の間。
+        // パネルが無い場合はチェスト端を基準にする (= 旧来の「ボタン列が無い」 状態)。
+        int barrierRight = hasPanel ? panelRight : chestRight;
+        int barrierLeft = hasPanel ? panelLeft : chestLeft;
+        int sameSideAvail = panelOnRight
+                ? screenW - barrierRight - margin - edgePad
+                : barrierLeft - margin - edgePad;
+        if (sameSideAvail >= minWidth) {
+            int w = Math.min(desiredWidth, sameSideAvail);
+            int x = panelOnRight ? barrierRight + margin : barrierLeft - margin - w;
+            return new HelpPlacement(x, w);
+        }
+
+        // (3) どちらにも置けない → 描画しない (= はみ出したまま描くより非表示を選ぶ)。
+        return null;
+    }
+
     /**
      * 2 列の行を 1 列 (縦積み) へ落とすべきか。
      *

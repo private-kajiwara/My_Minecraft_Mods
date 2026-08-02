@@ -322,53 +322,35 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         if (lines.isEmpty())
             return;
 
-        // ─── 2) 配置サイドを決める: 「GUI の脇に残ってる余白」から算出 ───
-        // ボタン列の幅 (= CITS_DEPOSIT_WIDTH) も計算に含め、 同じ側に置く場合は
-        // ボタンの外側 (= screen 端寄り) に追いやる。
+        // ─── 2) 配置サイドと幅を決める ───
+        // 「同じ側」 に置く場合は OmniChest パネルの<b>実占有域</b> (= 実ボタンの union に
+        // 背景外周と影を足した、 実際に描かれる矩形) の外へ追いやる。
+        //
+        // <b>旧実装の問題</b>: パネル幅を定数 CITS_DEPOSIT_WIDTH (110px) と決め打ちしていた。
+        // パネル幅がラベル実測で可変 (146〜200) になったため、 その決め打ちでは
+        // 「余地の判定」 も 「置く x」 も実際のパネルとズレ、 ヘルプがパネルに重なる。
+        // 判定と配置の両方を同じ実占有域から導出して、 ズレを構造的に無くす。
         int margin = 4;
-        int edgePad = 2;
-        // 反対側 (= ボタンと逆) に取れる幅。
-        int oppositeAvail = this.cits$layoutRight
-                ? this.leftPos - margin - edgePad
-                : this.width - (this.leftPos + this.imageWidth) - margin - edgePad;
-        // 同じ側 (= ボタンの外側) に取れる幅。 ボタン領域を除外する。
-        int sameSideAvail = (this.cits$layoutRight
-                ? this.width - (this.leftPos + this.imageWidth) - margin - CITS_DEPOSIT_WIDTH - margin
-                : this.leftPos - margin - CITS_DEPOSIT_WIDTH - margin) - edgePad;
+        int edgePad = CITS_SCREEN_EDGE_PAD;
 
-        boolean placeOpposite;
-        int avail;
-        if (oppositeAvail >= CITS_HELP_MIN_WIDTH) {
-            placeOpposite = true;
-            avail = oppositeAvail;
-        } else if (sameSideAvail >= CITS_HELP_MIN_WIDTH) {
-            placeOpposite = false;
-            avail = sameSideAvail;
-        } else {
-            return; // どちらの脇にも収まらない → 描画しない (= チェストには絶対に被せない)。
-        }
-
-        // パネル幅は「テキスト最大幅 + パディング」と「残スペース」の小さい方。
         Component title = OmniChestLocale.get(Keys.CONTROLS_TITLE, "Controls");
         int textMaxW = this.font.width(title);
         for (Component line : lines) {
             textMaxW = Math.max(textMaxW, this.font.width(line));
         }
         int desiredW = textMaxW + CITS_HELP_PADDING * 2;
-        int panelWidth = Math.min(desiredW, avail);
 
-        // ─── 3) 配置 X 座標 ───
-        int x;
-        if (placeOpposite) {
-            x = this.cits$layoutRight
-                    ? this.leftPos - panelWidth - margin
-                    : this.leftPos + this.imageWidth + margin;
-        } else {
-            // 同じ側: ボタン列の外側にずらす。
-            x = this.cits$layoutRight
-                    ? this.leftPos + this.imageWidth + margin + CITS_DEPOSIT_WIDTH + margin
-                    : this.leftPos - margin - CITS_DEPOSIT_WIDTH - margin - panelWidth;
+        SidePanelFit.HelpPlacement placement = SidePanelFit.placeHelp(
+                this.width, this.leftPos, this.leftPos + this.imageWidth,
+                cits$panelVisualLeft(), cits$panelVisualRight(), this.cits$layoutRight,
+                desiredW, CITS_HELP_MIN_WIDTH, margin, edgePad);
+        if (placement == null) {
+            // パネル / チェスト / 画面端のいずれとも重ならずに置ける場所が無い
+            // → 描画しない (= はみ出したまま描くより非表示を選ぶ = 従来の非表示挙動)。
+            return;
         }
+        int panelWidth = placement.width();
+        int x = placement.x();
         int y = this.topPos;
 
         // ─── 4) 全行をパネル幅で折り返し、 まず総高さを測ってから描画する ───
@@ -732,18 +714,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // 小型チェスト系 (= 再設計対象) では ◀▶ ナビ行もパネル上端に取り込むため union に含める。
         // ラージ (ダブル) チェストでは ◀▶ は側面パネルの別領域 (検索行の上) に居るため<b>含めない</b>
         // (= 含めるとパネルが検索/種類/数量の上まで伸びてしまう)。 = スコープ外の従来挙動を維持。
-        AbstractWidget[] inGroup = new AbstractWidget[] {
-                this.cits$isLargeChest ? null : this.cits$layoutLeftButton,
-                this.cits$isLargeChest ? null : this.cits$layoutRightButton,
-                this.cits$depositButton,
-                this.cits$compactButton,
-                this.cits$categorySortButton,
-                this.cits$searchNetworkButton,
-                this.cits$saveTemplateButton,
-                this.cits$manageTemplateButton,
-                this.cits$setCategoryButton,
-                this.cits$autoDistributeButton,
-        };
+        AbstractWidget[] inGroup = cits$panelBackgroundWidgets();
         int x = Integer.MAX_VALUE;
         int y = Integer.MAX_VALUE;
         int right = Integer.MIN_VALUE;
@@ -1473,6 +1444,64 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         for (Button b : cits$fullWidthButtons()) {
             cits$fitLabelToWidth(b);
         }
+    }
+
+    /**
+     * 背景パネル ({@link #cits$renderButtonPanel}) が覆うウィジェット群。
+     *
+     * <p>
+     * 「操作方法」 パネルの衝突判定 ({@link #cits$panelVisualLeft()} /
+     * {@link #cits$panelVisualRight()}) も<b>同じ集合</b>から占有域を導く。 描画と判定で
+     * 集合がズレると重なりが再発するため、 定義はここ 1 箇所に集約する。
+     */
+    @Unique
+    private AbstractWidget[] cits$panelBackgroundWidgets() {
+        return new AbstractWidget[] {
+                // ラージチェストでは ◀▶ は側面パネルの別領域に居るので背景の union に含めない。
+                this.cits$isLargeChest ? null : this.cits$layoutLeftButton,
+                this.cits$isLargeChest ? null : this.cits$layoutRightButton,
+                this.cits$depositButton,
+                this.cits$compactButton,
+                this.cits$categorySortButton,
+                this.cits$searchNetworkButton,
+                this.cits$saveTemplateButton,
+                this.cits$manageTemplateButton,
+                this.cits$setCategoryButton,
+                this.cits$autoDistributeButton,
+        };
+    }
+
+    /**
+     * OmniChest パネルの<b>視覚的</b>占有域の左端 (背景外周を含む)。
+     * パネルが 1 つも描かれないときは {@link #cits$panelVisualRight()} より大きい値を返す
+     * (= 「パネル無し」 のセンチネル)。
+     */
+    @Unique
+    private int cits$panelVisualLeft() {
+        int left = Integer.MAX_VALUE;
+        for (AbstractWidget w : cits$panelBackgroundWidgets()) {
+            if (w != null) {
+                left = Math.min(left, w.getX());
+            }
+        }
+        return (left == Integer.MAX_VALUE) ? 1 : left - CITS_PANEL_MARGIN;
+    }
+
+    /**
+     * OmniChest パネルの<b>視覚的</b>占有域の右端 (背景外周 + {@link UnifiedPanelRenderer} の影)。
+     * パネルが 1 つも描かれないときは 0 (= {@link #cits$panelVisualLeft()} より小さい = パネル無し)。
+     */
+    @Unique
+    private int cits$panelVisualRight() {
+        int right = Integer.MIN_VALUE;
+        for (AbstractWidget w : cits$panelBackgroundWidgets()) {
+            if (w != null) {
+                right = Math.max(right, w.getX() + w.getWidth());
+            }
+        }
+        return (right == Integer.MIN_VALUE)
+                ? 0
+                : right + CITS_PANEL_MARGIN + CITS_PANEL_SHADOW_OVERHANG;
     }
 
     /** 2 列セルに入るボタン群 (グリッド + 種類/数量)。 ◀▶ は記号 1 文字なので幅を律速しない。 */

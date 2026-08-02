@@ -282,6 +282,116 @@ class SidePanelFitTest {
                 "隠したのに拡幅を負担してはいけない");
     }
 
+    // ── 「操作方法」 パネルが右パネル / チェスト / 画面端と重ならない ──────────
+
+    private static final int HELP_MARGIN = 4;
+    private static final int HELP_MIN_W = 60;
+    private static final int CHEST_W = 176;
+
+    /** パネルの視覚的占有域 (背景外周 + 影) を実装と同じ規則で求める。 */
+    private static int panelVisualLeft(int chestLeft, boolean onRight, int panelWidth) {
+        int buttonsLeft = onRight
+                ? chestLeft + CHEST_W + PANEL_GAP
+                : chestLeft - PANEL_GAP - panelWidth;
+        return buttonsLeft - PANEL_MARGIN;
+    }
+
+    private static int panelVisualRight(int chestLeft, boolean onRight, int panelWidth) {
+        int buttonsLeft = onRight
+                ? chestLeft + CHEST_W + PANEL_GAP
+                : chestLeft - PANEL_GAP - panelWidth;
+        return buttonsLeft + panelWidth + PANEL_MARGIN + SHADOW;
+    }
+
+    @Test
+    void helpPanelNeverIntersectsSidePanelChestOrScreenEdge() {
+        int checked = 0;
+        int drawn = 0;
+        for (int screenW = 320; screenW <= 1200; screenW += 11) {
+            for (int panelWidth = MIN_W; panelWidth <= MAX_W; panelWidth += 6) {
+                for (int chestLeft = 0; chestLeft + CHEST_W <= screenW; chestLeft += 13) {
+                    for (boolean onRight : new boolean[] { true, false }) {
+                        for (int desired : new int[] { 60, 90, 140, 220 }) {
+                            checked++;
+                            int pl = panelVisualLeft(chestLeft, onRight, panelWidth);
+                            int pr = panelVisualRight(chestLeft, onRight, panelWidth);
+                            SidePanelFit.HelpPlacement p = SidePanelFit.placeHelp(
+                                    screenW, chestLeft, chestLeft + CHEST_W, pl, pr, onRight,
+                                    desired, HELP_MIN_W, HELP_MARGIN, EDGE_PAD);
+                            if (p == null) {
+                                continue; // 置けない → 描画しない (= 許容)
+                            }
+                            drawn++;
+                            int hl = p.x();
+                            int hr = p.x() + p.width();
+                            String at = "screenW=" + screenW + " panelW=" + panelWidth
+                                    + " chestLeft=" + chestLeft + " onRight=" + onRight
+                                    + " desired=" + desired + " -> help[" + hl + "," + hr + "]";
+                            assertTrue(p.width() >= HELP_MIN_W, "下限未満なのに描画 " + at);
+                            assertTrue(p.width() <= desired, "希望幅より広い " + at);
+                            // 画面内
+                            assertTrue(hl >= EDGE_PAD, "画面左へはみ出し " + at);
+                            assertTrue(hr <= screenW - EDGE_PAD, "画面右へはみ出し " + at);
+                            // チェスト本体と非交差
+                            assertFalse(hl < chestLeft + CHEST_W && hr > chestLeft,
+                                    "チェストと重なった " + at);
+                            // OmniChest パネル (背景 + 影) と非交差
+                            assertFalse(hl < pr && hr > pl, "サイドパネルと重なった " + at);
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(checked > 20000, "総当たりが少なすぎる: " + checked);
+        assertTrue(drawn > 0, "1 件も描画されないのはテストとして無意味");
+    }
+
+    @Test
+    void reportedRegressionCase_screen400_panel186_isNotDrawnOverlapping() {
+        // 報告した回帰の再現点: 論理幅 400 / パネル 186 でチェストが左へ寄せられた状態。
+        // 旧実装は「同じ側」 に 110px 決め打ちで置いてパネルへ重なっていた。
+        final int screenW = 400;
+        final int panelWidth = 186;
+        final int chestLeft = screenW - CHEST_W - (PANEL_GAP + panelWidth + PANEL_MARGIN
+                + SHADOW + EDGE_PAD); // = shiftAsideForPanel 後の位置
+        assertEquals(23, chestLeft);
+
+        int pl = panelVisualLeft(chestLeft, true, panelWidth);
+        int pr = panelVisualRight(chestLeft, true, panelWidth);
+        SidePanelFit.HelpPlacement p = SidePanelFit.placeHelp(
+                screenW, chestLeft, chestLeft + CHEST_W, pl, pr, true,
+                140, HELP_MIN_W, HELP_MARGIN, EDGE_PAD);
+
+        // 反対側は 23-4-2 = 17px しか無く、同じ側もパネル右端 (=398) の外に 60px 取れない
+        // → 描画しない。旧実装のような「重なって描く」 にはならない。
+        assertEquals(null, p, "置き場所が無いので非表示になるべき");
+    }
+
+    @Test
+    void helpPrefersOppositeSideAndIgnoresPanelWidthThere() {
+        // 反対側に余地があるうちはパネル幅に一切影響されない (= 通常ケースは従来と同じ挙動)。
+        final int screenW = 640;
+        final int chestLeft = (screenW - CHEST_W) / 2; // 232
+        SidePanelFit.HelpPlacement a = SidePanelFit.placeHelp(screenW, chestLeft,
+                chestLeft + CHEST_W, panelVisualLeft(chestLeft, true, MIN_W),
+                panelVisualRight(chestLeft, true, MIN_W), true, 140, HELP_MIN_W, HELP_MARGIN, EDGE_PAD);
+        SidePanelFit.HelpPlacement b = SidePanelFit.placeHelp(screenW, chestLeft,
+                chestLeft + CHEST_W, panelVisualLeft(chestLeft, true, MAX_W),
+                panelVisualRight(chestLeft, true, MAX_W), true, 140, HELP_MIN_W, HELP_MARGIN, EDGE_PAD);
+        assertEquals(a, b, "反対側配置はパネル幅に依存してはいけない");
+        assertEquals(chestLeft - 140 - HELP_MARGIN, a.x());
+        assertEquals(140, a.width());
+    }
+
+    @Test
+    void helpIsHiddenRatherThanClippedWhenNoRoom() {
+        // 極端に狭い画面: どちらにも 60px 取れない → null (= 非表示)。
+        SidePanelFit.HelpPlacement p = SidePanelFit.placeHelp(
+                200, 12, 12 + CHEST_W, panelVisualLeft(12, true, MIN_W),
+                panelVisualRight(12, true, MIN_W), true, 140, HELP_MIN_W, HELP_MARGIN, EDGE_PAD);
+        assertEquals(null, p);
+    }
+
     @Test
     void hugeLabelFallsBackToTruncationNotOverflow() {
         // 上限まで広げても収まらない極端なラベルは「縦積みでも収まらない」 と判定され、
