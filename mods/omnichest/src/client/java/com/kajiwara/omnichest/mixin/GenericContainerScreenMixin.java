@@ -1089,8 +1089,27 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // この画面は上部行を持てる (= 検索バーだけ非表示でも 種類/数量/◀▶ のレイアウトは行う)。
         this.cits$hasSearchRow = true;
 
-        // Main Menu Visibility: 検索バーの表示トグルが ON のときだけ生成する。 非表示でも検索索引
-        // (ContainerScanner / SearchIndex) は従来通り動く (= チェスト内ハイライト UI を出さないだけ)。
+        // Main Menu Visibility: 検索バーの表示トグルが ON のときだけ生成する。
+        //
+        // ⚠ <b>既知の不具合 (1.1.1 時点): この検索欄は現在<u>無機能</u></b>。
+        //   v1.0.0 (1c3b444) には
+        //     ・{@code setResponder} でクエリを保持する入力配線
+        //     ・{@code render} TAIL でクエリに一致しないスロットを暗くする絞り込み描画
+        //   があったが、 1.21.11 移行コミット 8a16b71 ("Minecraftバージョンを1.21.11に更新し、
+        //   不要なファイルを削除") で両方とも巻き添えで削除され、 以降 再実装されていない
+        //   (履歴確認: {@code git log --all -S 'cits$searchQuery'} が導入/削除の 2 件のみ、
+        //    {@code cits$searchBox.getValue} は全履歴で 0 件)。
+        //   現在この欄の値を読む箇所はリポジトリ全体に存在せず、 入力しても何も起きない。
+        //
+        //   なお {@link com.kajiwara.omnichest.client.render.SearchMatchSlotRenderer} による
+        //   スロットのハイライトは {@link com.kajiwara.omnichest.client.render.ChestHighlighter}
+        //   由来 (= {@code SearchScreen} でピンしたアイテム) であって、 この欄とは無関係。
+        //   ツールチップ ({@link Keys#EDITBOX_SEARCH_TOOLTIP}
+        //   "Highlight items in this chest by name.") は現状の挙動と一致していない。
+        //   機能復旧は次バージョン予定 (CHANGELOG の 1.1.1「既知の不具合」参照)。
+        //
+        //   ※ 検索索引 ({@code ContainerScanner} / {@code SearchIndex}) と倉庫検索 ({@code SearchScreen})
+        //     は<b>この欄とは独立</b>に従来どおり動作する (= 表示トグルを OFF にしても影響しない)。
         if (cits$ui().showSearchBar) {
         this.cits$searchBox = new EditBox(this.font, 0, 0, 100, 14,
                 OmniChestLocale.get(Keys.EDITBOX_SEARCH_LABEL, "Search"));
