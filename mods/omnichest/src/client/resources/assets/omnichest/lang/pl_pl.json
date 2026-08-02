@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Usuń wszystkie blokady: %1$s",
   "omnichest.controls.title": "Sterowanie",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klik: zablokuj slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Środkowy klik: zablokuj slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klik: blokada przedmiotu",
   "omnichest.controls.line.alt_drag": "Alt+Przeciąganie: ciągła blokada",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Najedź na Pudełko Shulkera: podgląd zawartości",

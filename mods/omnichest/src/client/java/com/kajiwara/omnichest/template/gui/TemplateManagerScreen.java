@@ -717,11 +717,13 @@ public class TemplateManagerScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         if (event.key() == GLFW.GLFW_KEY_ESCAPE)
             return super.keyPressed(event);
-        if (this.searchBox != null && this.searchBox.isFocused()) {
-            if (this.searchBox.keyPressed(event))
-                return true;
-            if (this.searchBox.canConsumeInput())
-                return false;
+        // Tab はフォーカス移動として画面 (Screen) 側に通す。 Esc は上で処理済み。
+        if (event.key() != GLFW.GLFW_KEY_TAB
+                && this.searchBox != null && this.searchBox.canConsumeInput()) {
+            // 検索欄にフォーカスがある間は、 EditBox が処理しなかったキーも消費する
+            // (= 素通りさせると他ハンドラへ届き、 タイプ中に暴発する)。
+            this.searchBox.keyPressed(event);
+            return true;
         }
         return super.keyPressed(event);
     }

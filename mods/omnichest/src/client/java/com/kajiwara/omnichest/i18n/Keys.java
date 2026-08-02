@@ -124,7 +124,12 @@ public final class Keys {
     // ─── Controls Help Panel (チェスト GUI の脇に出す操作方法一覧) ──────
     public static final String CONTROLS_TITLE = "omnichest.controls.title";
     public static final String CONTROLS_LINE_SLOT_LOCK_ALT_CLICK = "omnichest.controls.line.slot_lock_alt_click";
-    public static final String CONTROLS_LINE_SLOT_LOCK_MIDDLE_CLICK = "omnichest.controls.line.slot_lock_middle_click";
+    /**
+     * スロットロック ホットキーの説明行。 {@code %1$s} に <b>実際に割り当てられているキー名</b>
+     * ({@code KeyMapping#getTranslatedKeyMessage}) が入る。 既定は中マウスボタンだが
+     * vanilla Controls で再割当できるため、 文言側にボタン名を埋め込まない。
+     */
+    public static final String CONTROLS_LINE_SLOT_LOCK_HOTKEY = "omnichest.controls.line.slot_lock_hotkey";
     public static final String CONTROLS_LINE_ITEM_LOCK_CYCLE = "omnichest.controls.line.item_lock_cycle";
     public static final String CONTROLS_LINE_ALT_DRAG = "omnichest.controls.line.alt_drag";
     public static final String CONTROLS_LINE_SHIFT_COMPACT = "omnichest.controls.line.shift_compact";

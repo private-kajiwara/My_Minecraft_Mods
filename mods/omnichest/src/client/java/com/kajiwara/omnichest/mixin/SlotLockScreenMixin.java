@@ -1,5 +1,7 @@
 package com.kajiwara.omnichest.mixin;
 
+import com.kajiwara.omnichest.client.ClientKeyBindings;
+import com.kajiwara.omnichest.client.input.TextInputState;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import com.kajiwara.omnichest.slotlock.InventoryProtectionLayer;
@@ -8,12 +10,14 @@ import com.kajiwara.omnichest.slotlock.MenuSlotLockSession;
 import com.kajiwara.omnichest.slotlock.SlotLockConfig;
 import com.kajiwara.omnichest.slotlock.SlotLockManager;
 import com.kajiwara.omnichest.slotlock.SlotOverlayRenderer;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
@@ -44,8 +48,11 @@ import java.util.Set;
  *     {@link SlotOverlayRenderer} に委譲し、ロック中スロットに Tint / Glow / マーカーを乗せる。</li>
  * <li><b>Tooltip 行追加</b> — {@code renderTooltip} の HEAD でロック中スロットを検出し、
  *     [LOCKED SLOT] / [LOCKED ITEM] 行を末尾に足した tooltip を自分で描いて元処理をキャンセル。</li>
- * <li><b>クリック介入</b> — {@code mouseClicked} の HEAD で Alt+Click / Middle Click /
- *     Shift+Alt+Click を検出し、ロック切替を発火して元処理をキャンセル。</li>
+ * <li><b>クリック介入</b> — {@code mouseClicked} の HEAD で Alt+Click /
+ *     再割当可能ホットキー (既定 = 中クリック) / Shift+Alt+Click を検出し、
+ *     ロック切替を発火して元処理をキャンセル。</li>
+ * <li><b>キー介入</b> — {@code keyPressed} の HEAD で、ホットキーがキーボードに
+ *     割り当てられている場合の発火を担う。</li>
  * </ol>
  *
  * <p>
@@ -200,7 +207,9 @@ public abstract class SlotLockScreenMixin extends Screen {
      * 取り扱う組合せ (デフォルト config):
      * <ul>
      * <li><b>Alt + 左クリック</b> (button=0, ALT 修飾)</li>
-     * <li><b>Middle Click</b> (button=2)</li>
+     * <li><b>スロットロック ホットキー</b> — {@link ClientKeyBindings#slotLockToggleMapping()}
+     *     との {@link KeyMapping#matchesMouse} 一致。 既定は中マウスボタンだが Controls から
+     *     再割当・未割当にできる (= 未割当なら発火せず cancel もしない)。</li>
      * <li><b>Shift + Alt + 左クリック</b> → サイクル切替</li>
      * </ul>
      *
@@ -228,9 +237,13 @@ public abstract class SlotLockScreenMixin extends Screen {
 
         SlotLockConfig cfg = SlotLockConfig.get();
         boolean cycle = (button == 0 && cfg.cycleWithShiftAltClick && isAlt && isShift);
-        boolean simpleToggle = !cycle && (
-                (button == 0 && cfg.toggleWithAltClick && isAlt && !isShift)
-                || (button == 2 && cfg.toggleWithMiddleClick));
+        // Alt + 左クリック ジェスチャ。 修飾キー込みのコンボは KeyMapping で表現できないので、
+        // 従来どおり SlotLockConfig のトグルで制御する。
+        boolean altToggle = !cycle && (button == 0 && cfg.toggleWithAltClick && isAlt && !isShift);
+        // 再割当可能ホットキー (既定 = 中マウスボタン)。 ボタン番号の直書きはせず KeyMapping に問う。
+        // 未割当なら matchesMouse は必ず false = 発火しない & 後段の cancel にも到達しない。
+        boolean hotkeyToggle = !cycle && !altToggle && cits_slotLock$hotkeyMatchesMouse(event);
+        boolean simpleToggle = altToggle || hotkeyToggle;
 
         if (!cycle && !simpleToggle)
             return;
@@ -266,7 +279,8 @@ public abstract class SlotLockScreenMixin extends Screen {
         if (fired) {
             // ─── Alt+ドラッグ連続選択モードを開始 ───
             // SLOT モードの simple toggle (= Alt+左クリック) のときだけ drag を起動。
-            if (simpleToggle && button == 0 && cfg.toggleWithAltClick) {
+            // ホットキー経路 (中クリック等) は drag 対象外 = 従来と同じ (mouseDragged が Alt 必須のため)。
+            if (altToggle) {
                 this.cits_slotLock$dragMode = wasLocked ? DRAG_UNLOCK : DRAG_LOCK;
                 this.cits_slotLock$dragTouched.clear();
                 this.cits_slotLock$dragTouched.add(dragKey);
@@ -275,6 +289,78 @@ public abstract class SlotLockScreenMixin extends Screen {
             // バニラの mouseClicked 全体 (drag 開始判定含む) を完全に抑止する。
             cir.setReturnValue(true);
         }
+    }
+
+    /**
+     * スロットロック ホットキーが「このマウスイベント」に割り当てられているかを問う。
+     *
+     * <p>
+     * 判定は {@link KeyMapping#matchesMouse} 一本 (= {@code button == 2} のような直書き比較はしない)。
+     * これにより Controls での再割当がそのまま効き、 <b>未割当なら常に false</b> になる
+     * (= クリエイティブの中クリック複製 / 通常の中クリックがバニラ経路へ素通りする)。
+     */
+    @Unique
+    private boolean cits_slotLock$hotkeyMatchesMouse(MouseButtonEvent event) {
+        KeyMapping mapping = ClientKeyBindings.slotLockToggleMapping();
+        return mapping != null && mapping.matchesMouse(event);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // (3b) キーボード割当時の発火 — keyPressed HEAD
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * スロットロック ホットキーが <b>キーボード</b> に割り当てられている場合の発火経路。
+     *
+     * <p>
+     * <b>なぜ GUI 側で判定するのか</b>: バニラは Screen が開いている間 {@link KeyMapping} を
+     * tick しない ({@code KeyboardHandler#keyPress} が {@code KeyMapping.set/click} を
+     * {@code minecraft.screen == null} のときだけ呼ぶ) ため、 {@code consumeClick()} は
+     * インベントリ GUI の中では永久に false。 よってここで {@link KeyMapping#matches} を直接評価する。
+     *
+     * <p>
+     * 文字入力中 ({@link TextInputState#isTextInputActive()}) は発火しない
+     * (= チェスト GUI の検索欄に打っている最中にロックが暴発しない)。
+     * マッチしない場合は何も cancel せず、 バニラの keyInventory / hotbar / drop 処理に素通りさせる。
+     *
+     * <p>
+     * <b>キーリピート</b>: バニラは PRESS と REPEAT の両方で {@code keyPressed} を呼ぶため、
+     * 押しっぱなしだと同じスロットが連射トグルされる。
+     * {@link ClientKeyBindings#acceptSlotLockKeyPress(int)} のエッジ検出で <b>1 押下 = 1 トグル</b>
+     * に揃える。 リピートと判定した場合もイベントは<b>消費</b>する (= 押下時と挙動を揃え、
+     * 割り当て先がバニラのキー (drop 等) と衝突していても押しっぱなしで暴発しないようにする)。
+     */
+    @Inject(method = "keyPressed",
+            at = @At("HEAD"),
+            cancellable = true)
+    private void cits_slotLock$onKeyPressed(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (TextInputState.isTextInputActive())
+            return;
+        KeyMapping mapping = ClientKeyBindings.slotLockToggleMapping();
+        if (mapping == null || !mapping.matches(event))
+            return;
+        Slot hovered = this.hoveredSlot;
+        if (hovered == null)
+            return;
+        if (cits_slotLock$isCreativeNonPlayerSlot(hovered))
+            return;
+        // OS キーリピートは消費するだけで再トグルしない。
+        // 武装は「実際にトグルする押下」でのみ行う (= ここまで来た時点で必ずトグルする) ので、
+        // スロットに乗っていない押下は初回もリピートも一様にバニラへ素通りする。
+        if (!ClientKeyBindings.acceptSlotLockKeyPress(event.key())) {
+            cir.setReturnValue(true);
+            return;
+        }
+
+        AbstractContainerMenu menu = this.getMenu();
+        if (hovered.container instanceof Inventory) {
+            // プレイヤースロット: 永続 SlotLockManager (= マウス経路の simple toggle と同一 API)。
+            SlotLockManager.get().toggleByMenuSlot(menu, hovered);
+        } else {
+            // チェスト本体スロット: セッション限定ロック。
+            MenuSlotLockSession.get().toggle(menu.containerId, hovered.index);
+        }
+        cir.setReturnValue(true);
     }
 
     // ────────────────────────────────────────────────────────────────────

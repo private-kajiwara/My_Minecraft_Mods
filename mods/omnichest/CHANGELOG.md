@@ -4,6 +4,88 @@ OmniChest の主要な修正・変更の記録。新しいエントリを上に�
 
 ## [Unreleased]
 
+### Fixed — mod 画面のテキスト入力中に、押したキーでインベントリが閉じる / 別メニューが開く
+
+- **症状**（外部報告）: mod のメニューでタイプ中に、押したキーで別のメニューが開いたり、
+  "Shell" や "enderchest" と打とうとするとインベントリが閉じてしまう。
+- **原因**: チェスト GUI に載せている検索欄（`GenericContainerScreenMixin#cits$searchBox`）が
+  **キー入力を消費していなかった**。 `EditBox` は印字キーを `keyPressed` では消費しない（文字は
+  `charTyped` 経由で入る）ため、フォーカスがあってもバニラ `AbstractContainerScreen#keyPressed` の
+  続き — `options.keyInventory.matches()` → **`onClose()`**（既定 <b>E</b>）、`checkHotbarKeyPressed()`、
+  `keyPickItem` / `keyDrop` — にそのまま到達していた。 "Shell" / "enderchest" はどちらも `e` を含むため
+  インベントリが閉じる。 閉じた瞬間 `minecraft.screen == null` になるので**以降の打鍵は生の
+  `KeyMapping` に届き**、`e` でインベントリが開き直る / `g`・`j`・`h` を含む語で検索・振り分け・
+  Smart Deposit が発火する＝「別のメニューが開く」の正体（同一原因の連鎖）。
+- **修正**:
+  1. **画面側**: バニラ `CreativeModeInventoryScreen` と同じ流儀で、入力ウィジェットにフォーカスが
+     ある間はキー入力を入力ウィジェットで処理して **true を返して消費**する（判定は
+     `EditBox#canConsumeInput()`）。 通すのは **Esc**（フォーカス解除 / 画面を閉じる＝現行挙動のまま）と
+     **Tab**（フォーカス移動）のみ。 **フォーカスしていない時は素通り**なので、`e` で閉じる等の
+     バニラ挙動は不変。 入力欄を持つ全画面に同じ扱いを適用（チェスト GUI の検索欄・`SearchScreen`・
+     `TemplateManagerScreen`・`SetCategoryScreen`・`TemplateSaveScreen`）。
+     `charTyped` は対処不要（`AbstractContainerScreen` は override しておらず、`Screen` の
+     フォーカス委譲で EditBox が確実に消費する＝IME / dead key も従来経路のまま）。
+  2. **ポーリング側**: 「今テキスト入力を受け付けているか」を返す単一のヘルパ
+     `TextInputState#isTextInputActive()` を新設し、**GLFW 生ポーリングのホットキー全経路**
+     （Alt+C ディメンションメニュー / Alt+D 全ピン解除）と、スロットロック ホットキーの
+     キーボード判定がこれを参照して抑止する。 判定は「現在の Screen のフォーカス連鎖の先が
+     `EditBox` で、かつ入力を受け取れる状態」＝ウィジェット型のみで判断し、画面ごとの登録は不要。
+     このヘルパは **OmniChest 自身のホットキーを黙らせるためだけ**に使い、バニラの入力処理
+     （看板 / 本 / チャット / 金床）には一切介入しない。
+- **どちらが効いていたか**: 実際に症状を出していたのは **(1) 画面側の未消費**。 (2) のポーリング経路は
+  Alt+D が `screen == null` ガード付き、Alt+C も `DimensionMenuScreen#toggle()` が `screen == null` の
+  ときしか開かないため**現状は発火していなかった**（screen の有無で偶然守られていた状態）。 指示どおり
+  単一ヘルパ参照へ寄せ、「テキスト入力中は抑止」という規則を明示化した。 KeyMapping 経由のホットキー
+  （G / J / H など）は、バニラが Screen 表示中に KeyMapping を tick しないため元から発火しない。
+- **影響範囲**: キー入力のルーティングのみ。 検索 / ハイライト / ピン / ビーム / HUD 描画・Smart Deposit・
+  カテゴリソート・テンプレ・GUI スケール処理・マウスクリックによるスロット操作は不変。
+  新規 Mixin なし（既存 `GenericContainerScreenMixin` に `keyPressed` 注入を追加＝Mixin 数不変）。
+  lang 追加なし。 版差なし（`AbstractContainerScreen#keyPressed(KeyEvent)` は 1.21.10〜26.2 の
+  全 6 ノードに実在＝javap / tiny mappings で実測）。
+
+### Fixed — スロットロックのホットキーが再割当できず中クリック固定（クリエイティブのピックブロック複製を潰す）
+
+- **症状**（外部報告）: コントロール設定にスロットロックのキーバインドがあるのに **未割当** と表示され、
+  それでも **中マウスボタンでロックが発動する**。 設定で別のキーへ割り当て直しても中クリックのまま。
+  結果として **クリエイティブのインベントリで中クリックによるスタック複製（ピックブロック / `CLONE`）ができない**。
+  Mod を外すと起きない。
+- **原因**: 発火判定が KeyMapping ではなく **ボタン番号の直書き比較** だった。
+  `SlotLockScreenMixin#cits_slotLock$onMouseClicked` が `button == 2 && cfg.toggleWithMiddleClick`
+  でマッチさせ、マッチすると `cir.setReturnValue(true)` でバニラ `mouseClicked` を丸ごと打ち切っていたため、
+  その先の `keyPickItem` → `slotClicked(..., ContainerInput.CLONE)` に到達できなかった。
+  一方 `key.omnichest.toggle_slot_lock` は **未割当で登録され、判定には一切使われていなかった**
+  （唯一の参照は `ClientKeyBindings#onTick` の `consumeClick()` ループだが、バニラは
+  `KeyboardHandler#keyPress` で `KeyMapping.set/click` を `minecraft.screen == null` のときだけ呼ぶため、
+  インベントリ GUI の中では永久に発火しない＝到達不能コード）。 つまり **設定は飾りで、実挙動は常に中クリック固定**。
+- **修正**: 発火判定を **KeyMapping 一本**に統一。
+  - `key.omnichest.toggle_slot_lock` の **既定バインドを「中マウスボタン」**（`Type.MOUSE` / button 2）に変更。
+  - マウスは `KeyMapping#matchesMouse(MouseButtonEvent)`、キーボードは `KeyMapping#matches(KeyEvent)` で判定
+    （`AbstractContainerScreen#keyPressed` にも判定を追加＝GUI 内では KeyMapping が tick されないため）。
+  - **未割当（`InputConstants.UNKNOWN`）なら常に false ＝機能を発動しない**（中クリックへのフォールバックは無し）。
+  - **非マッチ時はイベントを cancel しない**ので、クリエイティブの中クリック複製と通常の中クリックが復活する。
+  - 設定の二重化を解消: `SlotLockConfig.toggleWithMiddleClick` を廃止し、**vanilla Controls を唯一の源**にした
+    （旧 JSON に残る同名プロパティは読み飛ばされるだけで無害）。操作ヘルプの行も、実際に割り当てられている
+    キー名を表示し、未割当なら行ごと消えるようにした（新規キー `omnichest.controls.line.slot_lock_hotkey`）。
+- **既定は「中マウスボタン」のまま**。 変わったのは「**今回から本当に再割当／未割当ができる**」ことだけで、
+  操作感は従来どおり。 **クリエイティブのピックブロック（中クリック複製）と競合する場合は、
+  コントロール設定でこのキーを外す（未割当にする）か、別のキーへ割り当て直せる。**
+- **一度きりの移行**: 旧版はこのキーを未割当で登録していたため、既存ユーザーの `options.txt` には
+  一律 `key.keyboard.unknown` が保存されている。 これをそのままにすると更新した全員が中クリックロックを
+  失うので、**初回起動時に一度だけ**、キーが**未割当のときに限り**中マウスボタンを設定して options を保存する
+  （何か割り当て済みなら一切触らない）。 実行有無に関わらず移行フラグ
+  （`slot_lock_config.json` の `slotLockKeyMigratedV2`）を立て、**二度と再設定しない**ので、
+  移行後にユーザーが未割当へ変更すればその状態が恒久的に保たれる。 移行を実行した回のみログに 1 行残す
+  （チャット通知はしない）。
+- **キーリピート**: バニラは PRESS と REPEAT の両方で `keyPressed` を呼ぶため、キーボードに割り当てた場合に
+  押しっぱなしで同じスロットが連射トグルされる。 GLFW の実キー状態を毎ティック見るエッジ検出で
+  **1 押下 = 1 トグル**に揃えた（リピート分はイベントを消費するだけ）。
+- **既知の制約**: このキーを**マウス左／右ボタンに割り当てると、スロットの通常操作が奪われる**
+  （攻撃・使用と同じボタンのため）。 バニラのコントロール設定が競合を赤字で警告するので、それに従うこと。
+- **影響範囲**: 発火の入力判定のみ。 ロック機能そのもののロジック・永続化・オーバーレイ描画、
+  Alt+左クリック / Shift+Alt+左クリック / Alt+ドラッグの各ジェスチャ（修飾コンボは KeyMapping で表現不能なため
+  従来どおり `SlotLockConfig` 制御）は不変。 新規 Mixin なし（Mixin 数不変）。 版差は無し
+  （`matchesMouse` / `matches` / `isUnbound` は 1.21.10〜26.2 の全 6 ノードに実在＝javap / tiny mappings で実測）。
+
 ### Fixed — シェーダ下で在世界ワイヤーハイライトが消える問題（描画経路を VisualizeGate 実装へ移植・1.0.5→1.0.6）
 
 - **症状**: Iris / Sodium+Iris + シェーダパック（Complementary / BSL / SEUS 等）有効時、 倉庫検索ハイライトの

@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• सभी लॉक हटाएँ: %1$s",
   "omnichest.controls.title": "नियंत्रण",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+क्लिक: स्लॉट लॉक",
-  "omnichest.controls.line.slot_lock_middle_click": "बीच क्लिक: स्लॉट लॉक",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+क्लिक: आइटम लॉक",
   "omnichest.controls.line.alt_drag": "Alt+खींचें: निरंतर लॉक",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+शुलकर बॉक्स पर होवर: सामग्री पूर्वावलोकन",

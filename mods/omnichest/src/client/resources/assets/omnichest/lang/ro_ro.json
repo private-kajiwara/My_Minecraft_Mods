@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Șterge toate blocările: %1$s",
   "omnichest.controls.title": "Comenzi",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Clic: blochează slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Clic mijloc: blochează slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Clic: blocare obiect",
   "omnichest.controls.line.alt_drag": "Alt+Tragere: blocare continuă",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Plasează pe Cutia Shulker: previzualizare conținut",

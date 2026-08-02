@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Ta bort alla lås: %1$s",
   "omnichest.controls.title": "Kontroller",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klick: lås slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Mittenklick: lås slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klick: föremålslås",
   "omnichest.controls.line.alt_drag": "Alt+Dra: löpande låsning",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Hovra över Shulker-låda: förhandsvisa innehåll",

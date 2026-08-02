@@ -267,7 +267,6 @@
 
   "omnichest.controls.title": "בקרות",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+לחיצה: נעילת תא",
-  "omnichest.controls.line.slot_lock_middle_click": "לחיצה אמצעית: נעילת תא",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+לחיצה: נעילת פריט",
   "omnichest.controls.line.alt_drag": "Alt+גרירה: נעילה רציפה",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+ריחוף מעל שאלקר: תצוגה מקדימה",

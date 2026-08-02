@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "Sandık içeriğini kategoriye göre sıralar.\n\nYapı, odun, cevher, yemek gibi anlam gruplarına ayırır\nve aynı yığınları tek bir yığınta birleştirir.\n\nKilitli slotlara dokunulmaz.",
   "omnichest.controls.title": "Kontroller",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Tık: Yuva kilitle",
-  "omnichest.controls.line.slot_lock_middle_click": "Orta Tık: Yuva kilitle",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Tık: Eşya kilidi",
   "omnichest.controls.line.alt_drag": "Alt+Sürükle: Sürekli kilit",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Shulker kutusu üzerinde gezdir: içerik önizleme",

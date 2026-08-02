@@ -5,11 +5,13 @@ import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import com.kajiwara.omnichest.template.TemplateManager;
 import com.kajiwara.omnichest.template.data.ChestTemplate;
 import com.kajiwara.omnichest.template.data.TemplateKind;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
@@ -82,6 +84,22 @@ public class TemplateSaveScreen extends Screen {
                 OmniChestLocale.get(Keys.BUTTON_CANCEL, "Cancel"),
                 b -> this.onClose())
                 .bounds(cx + 5, cy + 30, 115, 20).build());
+    }
+
+    /**
+     * 名前欄にフォーカスがある間は、 EditBox が処理しなかったキーも <b>消費</b> する
+     * (= 他の入力付き画面と同じ扱いに揃える)。 通すのは Esc (画面を閉じる) と
+     * Tab (フォーカス移動) のみ。
+     */
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        int key = event.key();
+        if (key != InputConstants.KEY_ESCAPE && key != InputConstants.KEY_TAB
+                && this.nameBox != null && this.nameBox.canConsumeInput()) {
+            this.nameBox.keyPressed(event);
+            return true;
+        }
+        return super.keyPressed(event);
     }
 
     private Component kindLabel() {

@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• Odstranit všechny zámky: %1$s",
   "omnichest.controls.title": "Ovládání",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Klik: zamknout slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Prostřední klik: zamknout slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Klik: zámek předmětu",
   "omnichest.controls.line.alt_drag": "Alt+Tažení: průběžné zamykání",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Najetí na Shulker box: náhled obsahu",

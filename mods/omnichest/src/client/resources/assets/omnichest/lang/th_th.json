@@ -347,7 +347,6 @@
   "omnichest.keybind.line.clear_all_locks": "• ลบทั้งหมด: %1$s",
   "omnichest.controls.title": "การควบคุม",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+คลิก: ล็อกช่อง",
-  "omnichest.controls.line.slot_lock_middle_click": "คลิกล้อ: ล็อกช่อง",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+คลิก: ล็อกไอเทม",
   "omnichest.controls.line.alt_drag": "Alt+ลาก: ล็อกต่อเนื่อง",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+เลื่อนเมาส์ไปที่กล่องชัลเกอร์: ดูเนื้อหา",

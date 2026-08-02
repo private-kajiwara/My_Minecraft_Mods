@@ -244,7 +244,6 @@
   "omnichest.button.category_sort.tooltip": "Sort chest contents by category.\n\nItems are grouped by meaning — building, wood, ore, food, and so on —\nand identical stacks are merged into one.\n\nLocked slots stay where they are.",
   "omnichest.controls.title": "Controls",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+Click: Lock slot",
-  "omnichest.controls.line.slot_lock_middle_click": "Middle Click: Lock slot",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+Click: Item lock",
   "omnichest.controls.line.alt_drag": "Alt+Drag: Continuous lock",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+Hover Shulker Box: Preview contents",

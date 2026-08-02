@@ -232,7 +232,6 @@
   "omnichest.button.category_sort.tooltip": "依種類整理儲物箱內的物品。\n\n依 建築·木材·礦物·食物 等含義分組,\n相同物品自動合併。\n\n已鎖定的欄位不會被移動。",
   "omnichest.controls.title": "操作方法",
   "omnichest.controls.line.slot_lock_alt_click": "Alt+左鍵: 鎖定欄位",
-  "omnichest.controls.line.slot_lock_middle_click": "中鍵: 鎖定欄位",
   "omnichest.controls.line.item_lock_cycle": "Shift+Alt+左鍵: 物品鎖定",
   "omnichest.controls.line.alt_drag": "Alt+拖動: 連續鎖定",
   "omnichest.controls.line.alt_hover_shulker_preview": "Alt+滑鼠停留於潛影盒: 預覽內容",

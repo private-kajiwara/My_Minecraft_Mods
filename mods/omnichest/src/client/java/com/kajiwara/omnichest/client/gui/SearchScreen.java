@@ -1114,9 +1114,13 @@ public class SearchScreen extends Screen {
             return true;
         }
 
-        if (this.searchBox != null && this.searchBox.isFocused()) {
-            if (this.searchBox.keyPressed(event)) return true;
-            if (this.searchBox.canConsumeInput()) return false;
+        // Tab はフォーカス移動として画面 (Screen) 側に通す。 Esc は上で処理済み。
+        if (event.key() != GLFW.GLFW_KEY_TAB
+                && this.searchBox != null && this.searchBox.canConsumeInput()) {
+            // 検索欄にフォーカスがある間は、 EditBox が処理しなかったキーも <b>消費</b> する。
+            // 素通りさせると mod / バニラの他ハンドラに届いてしまう (= タイプ中の暴発)。
+            this.searchBox.keyPressed(event);
+            return true;
         }
         return super.keyPressed(event);
     }
