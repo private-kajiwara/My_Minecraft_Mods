@@ -9,6 +9,7 @@ import com.kajiwara.omnichest.client.gui.SearchScreen;
 import com.kajiwara.omnichest.client.gui.search.preview.UnifiedPanelRenderer;
 import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.distribution.StorageDistributionManager;
+import com.kajiwara.omnichest.gui.SidePanelFit;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import com.kajiwara.omnichest.search.ContainerScanner;
@@ -321,53 +322,35 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         if (lines.isEmpty())
             return;
 
-        // ─── 2) 配置サイドを決める: 「GUI の脇に残ってる余白」から算出 ───
-        // ボタン列の幅 (= CITS_DEPOSIT_WIDTH) も計算に含め、 同じ側に置く場合は
-        // ボタンの外側 (= screen 端寄り) に追いやる。
+        // ─── 2) 配置サイドと幅を決める ───
+        // 「同じ側」 に置く場合は OmniChest パネルの<b>実占有域</b> (= 実ボタンの union に
+        // 背景外周と影を足した、 実際に描かれる矩形) の外へ追いやる。
+        //
+        // <b>旧実装の問題</b>: パネル幅を定数 CITS_DEPOSIT_WIDTH (110px) と決め打ちしていた。
+        // パネル幅がラベル実測で可変 (146〜200) になったため、 その決め打ちでは
+        // 「余地の判定」 も 「置く x」 も実際のパネルとズレ、 ヘルプがパネルに重なる。
+        // 判定と配置の両方を同じ実占有域から導出して、 ズレを構造的に無くす。
         int margin = 4;
-        int edgePad = 2;
-        // 反対側 (= ボタンと逆) に取れる幅。
-        int oppositeAvail = this.cits$layoutRight
-                ? this.leftPos - margin - edgePad
-                : this.width - (this.leftPos + this.imageWidth) - margin - edgePad;
-        // 同じ側 (= ボタンの外側) に取れる幅。 ボタン領域を除外する。
-        int sameSideAvail = (this.cits$layoutRight
-                ? this.width - (this.leftPos + this.imageWidth) - margin - CITS_DEPOSIT_WIDTH - margin
-                : this.leftPos - margin - CITS_DEPOSIT_WIDTH - margin) - edgePad;
+        int edgePad = CITS_SCREEN_EDGE_PAD;
 
-        boolean placeOpposite;
-        int avail;
-        if (oppositeAvail >= CITS_HELP_MIN_WIDTH) {
-            placeOpposite = true;
-            avail = oppositeAvail;
-        } else if (sameSideAvail >= CITS_HELP_MIN_WIDTH) {
-            placeOpposite = false;
-            avail = sameSideAvail;
-        } else {
-            return; // どちらの脇にも収まらない → 描画しない (= チェストには絶対に被せない)。
-        }
-
-        // パネル幅は「テキスト最大幅 + パディング」と「残スペース」の小さい方。
         Component title = OmniChestLocale.get(Keys.CONTROLS_TITLE, "Controls");
         int textMaxW = this.font.width(title);
         for (Component line : lines) {
             textMaxW = Math.max(textMaxW, this.font.width(line));
         }
         int desiredW = textMaxW + CITS_HELP_PADDING * 2;
-        int panelWidth = Math.min(desiredW, avail);
 
-        // ─── 3) 配置 X 座標 ───
-        int x;
-        if (placeOpposite) {
-            x = this.cits$layoutRight
-                    ? this.leftPos - panelWidth - margin
-                    : this.leftPos + this.imageWidth + margin;
-        } else {
-            // 同じ側: ボタン列の外側にずらす。
-            x = this.cits$layoutRight
-                    ? this.leftPos + this.imageWidth + margin + CITS_DEPOSIT_WIDTH + margin
-                    : this.leftPos - margin - CITS_DEPOSIT_WIDTH - margin - panelWidth;
+        SidePanelFit.HelpPlacement placement = SidePanelFit.placeHelp(
+                this.width, this.leftPos, this.leftPos + this.imageWidth,
+                cits$panelVisualLeft(), cits$panelVisualRight(), this.cits$layoutRight,
+                desiredW, CITS_HELP_MIN_WIDTH, margin, edgePad);
+        if (placement == null) {
+            // パネル / チェスト / 画面端のいずれとも重ならずに置ける場所が無い
+            // → 描画しない (= はみ出したまま描くより非表示を選ぶ = 従来の非表示挙動)。
+            return;
         }
+        int panelWidth = placement.width();
+        int x = placement.x();
         int y = this.topPos;
 
         // ─── 4) 全行をパネル幅で折り返し、 まず総高さを測ってから描画する ───
@@ -632,9 +615,33 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
     // これらの定数は {@code !cits$isLargeChest} のときのみ使用する。
     // すべて leftPos / topPos からのアンカー基準で導出し、 ハードコード座標は持たない。
     // ───────────────────────────────────────────────────────────
-    /** メニューパネルのコンテンツ幅 (px)。 2 列グリッド + 全幅行の共通幅。 */
+    /**
+     * メニューパネルのコンテンツ幅の<b>下限</b> (px)。 2 列グリッド + 全幅行の共通幅の最小値。
+     *
+     * <p>
+     * 実際の幅は {@link #cits$panelWidth} が <b>ラベルの実測幅</b> から毎 {@code init()} で決める。
+     * この下限は従来の固定値そのものなので、 ラベルが元々収まっていたロケール
+     * (zh_cn / zh_tw / ja_jp / ko_kr / ar_sa / th_th / nb_no / fi_fi / he_il / da_dk) では
+     * <b>従来とピクセル単位で同一</b>のレイアウトになる。
+     *
+     * <p>
+     * GUI スケール クランプの入力 ({@link #omnichest$requiredLogicalWidth()}) は
+     * <b>この下限のまま</b>据え置く。 可変幅を必要論理サイズへ持ち込むと、 過去に修正した
+     * 「高 GUI スケールで画面が崩れる」 挙動が動いてしまうため (= パネルの拡幅は
+     * 「実際に余地があるときだけ」 行い、 余地が無ければ縦積みへ落とす)。
+     */
     @Unique
-    private static final int CITS_MENU_PANEL_WIDTH = 146;
+    private static final int CITS_MENU_PANEL_MIN_WIDTH = 146;
+    /**
+     * メニューパネルのコンテンツ幅の<b>上限</b> (px)。
+     *
+     * <p>
+     * ラベルが長いロケールでも、 パネルがチェスト GUI (176px) より極端に太らないための頭打ち。
+     * 実測 (MC の実フォント資産から {@code Font#width} を再現) では、 この値で全 30 ロケールの
+     * ラベルが「拡幅 or 1 行の縦積み」 で収まり、 切り詰めは一度も発動しない。
+     */
+    @Unique
+    private static final int CITS_MENU_PANEL_MAX_WIDTH = 200;
     /**
      * メニューパネルと GUI 画像の間の左右間隔 (px)。
      *
@@ -707,18 +714,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // 小型チェスト系 (= 再設計対象) では ◀▶ ナビ行もパネル上端に取り込むため union に含める。
         // ラージ (ダブル) チェストでは ◀▶ は側面パネルの別領域 (検索行の上) に居るため<b>含めない</b>
         // (= 含めるとパネルが検索/種類/数量の上まで伸びてしまう)。 = スコープ外の従来挙動を維持。
-        AbstractWidget[] inGroup = new AbstractWidget[] {
-                this.cits$isLargeChest ? null : this.cits$layoutLeftButton,
-                this.cits$isLargeChest ? null : this.cits$layoutRightButton,
-                this.cits$depositButton,
-                this.cits$compactButton,
-                this.cits$categorySortButton,
-                this.cits$searchNetworkButton,
-                this.cits$saveTemplateButton,
-                this.cits$manageTemplateButton,
-                this.cits$setCategoryButton,
-                this.cits$autoDistributeButton,
-        };
+        AbstractWidget[] inGroup = cits$panelBackgroundWidgets();
         int x = Integer.MAX_VALUE;
         int y = Integer.MAX_VALUE;
         int right = Integer.MIN_VALUE;
@@ -848,6 +844,34 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
     @Inject(method = "init", at = @At("TAIL"))
     private void cits$initWidgets(CallbackInfo ci) {
+        // ボタンは init のたびに作り直されるので、 元ラベルの控えも作り直す
+        // (= resize を繰り返しても古いインスタンスを抱え込まない)。
+        this.cits$fullLabels.clear();
+        // ───────────────────────────────────────────────────────────
+        // 前回 init のウィジェット参照を捨てる。
+        //
+        // vanilla の {@code Screen#init(Minecraft,int,int)} は再 init 時に children/renderables を
+        // clear するが、 <b>この Mixin のフィールドは残る</b>。 各ボタンは Main Menu Visibility が
+        // ON のときだけ生成されるため、 「設定画面で非表示に切り替えて戻る」 と
+        // ({@code OmniChestSettingsScreen} は parent へ {@code setScreen} するので<b>同じ画面
+        // インスタンス</b>が再 init される) 古いボタン参照が残り、
+        //   ・パネル幅の実測 ({@link #cits$maxTwoColumnLabelWidth}) を<b>非表示ボタンのラベルが押し上げる</b>
+        //   ・背景パネルの union が見えない領域まで広がる
+        // という不整合になる。 生成前に必ず null へ戻して 「今回 init で作られたものだけ」 にする。
+        // ───────────────────────────────────────────────────────────
+        this.cits$searchBox = null;
+        this.cits$sortByTypeButton = null;
+        this.cits$sortByCountButton = null;
+        this.cits$layoutLeftButton = null;
+        this.cits$layoutRightButton = null;
+        this.cits$depositButton = null;
+        this.cits$compactButton = null;
+        this.cits$categorySortButton = null;
+        this.cits$searchNetworkButton = null;
+        this.cits$saveTemplateButton = null;
+        this.cits$manageTemplateButton = null;
+        this.cits$autoDistributeButton = null;
+        this.cits$setCategoryButton = null;
         // ───────────────────────────────────────────────────────────
         // RTL ロケール時の初期レイアウト方向
         // ユーザーが ◀▶ で明示的に切替するまでの初期値だけ反転する。
@@ -1065,8 +1089,27 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // この画面は上部行を持てる (= 検索バーだけ非表示でも 種類/数量/◀▶ のレイアウトは行う)。
         this.cits$hasSearchRow = true;
 
-        // Main Menu Visibility: 検索バーの表示トグルが ON のときだけ生成する。 非表示でも検索索引
-        // (ContainerScanner / SearchIndex) は従来通り動く (= チェスト内ハイライト UI を出さないだけ)。
+        // Main Menu Visibility: 検索バーの表示トグルが ON のときだけ生成する。
+        //
+        // ⚠ <b>既知の不具合 (1.1.1 時点): この検索欄は現在<u>無機能</u></b>。
+        //   v1.0.0 (1c3b444) には
+        //     ・{@code setResponder} でクエリを保持する入力配線
+        //     ・{@code render} TAIL でクエリに一致しないスロットを暗くする絞り込み描画
+        //   があったが、 1.21.11 移行コミット 8a16b71 ("Minecraftバージョンを1.21.11に更新し、
+        //   不要なファイルを削除") で両方とも巻き添えで削除され、 以降 再実装されていない
+        //   (履歴確認: {@code git log --all -S 'cits$searchQuery'} が導入/削除の 2 件のみ、
+        //    {@code cits$searchBox.getValue} は全履歴で 0 件)。
+        //   現在この欄の値を読む箇所はリポジトリ全体に存在せず、 入力しても何も起きない。
+        //
+        //   なお {@link com.kajiwara.omnichest.client.render.SearchMatchSlotRenderer} による
+        //   スロットのハイライトは {@link com.kajiwara.omnichest.client.render.ChestHighlighter}
+        //   由来 (= {@code SearchScreen} でピンしたアイテム) であって、 この欄とは無関係。
+        //   ツールチップ ({@link Keys#EDITBOX_SEARCH_TOOLTIP}
+        //   "Highlight items in this chest by name.") は現状の挙動と一致していない。
+        //   機能復旧は次バージョン予定 (CHANGELOG の 1.1.1「既知の不具合」参照)。
+        //
+        //   ※ 検索索引 ({@code ContainerScanner} / {@code SearchIndex}) と倉庫検索 ({@code SearchScreen})
+        //     は<b>この欄とは独立</b>に従来どおり動作する (= 表示トグルを OFF にしても影響しない)。
         if (cits$ui().showSearchBar) {
         this.cits$searchBox = new EditBox(this.font, 0, 0, 100, 14,
                 OmniChestLocale.get(Keys.EDITBOX_SEARCH_LABEL, "Search"));
@@ -1179,7 +1222,13 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // チェスト幅 + 左右の予約幅。 中央寄せチェストの<b>パネル側</b>に、 パネルが緊急クランプ
         // (shiftAside) を起こさず収まる余地を確保できる幅。 panelReserve = GAP + パネル幅 +
         // 背景外周 + 影 + 画面端余白 (= cits$shiftAsideForPanel の needed と同一思想)。
-        int panelReserve = CITS_MENU_PANEL_GAP + CITS_MENU_PANEL_WIDTH
+        //
+        // 注: ここは <b>下限幅</b> (= 従来の固定値) を使う。 ラベル実測で広がった幅を必要論理サイズへ
+        // 持ち込むと、 過去に修正済みの GUI スケール クランプ (WindowGuiScaleMixin) の結果が
+        // ロケール依存で変わってしまう。 拡幅は「実際に余地があるときだけ」 行い、 余地が無い場合は
+        // パネル側が縦積みへ落ちる ({@link #cits$resolvePanelWidth}) ので、 ここを据え置いても
+        // 見切れは起きない。
+        int panelReserve = CITS_MENU_PANEL_GAP + CITS_MENU_PANEL_MIN_WIDTH
                 + CITS_PANEL_MARGIN + CITS_PANEL_SHADOW_OVERHANG + CITS_SCREEN_EDGE_PAD;
         return this.imageWidth + 2 * panelReserve;
     }
@@ -1258,7 +1307,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
             return;
         // パネル側に確保したい横幅 (= GAP + パネル幅 + 背景外周 + 影 + 画面端余白)。
         // これだけ空いていれば、 右端アンカーされたパネルの左端がチェスト右端から GAP 以上離れる。
-        int needed = CITS_MENU_PANEL_GAP + CITS_MENU_PANEL_WIDTH + CITS_PANEL_MARGIN
+        int needed = CITS_MENU_PANEL_GAP + this.cits$panelWidth + CITS_PANEL_MARGIN
                 + CITS_PANEL_SHADOW_OVERHANG + CITS_SCREEN_EDGE_PAD;
         if (this.cits$layoutRight) {
             // パネルは右 → 右側に needed の余地が要る。 足りなければチェストを左へ寄せる。
@@ -1283,14 +1332,274 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         }
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // パネル幅をラベル実測から決める (= 見切れ対策の中核)
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * 今フレームのメニューパネル幅 (px)。 {@link #cits$applyLayout()} が毎回
+     * {@link #cits$resolvePanelWidth()} で決め直す (= init / resize のどちらでも冪等)。
+     */
+    @Unique
+    private int cits$panelWidth = CITS_MENU_PANEL_MIN_WIDTH;
+
+    /**
+     * ボタンごとの<b>元ラベル</b>。 切り詰め ({@link #cits$fitLabelToWidth}) 後に再レイアウトが
+     * 走っても、 切り詰め済みの文字列を測り直して二重に縮めないための保存領域。
+     * ボタンは {@code init()} で作り直されるので、 古いエントリが残っても実害は無い
+     * (= IdentityHashMap で同一インスタンスのみ一致)。
+     */
+    @Unique
+    private final java.util.Map<Button, Component> cits$fullLabels = new java.util.IdentityHashMap<>();
+
+    /** そのボタンの元ラベル (初回に見たメッセージ)。 */
+    @Unique
+    private Component cits$fullLabel(Button b) {
+        return this.cits$fullLabels.computeIfAbsent(b, Button::getMessage);
+    }
+
+    /** ラベル実測幅。 非表示 (null) のボタンは 0 (= 幅計算に影響させない)。 */
+    @Unique
+    private int cits$labelWidth(Button b) {
+        return (b == null) ? 0 : this.font.width(cits$fullLabel(b));
+    }
+
+    /**
+     * 最終フォールバック: それでもラベルが収まらないボタンだけ省略記号付きで切り詰め、
+     * <b>全文をツールチップに出す</b> (= 無言で見切れた状態を残さない)。
+     *
+     * <p>
+     * 収まるときは元ラベルへ戻すので冪等。 実測では現行の全 30 ロケールでこの経路は<b>発動しない</b>
+     * (拡幅か 1 行の縦積みで必ず収まる) ため、 純粋な安全網。 発動時は既存のツールチップを
+     * 全文表示で上書きする点に注意 (= 見切れて読めないより全文が読める方を優先)。
+     */
+    @Unique
+    private void cits$fitLabelToWidth(Button b) {
+        if (b == null) {
+            return;
+        }
+        Component full = cits$fullLabel(b);
+        int usable = SidePanelFit.usableTextWidth(b.getWidth());
+        if (usable <= 0) {
+            return;
+        }
+        if (this.font.width(full) <= usable) {
+            if (b.getMessage() != full) {
+                b.setMessage(full); // 前回の切り詰めを戻す
+            }
+            return;
+        }
+        String ellipsis = "...";
+        int room = Math.max(0, usable - this.font.width(ellipsis));
+        String head = this.font.plainSubstrByWidth(full.getString(), room);
+        b.setMessage(Component.literal(head + ellipsis));
+        b.setTooltip(Tooltip.create(full));
+    }
+
+    /**
+     * 2 列グリッドの行割りを決める。
+     *
+     * <p>
+     * 戻り値の各要素が 1 行:
+     * <ul>
+     * <li>長さ 1 → その 1 個を<b>全幅</b>で置く (= 縦積みへ落とした行 / 収まらない端数)</li>
+     * <li>長さ 2 → 2 列 (2 個目が null なら左セルのみ = 従来どおりの端数表示)</li>
+     * </ul>
+     * 「行内の広い方のラベルがセルに収まらない」 行だけを縦積みにするので、 収まっている行は
+     * 従来どおり 2 列のまま (= 見た目の変化を最小化)。
+     */
+    @Unique
+    private java.util.List<Button[]> cits$planGridRows(int width) {
+        java.util.List<Button> cells = new java.util.ArrayList<>(4);
+        for (Button b : new Button[] { this.cits$searchNetworkButton, this.cits$categorySortButton,
+                this.cits$depositButton, this.cits$compactButton }) {
+            if (b != null) {
+                cells.add(b);
+            }
+        }
+        int cell = SidePanelFit.cellWidth(width, CITS_MENU_GAP);
+        java.util.List<Button[]> rows = new java.util.ArrayList<>(4);
+        for (int i = 0; i < cells.size(); i += 2) {
+            Button left = cells.get(i);
+            Button right = (i + 1 < cells.size()) ? cells.get(i + 1) : null;
+            if (right == null) {
+                // 端数 1 個: 従来どおり左セル幅。 ただしそれで収まらないなら全幅へ。
+                rows.add(SidePanelFit.fits(cits$labelWidth(left), cell)
+                        ? new Button[] { left, null }
+                        : new Button[] { left });
+            } else if (SidePanelFit.shouldStackRow(cits$labelWidth(left), cits$labelWidth(right),
+                    width, CITS_MENU_GAP)) {
+                rows.add(new Button[] { left });
+                rows.add(new Button[] { right });
+            } else {
+                rows.add(new Button[] { left, right });
+            }
+        }
+        return rows;
+    }
+
+    /** 行割りに従って 1 行を配置する。 {@code row.length == 1} なら全幅。 */
+    @Unique
+    private void cits$placeGridRow(Button[] row, int x, int y, int width, int height) {
+        final int gap = CITS_MENU_GAP;
+        if (row.length == 1) {
+            cits$placeCell(row[0], x, y, width, height);
+            return;
+        }
+        int leftW = SidePanelFit.cellWidth(width, gap);
+        int rightW = width - gap - leftW;
+        cits$placeCell(row[0], x, y, leftW, height);
+        if (row[1] != null) {
+            cits$placeCell(row[1], x + leftW + gap, y, rightW, height);
+        }
+    }
+
+    /** パネル内の全ボタンについて、 確定した幅にラベルが収まるかを最終確認する。 */
+    @Unique
+    private void cits$fitAllPanelLabels() {
+        for (Button b : cits$twoColumnButtons()) {
+            cits$fitLabelToWidth(b);
+        }
+        for (Button b : cits$fullWidthButtons()) {
+            cits$fitLabelToWidth(b);
+        }
+    }
+
+    /**
+     * 背景パネル ({@link #cits$renderButtonPanel}) が覆うウィジェット群。
+     *
+     * <p>
+     * 「操作方法」 パネルの衝突判定 ({@link #cits$panelVisualLeft()} /
+     * {@link #cits$panelVisualRight()}) も<b>同じ集合</b>から占有域を導く。 描画と判定で
+     * 集合がズレると重なりが再発するため、 定義はここ 1 箇所に集約する。
+     */
+    @Unique
+    private AbstractWidget[] cits$panelBackgroundWidgets() {
+        return new AbstractWidget[] {
+                // ラージチェストでは ◀▶ は側面パネルの別領域に居るので背景の union に含めない。
+                this.cits$isLargeChest ? null : this.cits$layoutLeftButton,
+                this.cits$isLargeChest ? null : this.cits$layoutRightButton,
+                this.cits$depositButton,
+                this.cits$compactButton,
+                this.cits$categorySortButton,
+                this.cits$searchNetworkButton,
+                this.cits$saveTemplateButton,
+                this.cits$manageTemplateButton,
+                this.cits$setCategoryButton,
+                this.cits$autoDistributeButton,
+        };
+    }
+
+    /**
+     * OmniChest パネルの<b>視覚的</b>占有域の左端 (背景外周を含む)。
+     * パネルが 1 つも描かれないときは {@link #cits$panelVisualRight()} より大きい値を返す
+     * (= 「パネル無し」 のセンチネル)。
+     */
+    @Unique
+    private int cits$panelVisualLeft() {
+        int left = Integer.MAX_VALUE;
+        for (AbstractWidget w : cits$panelBackgroundWidgets()) {
+            if (w != null) {
+                left = Math.min(left, w.getX());
+            }
+        }
+        return (left == Integer.MAX_VALUE) ? 1 : left - CITS_PANEL_MARGIN;
+    }
+
+    /**
+     * OmniChest パネルの<b>視覚的</b>占有域の右端 (背景外周 + {@link UnifiedPanelRenderer} の影)。
+     * パネルが 1 つも描かれないときは 0 (= {@link #cits$panelVisualLeft()} より小さい = パネル無し)。
+     */
+    @Unique
+    private int cits$panelVisualRight() {
+        int right = Integer.MIN_VALUE;
+        for (AbstractWidget w : cits$panelBackgroundWidgets()) {
+            if (w != null) {
+                right = Math.max(right, w.getX() + w.getWidth());
+            }
+        }
+        return (right == Integer.MIN_VALUE)
+                ? 0
+                : right + CITS_PANEL_MARGIN + CITS_PANEL_SHADOW_OVERHANG;
+    }
+
+    /** 2 列セルに入るボタン群 (グリッド + 種類/数量)。 ◀▶ は記号 1 文字なので幅を律速しない。 */
+    @Unique
+    private Button[] cits$twoColumnButtons() {
+        return new Button[] {
+                this.cits$searchNetworkButton, this.cits$categorySortButton,
+                this.cits$depositButton, this.cits$compactButton,
+                this.cits$sortByTypeButton, this.cits$sortByCountButton,
+        };
+    }
+
+    /** 全幅行に入るボタン群。 */
+    @Unique
+    private Button[] cits$fullWidthButtons() {
+        return new Button[] {
+                this.cits$saveTemplateButton, this.cits$manageTemplateButton,
+                this.cits$autoDistributeButton, this.cits$setCategoryButton,
+        };
+    }
+
+    /** 2 列セルに入る可視ラベルの最大実測幅。 */
+    @Unique
+    private int cits$maxTwoColumnLabelWidth() {
+        int max = 0;
+        for (Button b : cits$twoColumnButtons()) {
+            max = Math.max(max, cits$labelWidth(b));
+        }
+        return max;
+    }
+
+    /** 全幅行に入る可視ラベルの最大実測幅。 */
+    @Unique
+    private int cits$maxFullWidthLabelWidth() {
+        int max = 0;
+        for (Button b : cits$fullWidthButtons()) {
+            max = Math.max(max, cits$labelWidth(b));
+        }
+        return max;
+    }
+
+    /**
+     * 望ましいパネル幅を、 パネル側に<b>実在する余地</b>でクランプし直す。
+     *
+     * <p>
+     * {@link #cits$shiftAsideForPanel()} でチェストを寄せた<b>後</b>に呼ぶこと。 下限
+     * ({@link #CITS_MENU_PANEL_MIN_WIDTH}) は割らない (= 余地が足りないときの挙動は従来どおり
+     * 「チェスト枠に数 px 重なる」)。 収まらなかったぶんは行の縦積み
+     * ({@link SidePanelFit#shouldStackRow}) へ落ちるので、 ここで狭めても見切れは出ない。
+     */
+    @Unique
+    private void cits$clampPanelWidthToRoom() {
+        if (this.cits$panelWidth <= CITS_MENU_PANEL_MIN_WIDTH) {
+            return;
+        }
+        int side = this.cits$layoutRight
+                ? this.width - (this.leftPos + this.imageWidth)
+                : this.leftPos;
+        int room = side - CITS_MENU_PANEL_GAP - CITS_PANEL_MARGIN
+                - CITS_PANEL_SHADOW_OVERHANG - CITS_SCREEN_EDGE_PAD;
+        this.cits$panelWidth = SidePanelFit.clampToRoom(
+                this.cits$panelWidth, room, CITS_MENU_PANEL_MIN_WIDTH);
+    }
+
     @Unique
     private void cits$applyLayout() {
         // 高スケールで上段がチェストから浮かないよう、 必要なら先にチェスト本体を下げる
         // (= 通常時は no-op = 見た目不変)。 以降の配置はすべて新しい topPos を基準にする。
         cits$shiftDownForTopRow();
+        // パネル幅を先に「ラベルから欲しい幅」 で置く (= チェストを寄せる量の基準にする)。
+        // 寄せた後に実在の余地でクランプし直すので、 ここでは位置に依存しない値でよい。
+        this.cits$panelWidth = SidePanelFit.panelWidth(
+                cits$maxTwoColumnLabelWidth(), cits$maxFullWidthLabelWidth(),
+                CITS_MENU_GAP, CITS_MENU_PANEL_MIN_WIDTH, CITS_MENU_PANEL_MAX_WIDTH);
         // 同様に、 メインメニュー パネルがチェスト/インベントリに重ならないよう、 必要なら
         // チェスト本体を横へ寄せてパネル側の横幅を確保する (= パネルは動かさず、 通常幅では no-op)。
         cits$shiftAsideForPanel();
+        // 寄せた結果の実余地でパネル幅を確定する (= 余地が無ければ下限へ戻り、 行が縦積みに落ちる)。
+        cits$clampPanelWidthToRoom();
 
         // Deposit ボタンの配置 (GUI 右上)。
         // 既存ウィジェット (search / sort) と縦に重ならないよう、
@@ -1363,7 +1672,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
      * ラージ (ダブル) チェストの右カラム全体をモックアップ準拠で配置する。
      *
      * <p>
-     * 構造 (すべて同じ左端 {@code sideX} / 同じ幅 {@code CITS_MENU_PANEL_WIDTH} に揃える):
+     * 構造 (すべて同じ左端 {@code sideX} / 同じ幅 {@link #cits$panelWidth} に揃える):
      * <ul>
      * <li><b>検索バー</b>: 全幅。 ◀▶ 行の<b>上</b> (= topPos より上、 左の「分類表示」 バッジと同じ
      *     上段) に浮かせる。 上に余白が足りない (= topPos が小さい) ときは画面上端付近に置き、
@@ -1386,7 +1695,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
     @Unique
     private void cits$applyLargeRightColumn() {
         final int gap = CITS_MENU_GAP;
-        final int width = CITS_MENU_PANEL_WIDTH;
+        final int width = this.cits$panelWidth;
         final int leftW = (width - gap) / 2;
         final int rightW = width - gap - leftW;
 
@@ -1506,7 +1815,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // ◀▶ で左右切替できる。 x はパネル左端 (layoutRight=false のときは GUI 左隣に反転)。
         // 間隔は CITS_MENU_PANEL_GAP を使う (= 既定 margin より広め)。 背景パネルの外周 + 影が
         // チェスト枠に被らないよう、 GUI 画像から数 px だけ離して配置する。
-        int width = CITS_MENU_PANEL_WIDTH;
+        int width = this.cits$panelWidth;
         int x = this.cits$layoutRight
                 ? this.leftPos + this.imageWidth + CITS_MENU_PANEL_GAP
                 : this.leftPos - width - CITS_MENU_PANEL_GAP;
@@ -1581,35 +1890,15 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
     @Unique
     private void cits$applyMenuGridAndFull(int x, int startY, int width) {
         final int gap = CITS_MENU_GAP;
-        final int leftW = (width - gap) / 2;
-        final int rightW = width - gap - leftW;
-        final int rightX = x + leftW + gap;
         int cursorY = startY;
 
         // ─── 2 列グリッド: 倉庫検索 | カテゴリ整理 / 同種預入 | スタック圧縮 ───
         // モックアップの並び順 (左→右、 上→下) でセルを充填する。 非表示ぶんは左詰めで繰り上がる。
-        Button[] grid = {
-                this.cits$searchNetworkButton, this.cits$categorySortButton,
-                this.cits$depositButton, this.cits$compactButton,
-        };
-        int col = 0;
-        boolean placedGrid = false;
-        for (Button b : grid) {
-            if (b == null) {
-                continue;
-            }
-            if (col == 0) {
-                cits$placeCell(b, x, cursorY, leftW, CITS_MENU_GRID_H);
-                col = 1;
-            } else {
-                cits$placeCell(b, rightX, cursorY, rightW, CITS_MENU_GRID_H);
-                cursorY += CITS_MENU_GRID_H + gap;
-                col = 0;
-            }
-            placedGrid = true;
-        }
-        if (col == 1) {
-            // 可視グリッドボタンが奇数 → 左セルだけの行を閉じる。
+        // ラベルがセル幅に収まらない行だけ 1 列 (縦積み) へ落ちる ({@link #cits$planGridRows})。
+        java.util.List<Button[]> gridRows = cits$planGridRows(width);
+        boolean placedGrid = !gridRows.isEmpty();
+        for (Button[] row : gridRows) {
+            cits$placeGridRow(row, x, cursorY, width, CITS_MENU_GRID_H);
             cursorY += CITS_MENU_GRID_H + gap;
         }
         if (placedGrid) {
@@ -1630,6 +1919,9 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
             cits$placeCell(b, x, cursorY, width, CITS_MENU_FULL_H);
             cursorY += CITS_MENU_FULL_H + gap;
         }
+
+        // 幅が確定したので、 それでも収まらないラベルだけ切り詰め + ツールチップへ落とす。
+        cits$fitAllPanelLabels();
     }
 
     /**
@@ -1655,18 +1947,9 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
     @Unique
     private void cits$applyMenuGridAndFullFilled(int x, int top, int bottom, int width) {
         final int gap = CITS_MENU_GAP;
-        final int leftW = (width - gap) / 2;
-        final int rightW = width - gap - leftW;
-        final int rightX = x + leftW + gap;
 
-        // ─── 可視ボタンを並び順どおりに収集 ───
-        java.util.List<Button> gridCells = new java.util.ArrayList<>(4);
-        for (Button b : new Button[] { this.cits$searchNetworkButton, this.cits$categorySortButton,
-                this.cits$depositButton, this.cits$compactButton }) {
-            if (b != null) {
-                gridCells.add(b);
-            }
-        }
+        // ─── 可視ボタンを並び順どおりに収集 (行割りは小型チェストと同じ規則) ───
+        java.util.List<Button[]> gridRows = cits$planGridRows(width);
         java.util.List<Button> fullRows = new java.util.ArrayList<>(5);
         for (Button b : new Button[] { this.cits$saveTemplateButton,
                 this.cits$manageTemplateButton, this.cits$autoDistributeButton,
@@ -1676,7 +1959,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
             }
         }
 
-        int nGrid = (gridCells.size() + 1) / 2; // 2 列なので行数は切り上げ
+        int nGrid = gridRows.size(); // 縦積みへ落ちた行も 1 行として数える
         int nFull = fullRows.size();
         if (nGrid == 0 && nFull == 0) {
             return; // 可視アクションボタンが 1 つも無い → 何もしない (背景パネルも描かれない)。
@@ -1700,13 +1983,9 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         int y = top;
         int gapIndex = 0; // 何番目の行間か (端数 +1px を先頭側へ寄せるため)
 
-        // (a) 2 列グリッド行
+        // (a) 2 列グリッド行 (ラベルが収まらない行は全幅 1 個ずつ)
         for (int row = 0; row < nGrid; row++) {
-            cits$placeCell(gridCells.get(row * 2), x, y, leftW, gridH);
-            int rightIdx = row * 2 + 1;
-            if (rightIdx < gridCells.size()) {
-                cits$placeCell(gridCells.get(rightIdx), rightX, y, rightW, gridH);
-            }
+            cits$placeGridRow(gridRows.get(row), x, y, width, gridH);
             y += gridH;
             boolean lastGridRow = (row == nGrid - 1);
             if (!lastGridRow) {
@@ -1724,6 +2003,9 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
                 y += gap + cits$gapBonus(bonusTotal, nGaps, gapIndex++);
             }
         }
+
+        // 幅が確定したので、 それでも収まらないラベルだけ切り詰め + ツールチップへ落とす。
+        cits$fitAllPanelLabels();
     }
 
     /**

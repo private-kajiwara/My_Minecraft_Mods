@@ -66,7 +66,16 @@ public final class RenderConfig {
     // 1:1 対応する。 存在しない架空のコントロールは作らない。
     // ════════════════════════════════════════════════════════════════════
 
-    /** 検索バー (= チェスト内のアイテム名ハイライト用 EditBox)。 */
+    /**
+     * チェスト GUI 内の検索バー (EditBox) を表示するか。
+     *
+     * <p>
+     * ⚠ <b>既知の不具合 (1.1.1 時点): この欄は現在<u>無機能</u></b> — 入力を受け取る配線と
+     * 絞り込み描画が 1.21.11 移行時に削除されたまま復旧していないため、 打っても何も起きない
+     * (詳細は {@code GenericContainerScreenMixin} の生成箇所のコメント / CHANGELOG 1.1.1 の
+     * 「既知の不具合」 を参照)。 このトグルは<b>欄の表示有無だけ</b>を制御する。
+     * 倉庫検索 ({@code SearchScreen}) / 分類 / 索引 は本設定とは無関係に従来どおり動作する。
+     */
     public boolean showSearchBar = true;
     /** 「種類」 (Type) ソートボタン。 */
     public boolean showSortByType = true;
