@@ -112,7 +112,7 @@ cd C:\MyMinecraftMod\mods\omnichest
 ## 設計の要点
 
 ### 1. "実在する MC" 以外は登録しない
-- `versions/versions.json` に書かれた MC は、 `./gradlew validateVersions` で
+- [`mc-meta/versions.json`](mc-meta/versions.json) に書かれた MC は、 `./gradlew validateVersions` で
   Mojang manifest と Fabric Meta API に問い合わせて全部実在性を検証する。
 - 検証 fail → build は走らない (policy: `build_only_validated = true` のとき)。
 - 未公開バージョンのスケルトンフォルダは作らない。
@@ -209,15 +209,11 @@ Stonecutter の string 置換は **双方向**に効く。 `direction=true`（1.
 
 例: `1.21.12` が Mojang / Fabric にリリースされたとき。
 
-> **Stonecutter 構成での実際の編集先**（以下のステップは旧 `versions/` 単独管理時の説明。
-> 現構成では版メタデータの正本が移動している）:
-> 1. [`mc-meta/versions.json`](mc-meta/versions.json) に MC エントリを追記（正本）
-> 2. [`mc-meta/<MC>.properties`](mc-meta/) に loader/api/java/remap 等を作成
-> 3. [`stonecutter.properties.toml`](stonecutter.properties.toml) に `deps.*` / `mod.*` ノードを追加
-> 4. [`settings.gradle.kts`](settings.gradle.kts) の `versions(...)` にノードを追加
-> 5. `current.parsed < "26.1"` の置換規則・`//?` が新版にも妥当か確認（上記「置換の落とし穴」参照）
->
-> `versions/<MC>/` ディレクトリは Stonecutter が生成するため手で作らない。
+> **版メタデータの正本は [`mc-meta/`](mc-meta/)。** 手で編集するのは
+> [`mc-meta/versions.json`](mc-meta/versions.json) / [`mc-meta/<MC>.properties`](mc-meta/) /
+> [`stonecutter.properties.toml`](stonecutter.properties.toml) /
+> [`settings.gradle.kts`](settings.gradle.kts) の 4 つ。
+> `versions/<MC>/` ディレクトリは Stonecutter が生成するため**手で作らない**。
 
 ### Step 1 — 実在性を事前確認
 
@@ -229,7 +225,7 @@ Stonecutter の string 置換は **双方向**に効く。 `direction=true`（1.
 
 これらに該当バージョンが見つからなければ、 まだ未対応なので追加しない。
 
-### Step 2 — `versions/1.21.12.properties` を作成
+### Step 2 — `mc-meta/1.21.12.properties` を作成
 
 ```properties
 minecraft_version=1.21.12
@@ -242,7 +238,7 @@ cloth_config_version=21.12.x
 java_version=21
 ```
 
-### Step 3 — `versions/versions.json` にエントリ追加
+### Step 3 — `mc-meta/versions.json` にエントリ追加
 
 ```jsonc
 {
@@ -250,11 +246,24 @@ java_version=21
   "properties": "1.21.12.properties",
   "stable": true,
   "recommended": false,    // 既存の推奨を一旦維持。 安定したら true に
+  "buildable": true,       // false にすると buildAll / CI matrix から外れる (保留用)
   "notes": "1.21.12 への追従ビルド"
 }
 ```
 
-### Step 4 — 検証
+### Step 4 — Stonecutter のノードを追加
+
+[`stonecutter.properties.toml`](stonecutter.properties.toml) にノード別の依存を足し
+（`deps.fabric_loader` / `deps.fabric_api` / `deps.mod_menu` / `mod.java` / `mod.mc_compat` など。
+`deps.iris` / `deps.sodium` は dev の `runClient` 専用で配布 jar には混入しない）、
+[`settings.gradle.kts`](settings.gradle.kts) の `versions(...)` にも同じ MC を追加する。
+
+### Step 5 — 置換規則の妥当性を確認
+
+`current.parsed < "26.1"` でガードした global replacements と `//?` が新版でも妥当かを確認する
+（上記「置換規則を足すときの落とし穴」参照）。
+
+### Step 6 — 検証
 
 ```powershell
 .\gradlew validateVersions
@@ -262,27 +271,32 @@ java_version=21
 
 `errors=0` であれば登録 OK。 1 件でもエラーなら properties の値を修正。
 
-### Step 5 — ビルド確認
+### Step 7 — ビルド確認
 
 ```powershell
 .\gradlew build1_21_12
 ```
 
-### Step 6 — CI matrix は自動更新
+### Step 8 — CI matrix は自動更新
 
-`.github/workflows/build.yml` は `versions.json` を `jq` で読んで matrix を組むので、
-GitHub Actions 側の修正は不要。
+`.github/workflows/build.yml` は `./gradlew printVersionsJson` の出力（= 全 Mod の buildable な MC の
+和集合）から matrix を組むので、 GitHub Actions 側の修正は不要。
 
 ---
 
 ## Fabric Loader / API バージョンを変更する
 
-該当 `versions/<MC>.properties` の値を更新するだけ:
+**2 か所**を更新する。 [`mc-meta/<MC>.properties`](mc-meta/) は `validateVersions` が読む検証用の値:
 
 ```properties
 loader_version=0.19.4
 fabric_api_version=0.142.0+1.21.11
 ```
+
+**実ビルドで実際に効くのは [`stonecutter.properties.toml`](stonecutter.properties.toml) の
+`deps.*`**（版ノードの `build.gradle.kts` はこちらを読む）なので、 当該ノードの
+`deps.fabric_loader` / `deps.fabric_api` も同じ値に揃えること。 片方だけ変えると
+「検証は通るのにビルドは旧バージョンのまま」という食い違いになる。
 
 その後:
 ```powershell
@@ -406,13 +420,16 @@ mod_version=1.0.3
 
 | 判定 | 配置先 |
 |---|---|
-| `net.minecraft.*` を直接 import しているか? | yes → `fabric/`, no → `common/` |
-| Mixin / Screen / Render / ScreenHandler | `fabric/src/client/` |
+| `net.minecraft.*` / `net.fabricmc.*` を直接 import しているか? | yes → `src/`, no → `common/` |
+| Mixin / Screen / Render / ScreenHandler | `src/client/` |
 | 純粋データ / アルゴリズム (ソート, 検索, Template) | `common/` |
-| ModInitializer / Mod Menu entrypoint | `fabric/src/main/` (現在は `src/main/`) |
+| ModInitializer / Mod Menu entrypoint | `src/main/` |
 
-`fabric/build.gradle` が `rootProject.file('src/main/java')` を
-sourceSet に追加しているため、 段階的な移動が可能。
+`common` は [`settings.gradle.kts`](settings.gradle.kts) が `include(":common")` する
+**純粋 Java (`java-library`) のサブプロジェクト**で、 Stonecutter の版ノード生成の対象外。
+MC 型を直接触らない限りどの版からも同じバイトコードが使えるため、 純粋ロジックを
+`common/` に寄せるほど版間の差分が減る（何を置いてよいかは [`common/build.gradle`](common/build.gradle)
+の冒頭コメントが正本）。
 
 ---
 
@@ -433,11 +450,13 @@ MOD はすべての UI 文字列を Minecraft 標準の lang JSON で配信す�
 
 ### 対応言語
 
-合計 **27 言語** + システム既定 (= 28 選択肢)。
+合計 **30 言語** + システム既定 (= 31 選択肢)。 正本は
+[`LanguageOption`](src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java) の enum。
 
 | Code   | Language               | Script     | RTL | Fallback         |
 |--------|------------------------|------------|-----|------------------|
-| en_us  | English                | Latin      |     | (canonical)      |
+| en_us  | English (US)           | Latin      |     | (canonical)      |
+| en_gb  | English (UK)           | Latin      |     | en_us            |
 | ja_jp  | 日本語                 | CJK        |     | en_us            |
 | ko_kr  | 한국어                 | CJK        |     | en_us            |
 | zh_cn  | 简体中文               | CJK        |     | en_us            |
@@ -450,9 +469,10 @@ MOD はすべての UI 文字列を Minecraft 標準の lang JSON で配信す�
 | pt_br  | Português (Brasil)     | Latin      |     | en_us            |
 | tr_tr  | Türkçe                 | Latin      |     | en_us            |
 | ar_sa  | العربية                | Arabic     | ✔   | en_us            |
+| he_il  | עברית                  | Hebrew     | ✔   | en_us            |
 | hi_in  | हिन्दी                 | Devanagari |     | en_us            |
 | th_th  | ไทย                    | Thai       |     | en_us            |
-| vi_vn  | Tiếng Việt             | Latin (拡張)|    | en_us            |
+| vi_vn  | Tiếng Việt             | Vietnamese |     | en_us            |
 | pl_pl  | Polski                 | Latin      |     | en_us            |
 | nl_nl  | Nederlands             | Latin      |     | en_us            |
 | sv_se  | Svenska                | Latin      |     | en_us            |
@@ -466,8 +486,9 @@ MOD はすべての UI 文字列を Minecraft 標準の lang JSON で配信す�
 | id_id  | Bahasa Indonesia       | Latin      |     | en_us            |
 | ms_my  | Bahasa Melayu          | Latin      |     | id_id → en_us    |
 
-将来 Hebrew / Persian など他の RTL 言語を追加する場合は
-[LanguageOption](fabric/src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java) に
+RTL は Arabic (`ar_sa`) と Hebrew (`he_il`) の 2 言語を同梱済み。 Persian など他の RTL 言語を
+追加する場合も、
+[LanguageOption](src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java) に
 `LocaleMetadata.rtl(...)` のエントリを 1 行加えるだけで RTL 切替が自動的に動作する。
 
 ### 切替方法 (in-game)
@@ -493,19 +514,28 @@ MOD はすべての UI 文字列を Minecraft 標準の lang JSON で配信す�
 ### Lang ファイルの場所
 
 ```
-fabric/src/client/resources/assets/omnichest/lang/   (27 files)
+src/client/resources/assets/omnichest/lang/   (30 files)
 ├── en_us.json   ← canonical (= ここに無いキーは他言語にも無い)
-├── ja_jp.json   ko_kr.json   zh_cn.json   zh_tw.json
+├── en_gb.json   ja_jp.json   ko_kr.json   zh_cn.json   zh_tw.json
 ├── es_es.json   de_de.json   it_it.json   fr_fr.json
 ├── ru_ru.json   pt_br.json   tr_tr.json
-├── ar_sa.json   ← RTL (right-to-left)
+├── ar_sa.json   he_il.json   ← RTL (right-to-left)
 ├── hi_in.json   th_th.json   vi_vn.json
 ├── pl_pl.json   nl_nl.json   sv_se.json   da_dk.json
 ├── nb_no.json   fi_fi.json   cs_cz.json   hu_hu.json
 ├── ro_ro.json   uk_ua.json   id_id.json   ms_my.json
 ```
 
-各ファイルは **320 翻訳キー** で同期されている (= 100% coverage)。
+canonical の `en_us.json` は **544 キー**。 各言語のカバレッジは揃っていない:
+
+| キー数 | カバレッジ | 対象 |
+|---|---|---|
+| 544 | 100% | `en_us` (canonical) / `ja_jp` |
+| 502 | 92% | `en_gb` / `he_il` |
+| 486 | 89% | 上記以外の 26 言語 |
+
+不足キーは `en_us` へフォールバックするため表示は壊れない（下記「Fallback 連鎖」）。
+未訳キーの実数は起動時の `TranslationValidator` ログで確認できる。
 
 ### 翻訳キーの命名規約
 
@@ -536,16 +566,16 @@ key.omnichest.<id>                            ← KeyMapping のラベル
 | `keybind`       | Keybind 一覧の各行                   |
 | `language`      | 言語名の現地語表記                   |
 
-全キーは [`fabric/src/client/java/com/kajiwara/omnichest/i18n/Keys.java`](fabric/src/client/java/com/kajiwara/omnichest/i18n/Keys.java)
+全キーは [`src/client/java/com/kajiwara/omnichest/i18n/Keys.java`](src/client/java/com/kajiwara/omnichest/i18n/Keys.java)
 に定数として集約しており、 IDE の「Find Usage」で利用箇所を一望できる。
 
 ### 新しい言語を追加する手順
 
 1. **enum に追加**
-   `fabric/src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java` に
+   `src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java` に
    `FR_FR("fr_fr", "Français", "omnichest.language.fr_fr")` のような形で値を追加。
 2. **lang JSON を作る**
-   `fabric/src/client/resources/assets/omnichest/lang/fr_fr.json` を作成し、
+   `src/client/resources/assets/omnichest/lang/fr_fr.json` を作成し、
    `en_us.json` のキーを全件埋める。
 3. **言語名キーを追加** (任意)
    全 lang ファイルに `"omnichest.language.fr_fr": "Français"` を足すと、
@@ -564,8 +594,9 @@ key.omnichest.<id>                            ← KeyMapping のラベル
 
 ### RTL (右から左) 言語サポート
 
-Arabic (ar_sa) を初の RTL 言語として同梱。 将来 Hebrew / Persian の追加も簡単に行えるよう
-インフラを整備した。
+RTL は Arabic (`ar_sa`) と Hebrew (`he_il`) の 2 言語を同梱済み
+（`LocaleMetadata.rtl(...)` で登録され、 Script はそれぞれ `ARABIC` / `HEBREW`）。
+Persian など他の RTL 言語も同じ手順で追加できるようインフラを整備してある。
 
 #### Config GUI の RTL 設定
 
@@ -584,8 +615,8 @@ Arabic (ar_sa) を初の RTL 言語として同梱。 将来 Hebrew / Persian �
 **意図的に変更していないもの** (= 仕様要件「向きだけ RTL 対応」):
 - ボタン色 / アニメーション速度 / 操作方法 / Sort 仕様 / Config 構造
 - 個別 Screen (Search/Template/Settings) のレイアウト座標
-  — これらは [`RTLLayoutManager.mirrorX()`](fabric/src/client/java/com/kajiwara/omnichest/i18n/RTLLayoutManager.java) /
-  [`LocalizedWidgetRenderer`](fabric/src/client/java/com/kajiwara/omnichest/i18n/LocalizedWidgetRenderer.java)
+  — これらは [`RTLLayoutManager.mirrorX()`](src/client/java/com/kajiwara/omnichest/i18n/RTLLayoutManager.java) /
+  [`LocalizedWidgetRenderer`](src/client/java/com/kajiwara/omnichest/i18n/LocalizedWidgetRenderer.java)
   ヘルパが用意されており、 段階的にミラー化していく拡張ポイントとなる。
 
 #### Fallback 連鎖
@@ -593,40 +624,42 @@ Arabic (ar_sa) を初の RTL 言語として同梱。 将来 Hebrew / Persian �
 `LanguageOption` に登録された fallback を 1 段だけ辿り、 最終的には常に `en_us` に落ちる:
 
 ```
-nb_no (Norwegian) → sv_se (Swedish) → en_us
-zh_tw (繁體中文)  → zh_cn (简体中文) → en_us
-uk_ua (Ukrainian) → ru_ru (Russian)  → en_us
-ms_my (Malay)     → id_id (Indonesian) → en_us
-ar_sa (Arabic)    →                  → en_us
-他言語             →                  → en_us
+en_gb (English UK) → en_us (English US)  → en_us
+nb_no (Norwegian)  → sv_se (Swedish)     → en_us
+zh_tw (繁體中文)   → zh_cn (简体中文)    → en_us
+uk_ua (Ukrainian)  → ru_ru (Russian)     → en_us
+ms_my (Malay)      → id_id (Indonesian)  → en_us
+ar_sa (Arabic)     →                     → en_us
+he_il (Hebrew)     →                     → en_us
+他言語              →                     → en_us
 ```
 
 「missing translation」 のような未解決キー文字列は **絶対に画面に出ない** 設計。
 
 ### 実装の中核
 
-- [`OmniChestLocale`](fabric/src/client/java/com/kajiwara/omnichest/i18n/OmniChestLocale.java)
+- [`OmniChestLocale`](src/client/java/com/kajiwara/omnichest/i18n/OmniChestLocale.java)
   — 全ファイルから呼ばれる単一エントリポイント
-- [`LanguageManager`](fabric/src/client/java/com/kajiwara/omnichest/i18n/LanguageManager.java)
+- [`LanguageManager`](src/client/java/com/kajiwara/omnichest/i18n/LanguageManager.java)
   — JSON ロード + キャッシュ + ホットスワップ + 2 段フォールバック
-- [`LanguageOption`](fabric/src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java)
+- [`LanguageOption`](src/client/java/com/kajiwara/omnichest/i18n/LanguageOption.java)
   — 言語選択肢の enum (将来追加もここに 1 行)
-- [`LocaleMetadata`](fabric/src/client/java/com/kajiwara/omnichest/i18n/LocaleMetadata.java)
+- [`LocaleMetadata`](src/client/java/com/kajiwara/omnichest/i18n/LocaleMetadata.java)
   — 1 locale 分の metadata (rtl / fallback / native name / script)
-- [`Keys`](fabric/src/client/java/com/kajiwara/omnichest/i18n/Keys.java)
+- [`Keys`](src/client/java/com/kajiwara/omnichest/i18n/Keys.java)
   — 全翻訳キーの定数定義
-- [`LocaleRegistry`](fabric/src/client/java/com/kajiwara/omnichest/i18n/LocaleRegistry.java)
+- [`LocaleRegistry`](src/client/java/com/kajiwara/omnichest/i18n/LocaleRegistry.java)
   — 利用可能 locale 一覧 (= enum を機械的に列挙)
-- [`RTLLayoutManager`](fabric/src/client/java/com/kajiwara/omnichest/i18n/RTLLayoutManager.java)
+- [`RTLLayoutManager`](src/client/java/com/kajiwara/omnichest/i18n/RTLLayoutManager.java)
   — RTL 判定 + X 座標ミラー化ユーティリティ
-- [`BidirectionalTextHelper`](fabric/src/client/java/com/kajiwara/omnichest/i18n/BidirectionalTextHelper.java)
+- [`BidirectionalTextHelper`](src/client/java/com/kajiwara/omnichest/i18n/BidirectionalTextHelper.java)
   — `java.text.Bidi` を使った混在方向の検出
-- [`UnicodeTextHelper`](fabric/src/client/java/com/kajiwara/omnichest/i18n/UnicodeTextHelper.java)
+- [`UnicodeTextHelper`](src/client/java/com/kajiwara/omnichest/i18n/UnicodeTextHelper.java)
   — スクリプト判定 + Font 安全な切り詰め
-- [`LocalizedWidgetRenderer`](fabric/src/client/java/com/kajiwara/omnichest/i18n/LocalizedWidgetRenderer.java)
+- [`LocalizedWidgetRenderer`](src/client/java/com/kajiwara/omnichest/i18n/LocalizedWidgetRenderer.java)
   — RTL ミラー + Unicode 安全描画を 1 行で挟むファサード
-- [`TranslationValidator`](fabric/src/client/java/com/kajiwara/omnichest/i18n/TranslationValidator.java)
-  + [`MissingKeyReporter`](fabric/src/client/java/com/kajiwara/omnichest/i18n/MissingKeyReporter.java)
+- [`TranslationValidator`](src/client/java/com/kajiwara/omnichest/i18n/TranslationValidator.java)
+  + [`MissingKeyReporter`](src/client/java/com/kajiwara/omnichest/i18n/MissingKeyReporter.java)
   — 起動時に en_us と各言語の差分を warn ログへ出力 (= 翻訳不足の早期検知)
 
 ### 翻訳の検証
@@ -635,8 +668,8 @@ ar_sa (Arabic)    →                  → en_us
 ログに以下を出力する:
 
 ```
-[omnichest][i18n] ja_jp: 312/312 (100%) — 0 missing, 0 extra
-[omnichest][i18n] fr_fr: 309/312 (99%) — 3 missing, 0 extra
+[omnichest][i18n] ja_jp: 544/544 (100%) — 0 missing, 0 extra
+[omnichest][i18n] fr_fr: 486/544 (89%) — 58 missing, 0 extra
 [omnichest][i18n]   missing in fr_fr: [omnichest.button.new_thing, ...]
 ```
 
