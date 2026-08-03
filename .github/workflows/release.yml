@@ -1,29 +1,41 @@
 # =====================================================================
 # .github/workflows/release.yml
 # ---------------------------------------------------------------------
-#   v* tag push で、 mods/*/versions/versions.json に登録された全 MC
-#   バージョンの jar をビルドし、 1 つの draft GitHub Release に添付する。
-#   バージョン一覧は ./gradlew printVersionsJson から動的生成する (Mod 非依存)。
+#   <modid>-v<version> タグの push で、 その Mod の登録済み全 MC バージョンを
+#   ビルドし、 dist/<modid>/<version>/ の jar を draft GitHub Release に添付する。
 #
-#   タグ命名: v1.2.3 (semver)
+#   タグ命名 (正式規約): <modid>-v<version>   例: omnichest-v1.1.1
+#     - <modid>   = mods/ 配下のディレクトリ名 (= Gradle タスク接頭辞)
+#     - <version> = その Mod の gradle.properties の mod_version と一致必須
+#
+#   モノレポに複数 Mod が同居し、 各 Mod が独立したバージョン軸を持つため、
+#   「リポジトリ全体で 1 つの semver」を前提とした旧 v* 規約は廃止した。
+#   旧 v* タグ (v1.0.0 / v1.0.14) はこのワークフローでは発火しない。
+#
+#   ビルドは MC 毎の matrix ではなく Mod 単位の集約タスク <modid>BuildAll に寄せる。
+#   このタスクは各版ノードの buildAndCollect を回したうえで <modid>CollectDist まで
+#   走り、 成果物を dist/<modid>/<modversion>/ に "平坦に" 集約する。
+#   (旧実装は matrix + upload/download-artifact で jar を集めていたが、 artifact の
+#   内部が mods/<modid>/versions/<MC>/... のままネストするため、 添付側の
+#   `dist/*.jar` が 1 件もマッチせず、 それでも success 扱いで空の draft Release が
+#   できていた。 no-match を fail させるガードを下に追加してある。)
 # =====================================================================
 
 name: release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['*-v*']
 
 permissions:
   contents: write
 
 jobs:
-  prepare-matrix:
+  release:
     runs-on: ubuntu-24.04
-    outputs:
-      versions: ${{ steps.read.outputs.versions }}
     steps:
       - uses: actions/checkout@v6
+      - uses: gradle/actions/wrapper-validation@v6
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
@@ -32,80 +44,117 @@ jobs:
             21
             25
       - run: chmod +x ./gradlew
-      - id: read
+
+      # ---------------------------------------------------------------
+      # タグ名から <modid> / <version> を切り出す。
+      #   omnichest-v1.1.1 -> MODID=omnichest / VER=1.1.1
+      # ---------------------------------------------------------------
+      - name: parse tag
+        id: tag
         shell: bash
         run: |
-          MATRIX=$(./gradlew -q printVersionsJson)
-          echo "versions=$MATRIX" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          MODID="${TAG%%-v*}"
+          VER="${TAG##*-v}"
 
-  validate:
-    needs: prepare-matrix
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - uses: gradle/actions/wrapper-validation@v6
-      - uses: actions/setup-java@v5
-        with:
-          distribution: 'temurin'
-          # 26.1.x はデーモンが JDK25 で動く必要。 1.21.11 は toolchain=21。
-          java-version: |
-            21
-            25
-      - run: chmod +x ./gradlew
-      - run: ./gradlew validateVersions --stacktrace
+          if [ -z "$MODID" ] || [ -z "$VER" ]; then
+            echo "::error::タグ '$TAG' から modid / version を切り出せません。 規約は <modid>-v<version> (例: omnichest-v1.1.1)。"
+            exit 1
+          fi
+          if [ ! -d "mods/$MODID" ]; then
+            echo "::error::mods/$MODID が存在しません (タグ '$TAG' から解決した modid)。 mods/ 配下のディレクトリ名と一致させてください。"
+            echo "存在する Mod:"; ls -1 mods
+            exit 1
+          fi
 
-  build:
-    needs: [prepare-matrix, validate]
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        minecraft: ${{ fromJson(needs.prepare-matrix.outputs.versions) }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: gradle/actions/wrapper-validation@v6
-      - uses: actions/setup-java@v5
-        with:
-          distribution: 'temurin'
-          # 26.1.x はデーモンが JDK25 で動く必要。 1.21.11 は toolchain=21。
-          java-version: |
-            21
-            25
-      - run: chmod +x ./gradlew
+          echo "modid=$MODID" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "解決結果: modid=$MODID version=$VER"
 
-      - name: build MC ${{ matrix.minecraft }}
+      # ---------------------------------------------------------------
+      # タグの <version> と mod_version の一致ガード。
+      #   打ち間違いのタグで別バージョンの jar を配ってしまう事故を防ぐ。
+      #   あわせて mod_id == ディレクトリ名 も確認する (タスク接頭辞は
+      #   ディレクトリ名、 dist/ の出力先は mod_id なので、 両者が食い違うと
+      #   ビルドは通るのに添付先が無い、 という状態になりうる)。
+      # ---------------------------------------------------------------
+      - name: verify mod metadata matches tag
+        shell: bash
         run: |
-          TASK="build$(echo '${{ matrix.minecraft }}' | tr '.' '_')"
-          # デーモン=JDK25 で 1.21.11 ノードの toolchain=21 を解決するため、
+          set -euo pipefail
+          MODID="${{ steps.tag.outputs.modid }}"
+          VER="${{ steps.tag.outputs.version }}"
+          PROPS="mods/$MODID/gradle.properties"
+
+          if [ ! -f "$PROPS" ]; then
+            echo "::error::$PROPS がありません。"
+            exit 1
+          fi
+
+          read_prop() {
+            grep -E "^[[:space:]]*$1[[:space:]]*=" "$PROPS" | head -n 1 | cut -d= -f2 | tr -d '[:space:]' || true
+          }
+
+          ACTUAL="$(read_prop mod_version)"
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::$PROPS に mod_version がありません。"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$VER" ]; then
+            echo "::error::タグのバージョン ($VER) と $PROPS の mod_version ($ACTUAL) が一致しません。 どちらかを直してタグを打ち直してください。"
+            exit 1
+          fi
+
+          ACTUAL_ID="$(read_prop mod_id)"
+          if [ -n "$ACTUAL_ID" ] && [ "$ACTUAL_ID" != "$MODID" ]; then
+            echo "::error::$PROPS の mod_id ($ACTUAL_ID) がディレクトリ名 ($MODID) と違います。 dist/ の出力先は mod_id 側なので、 揃えてからタグを打ち直してください。"
+            exit 1
+          fi
+
+          echo "mod_version=$ACTUAL / mod_id=$ACTUAL_ID がタグと一致"
+
+      - name: validate versions
+        run: ./gradlew "${{ steps.tag.outputs.modid }}ValidateVersions" --stacktrace
+
+      # ---------------------------------------------------------------
+      # Mod 単位の集約ビルド。 登録済み全 MC を順にビルドし
+      # dist/<modid>/<modversion>/ へ平坦に集約する。
+      # ---------------------------------------------------------------
+      - name: build ${{ steps.tag.outputs.modid }} (all MC)
+        run: |
+          # デーモン=JDK25 で 1.21.x ノードの toolchain=21 を解決するため、
           # setup-java が入れた JDK を Gradle の toolchain 探索に渡す。
-          ./gradlew "$TASK" --stacktrace \
+          ./gradlew "${{ steps.tag.outputs.modid }}BuildAll" --stacktrace \
             "-Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64"
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: jars-${{ matrix.minecraft }}
-          # 旧来 Mod: mods/<modid>/fabric/build/libs/<MC>/*-fabric.jar
-          # Stonecutter Mod: mods/<modid>/versions/<MC>/build/libs/*.jar (sources 除外)
-          path: |
-            mods/*/fabric/build/libs/**/*-fabric.jar
-            mods/*/versions/*/build/libs/*.jar
-            !mods/*/versions/*/build/libs/*-sources.jar
+      # ---------------------------------------------------------------
+      # 添付前ガード: jar が 1 本も無ければここで落とす。
+      #   (過去の空 draft Release は、 添付段で no-match でも success 扱いに
+      #    なっていたのが直接の原因。)
+      # ---------------------------------------------------------------
+      - name: verify artifacts exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="dist/${{ steps.tag.outputs.modid }}/${{ steps.tag.outputs.version }}"
 
-  release:
-    needs: build
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
+          if [ ! -d "$DIR" ]; then
+            echo "::error::$DIR がありません。 ${{ steps.tag.outputs.modid }}BuildAll の出力先を確認してください。"
+            exit 1
+          fi
 
-      - name: download all jars
-        uses: actions/download-artifact@v6
-        with:
-          path: dist
-          pattern: jars-*
-          merge-multiple: true
+          echo "--- $DIR ---"
+          ls -lah "$DIR"
 
-      - name: list collected jars
-        run: ls -lah dist
+          TOTAL=$(find "$DIR" -maxdepth 1 -type f -name '*.jar' | wc -l)
+          MODJARS=$(find "$DIR" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | wc -l)
+          echo "jar 総数=$TOTAL (うち mod jar=$MODJARS / sources=$((TOTAL - MODJARS)))"
+
+          if [ "$MODJARS" -eq 0 ]; then
+            echo "::error::$DIR に mod jar が 1 本もありません。 Release を作らずに終了します。"
+            exit 1
+          fi
 
       - name: create release
         uses: softprops/action-gh-release@v2
@@ -114,5 +163,10 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           draft: true
+          # パターンに 1 件もマッチしなければ fail させる (無言成功の再発防止)。
+          fail_on_unmatched_files: true
+          # sources jar も添付される。 mod jar だけにしたい場合は
+          # 事前に staging ディレクトリへ非 sources だけコピーして、
+          # そのディレクトリを指すこと (glob に否定は書けない)。
           files: |
-            dist/*.jar
+            dist/${{ steps.tag.outputs.modid }}/${{ steps.tag.outputs.version }}/*.jar
