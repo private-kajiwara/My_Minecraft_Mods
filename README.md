@@ -1,214 +1,208 @@
-# Fabric Mods Workspace (汎用 Fabric Mod モノレポ)
+**English** | [日本語](README.ja.md)
 
-複数の Fabric Mod を 1 リポジトリで管理する **Mod 非依存 (mod-agnostic)** の
-Gradle ワークスペースです。各 Mod は `mods/<modid>/` 配下に自己完結した形で置かれ、
-共有ビルド基盤 (`buildSrc` の convention plugin / `settings.gradle` / ルート `build.gradle` /
-gradle wrapper) が Mod 固有名をハードコードせずに各 Mod をビルドします。
+# Fabric Mods Workspace
+
+A **mod-agnostic** Gradle workspace that hosts several Fabric mods in a single repository.
+Every mod lives self-contained under `mods/<modid>/`, and the shared build infrastructure
+(the `buildSrc` convention plugin, `settings.gradle`, the root `build.gradle`, and the Gradle
+wrapper) builds all of them without hardcoding a single mod-specific name.
+
+## Mods
+
+| Mod | What it does | Version | Minecraft | Side | Docs |
+|---|---|---|---|---|---|
+| **OmniChest** (`omnichest`) | Storage organiser: repository-wide chest search with in-world pins, smart deposit, category sorting, slot locks and reusable chest templates. | 1.1.1 | 1.21.10 / 1.21.11 / 26.1 / 26.1.1 / 26.1.2 / 26.2 | client | [README](mods/omnichest/README.md) · [CHANGELOG](mods/omnichest/CHANGELOG.md) |
+| **VisualizeGate** (`visualizegate`) | Nether portal visualiser: highlights gates in the world, predicts which portal links to which, and shows a 3D point-cloud overview. | 1.0.14 | 1.21.10 / 1.21.11 / 26.1 / 26.1.1 / 26.1.2 / 26.2 | client | [README](mods/visualizegate/README.md) · [CHANGELOG](mods/visualizegate/CHANGELOG.md) |
+| **WorldChange** (`worldchange`) | Switches to another existing singleplayer world in-game with `/worldChange <name:seed>`, without returning to the title screen. | 0.1.0 | 1.21.10 / 1.21.11 / 26.1 / 26.1.1 / 26.1.2 / 26.2 | client | — |
+| **HyperSlice** (`hyperslice`) | Implements a 4D (x, y, z, w) voxel world as N custom dimensions sliced along an integer `w`, all generated from a single 4D terrain function. | 0.1.0 | 26.1.2 | client + server | [README](mods/hyperslice/README.md) |
+
+`26.1.2` is the recommended build for every mod. The authoritative sources for the table above are
+`mods/<modid>/gradle.properties` (`mod_version`) and `mods/<modid>/mc-meta/versions.json`
+(the registered Minecraft versions) — run `./gradlew printVersions` to print them.
+
+## Repository layout
 
 ```
 <repo root>/
-├── settings.gradle          ... mods/*/ を走査して各 Mod の common/fabric を自動 include
-├── build.gradle             ... Mod 毎タスク + ルート集約タスク (Mod 非依存)
-├── gradle.properties        ... 全 Mod 共通設定のみ (loom_version / JVM)。 Mod 固有値は置かない
-├── buildSrc/                ... 共有 convention plugin `fabricmod.fabric-version`
+├── settings.gradle          ... scans mods/*/ and wires each mod into the build
+├── build.gradle             ... per-mod tasks + aggregate tasks (mod-agnostic)
+├── gradle.properties        ... shared settings only (loom_version / JVM); no mod-specific values
+├── buildSrc/                ... shared convention plugin `fabricmod.fabric-version`
 │   └── src/main/groovy/
-│       ├── fabricmod.fabric-version.gradle      ... :fabric に apply される共通設定
-│       └── com/fabricmod/build/                  ... VersionRegistry / VersionValidator など
-├── gradle/ gradlew gradlew.bat                   ... Gradle wrapper (共有)
-├── LICENSE                                       ... 共有の既定ライセンス (Mod 毎に上書き可)
-├── dist/                                         ... 配布成果物 dist/<modid>/<modversion>/
+│       ├── fabricmod.fabric-version.gradle   ... applied to legacy :fabric subprojects
+│       └── com/fabricmod/build/              ... VersionRegistry / VersionValidator
+├── gradle/ gradlew gradlew.bat               ... Gradle wrapper (shared)
+├── build-mod.bat / build-mod.sh              ... helper: build the recommended version
+├── run-client.bat / run-client.sh            ... helper: launch the OmniChest dev client
+├── LICENSE                                   ... shared default licence (overridable per mod)
+├── dist/                                     ... distribution output dist/<modid>/<modversion>/
 └── mods/
-    └── <modid>/             ... 1 つの Mod (旧来のマルチプロジェクト構成の例)
-        ├── gradle.properties        ... mod_id / mod_version / maven_group
-        ├── versions/                ... versions.json + <MC>.properties (この Mod の対象 MC)
-        ├── common/                  ... MC 非依存の共有ロジック (:mods:<modid>:common)
-        ├── fabric/                  ... Fabric ターゲットの汎用ビルダ (:mods:<modid>:fabric)
-        └── README.md                ... その Mod の詳細ドキュメント
+    └── <modid>/             ... one mod, a self-contained Stonecutter included build
+        ├── settings.gradle.kts          ... registers the Stonecutter version nodes
+        ├── stonecutter.gradle.kts       ... global replacements for cross-generation source
+        ├── build.gradle.kts             ... the per-node build
+        ├── gradlew / gradlew.bat        ... this mod's own wrapper
+        ├── gradle.properties            ... mod_id / mod_version / maven_group
+        ├── mc-meta/                     ... versions.json + <MC>.properties (source of truth)
+        ├── stonecutter.properties.toml  ... per-node dependency versions (loader / API / Java)
+        ├── src/{main,client}/           ... a single source tree shared by every MC version
+        ├── common/                      ... MC-independent pure logic (:common)
+        └── versions/<MC>/               ... version nodes generated by Stonecutter
 ```
 
-> **Stonecutter Mod の場合**（例: `omnichest`）はレイアウトが異なる: `mods/<modid>/` 自体が
-> 独自の `settings.gradle.kts` / `stonecutter.gradle.kts` / `gradlew` を持つ **included build** で、
-> ソースは `src/{client,main}/`、 版メタは `mc-meta/` + `stonecutter.properties.toml`、 版ノードは
-> `versions/<MC>/`（Stonecutter 生成）。 ビルド/起動は `mods/<modid>/` 内の版ノードタスク
-> `:<MC>:build` / `:<MC>:runClient` を使う（詳細は [mods/omnichest/README.md](mods/omnichest/README.md)）。
+All four mods currently use this **Stonecutter included build** layout: one source tree is
+forward-generated into every registered Minecraft version, so cross-generation differences
+(`1.21.x` Mojmap vs. `26.1+` unobfuscated) are absorbed by `//?` conditional comments and the
+global replacements in `stonecutter.gradle.kts`. Build and launch a specific version through the
+node tasks `:<MC>:build` / `:<MC>:runClient` inside `mods/<modid>/`.
 
-現在収録している Mod:
+> `settings.gradle` still supports an older multi-project layout as well
+> (`mods/<modid>/{common,fabric}` plus `versions/versions.json`, built through
+> `:mods:<modid>:fabric:build -Pmc=<MC>`). No mod uses it today, so use an existing Stonecutter
+> mod as your template.
 
-| modid | 説明 | ドキュメント |
-|---|---|---|
-| `omnichest` | ストレージ整理支援 Mod | [mods/omnichest/README.md](mods/omnichest/README.md) |
+## Requirements
 
----
+### JDK 21 **and** JDK 25
 
-## 開発環境セットアップ（Windows / macOS 共通）
+There is a generation boundary, and both JDKs are needed — with only one of them some Minecraft
+versions cannot be built:
 
-このリポジトリは共有 Gradle wrapper（`gradlew` / `gradlew.bat`）で全 OS から同じ
-タスクを実行できます。これまでの動作確認は主に Windows ですが、改行コード・実行ビット・
-POSIX ラッパーを整備済みで、macOS/Linux でもクローン → ビルド → 起動できる想定です
-（**macOS 実機での最終確認は環境準備のうえ各自で**）。
-
-### 1. 必要な JDK（**21 と 25 の両方**）
-
-世代境界があり、両方の JDK が要ります（片方だけでは一部の MC がビルドできません）:
-
-| MC 世代 | 必要 JDK |
+| Minecraft generation | Required JDK |
 |---|---|
-| `1.21.x`（旧世代・Mojmap） | **JDK 21** |
-| `26.1` / `26.1.1` / `26.1.2` / `26.2`（新世代） | **JDK 25** |
+| `1.21.x` (older generation, Mojmap, remapping Loom) | **JDK 21** |
+| `26.1` / `26.1.1` / `26.1.2` / `26.2` (new generation, unobfuscated) | **JDK 25** |
 
-> 26.1+ は Gradle デーモン自身が JDK 25 で動いている必要があります
-> （`loom-back-compat` が世代に応じて切り替えます）。
+> For 26.1+ the Gradle daemon itself has to run on JDK 25
+> (`loom-back-compat` picks the Loom variant that matches the generation).
 
-### 2. toolchain（JDK の供給）
+### Toolchain (how the JDKs are supplied)
 
-まず Gradle の toolchain 自動検出に任せます（多くの環境はこれで通ります）。
-検出されない場合は、**マシン毎の非コミット設定** `~/.gradle/gradle.properties`
-（Windows は `%USERPROFILE%\.gradle\gradle.properties`）に JDK のインストール先を登録します:
+Start by letting Gradle's toolchain auto-detection do the work — that is enough on most machines.
+If a JDK is not detected, register its install path in the **per-machine, non-committed**
+`~/.gradle/gradle.properties` (on Windows `%USERPROFILE%\.gradle\gradle.properties`):
 
 ```properties
-# 例（実際のパスは自分の環境のものに置き換える。複数はカンマ区切り）
+# Example — replace with the real paths on your machine; separate multiple entries with commas
 org.gradle.java.installations.paths=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home,/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home
 ```
 
-このファイルはリポジトリには含めません（環境依存のため）。
+This file is deliberately not part of the repository, since it is environment-specific.
 
-### 3. ビルド / 起動コマンド（OS 別）
+## Getting started
 
-- **Windows**: `.\gradlew.bat <task>`（cmd.exe では `gradlew.bat <task>`）
+The shared Gradle wrapper runs the same tasks on every OS. Development has mostly been done on
+Windows, but line endings, executable bits and POSIX wrappers are all in place, so cloning,
+building and launching from macOS/Linux is expected to work
+(**final verification on real macOS hardware is up to you**).
+
+- **Windows**: `.\gradlew.bat <task>` (in `cmd.exe`, `gradlew.bat <task>` also works)
 - **macOS / Linux**: `./gradlew <task>`
 
-主なタスクは下の「ビルド方法」を参照。補助スクリプトも OS 別に用意しています:
+Helper scripts are provided for both:
 
-| 用途 | Windows | macOS / Linux |
+| Purpose | Windows | macOS / Linux |
 |---|---|---|
-| 推奨版ビルド | `build-mod.bat` | `./build-mod.sh` |
-| OmniChest クライアント起動 | `run-client.bat [MC]` | `./run-client.sh [MC]` |
+| Build the recommended version | `build-mod.bat` | `./build-mod.sh` |
+| Launch the OmniChest client | `run-client.bat [MC]` | `./run-client.sh [MC]` |
 
-`.sh` は JDK パスをハードコードせず、上記 toolchain 設定に従います。
+The `.sh` scripts do not hardcode any JDK path; they follow the toolchain setup above.
 
-### 4. 初回ビルドはネットワーク DL を伴う
+The **first build after cloning downloads** Minecraft itself, mappings and the dependency
+libraries, so it needs network access to the allowed domains and takes a while (once only).
 
-クローン直後の初回ビルドは Minecraft 本体・マッピング・依存ライブラリを
-ダウンロードします（許可ドメインへのネット接続が必要・初回のみ時間がかかります）。
-
-### 5. macOS で `./gradlew` が動かない場合
-
-リポジトリには実行ビットを付与済みですが、効いていなければ:
+If `./gradlew` does not run on macOS, the executable bit is committed but may not have survived —
+restore it with:
 
 ```bash
 chmod +x gradlew mods/*/gradlew build-mod.sh run-client.sh
 ```
 
----
+## Build tasks
 
-## ビルド方法
+Run everything from the repository root (`.\gradlew.bat` on Windows, `./gradlew` on macOS/Linux).
 
-すべてリポジトリのルートで実行します（Windows は `.\gradlew.bat`、macOS/Linux は `./gradlew`）。
+### Quick start
 
-> 注意（このブランチの対象 MC）: `omnichest` は **Stonecutter ハイブリッド**で、
-> **`1.21.11`（旧世代・Mojmap）と `26.1` / `26.1.1` / `26.1.2`（新世代・非難読化）を単一ソースから**
-> ビルドします（`build1_21_11` / `build26_1` / `build26_1_1` / `build26_1_2`）。
-> **26.1.x は Gradle デーモンが JDK 25 で起動している必要があります**（`JAVA_HOME` を JDK 25 に）。
-> 登録済みの MC は `.\gradlew.bat printVersions` で確認できます。
-> 旧 `legacy-1.21.11` ブランチは難読化版 Mojmap ビルドの ground truth として保持されています。
-
-### クイックスタート（そのままコピペで jar を生成）
-
-Windows PowerShell — リポジトリルート `MyMinecraftMod` で（先頭の `.\` が必須。
-PowerShell はカレントディレクトリのコマンドを既定で実行しないため）:
+Windows PowerShell — from the repository root. The leading `.\` is required, because PowerShell
+does not run commands from the current directory by default:
 
 ```powershell
-.\gradlew.bat buildRecommended    # 推奨版 (MC 26.1.2) をビルド
-.\gradlew.bat build26_1_2         # 特定の MC をビルド
-.\gradlew.bat buildAll            # 全 MC をビルドして dist/ に集約
+.\gradlew.bat buildRecommended    # build the recommended version (MC 26.1.2) of every mod
+.\gradlew.bat build26_1_2         # build one specific Minecraft version
+.\gradlew.bat buildAll            # build every version of every mod and collect into dist/
 ```
-
-Windows コマンドプロンプト (cmd.exe) の場合は `.\` 無しでも可: `gradlew.bat buildRecommended`
 
 macOS / Linux:
 
 ```bash
-./gradlew buildRecommended      # 推奨版 (MC 26.1.2)
-./gradlew build26_1_2           # 特定の MC
-./gradlew buildAll              # 全 MC をビルドして dist/ に集約
+./gradlew buildRecommended      # recommended version (MC 26.1.2)
+./gradlew build26_1_2           # one specific Minecraft version
+./gradlew buildAll              # every version, collected into dist/
 ```
 
-生成された jar の場所（`mod_version` は `mods/omnichest/gradle.properties` の値。 omnichest は
-Stonecutter included build なので版ノード配下に出力される）:
+> The buildable Minecraft versions are printed by `./gradlew printVersions`. In `build<MC>` the
+> `<MC>` part has its dots replaced by underscores — `26.1.2` becomes `build26_1_2`. If you pass
+> `-Pmc=26.1.2` directly in PowerShell, quote it as `'-Pmc=26.1.2'` so that it is not split on the
+> dots.
 
-```
-mods/omnichest/versions/26.1.2/build/libs/omnichest-<mod_version>+26.1.2.jar   # 版ノード生成
-mods/omnichest/build/libs/<mod_version>/omnichest-<mod_version>+26.1.2-fabric.jar  # 集約後
-```
-
-`buildAll`（または `collectDist`）実行後は配布用にも集約されます:
-
-```
-dist/omnichest/<mod_version>/
-```
-
-> メモ: ビルド可能な MC は `.\gradlew.bat printVersions` で確認できます（`build<MC>` の
-> `<MC>` はドットをアンダースコアにした形 — 例 `26.1.2` → `build26_1_2`）。
-> PowerShell で `-Pmc=26.1.2` のように直接渡す場合は、ドットでトークン分割されないよう
-> `'-Pmc=26.1.2'` と引用符で囲ってください。
-
-### ルート集約タスク（全 Mod 横断 / Mod が 1 つなら単一 Mod 構成と同じ挙動）
+### Aggregate tasks (across all mods)
 
 ```bash
-./gradlew printVersions        # 全 Mod の登録 MC を表示
-./gradlew printVersionsJson    # 全 Mod の buildable な MC を JSON 配列 (CI matrix 用)
-./gradlew printRecommended     # 推奨 MC を表示
-./gradlew validateVersions     # 全 Mod の versions.json を Mojang / Fabric Meta で検証
-./gradlew build<MC>            # その MC を持つ全 Mod を 1 バージョンビルド (例: build26_1_2)
-./gradlew buildAll             # 全 Mod の全 MC を順次ビルドし dist/<modid>/<modversion>/ へ集約
-./gradlew buildRecommended     # 全 Mod の推奨ビルドを生成
-./gradlew collectArtifacts     # 全 Mod の fabric jar を build/libs/ に集約
+./gradlew printVersions        # registered Minecraft versions of every mod
+./gradlew printVersionsJson    # buildable versions as a JSON array (used for the CI matrix)
+./gradlew printRecommended     # the recommended Minecraft version
+./gradlew validateVersions     # check every versions.json against Mojang / Fabric Meta
+./gradlew build<MC>            # build that version for every mod that registers it
+./gradlew buildAll             # build every version of every mod into dist/<modid>/<modversion>/
+./gradlew buildRecommended     # build the recommended version of every mod
+./gradlew collectArtifacts     # collect the fabric jars into build/libs/
 ```
 
-### Mod 毎タスク（`<modid>` = `mods/` 配下のディレクトリ名）
+### Per-mod tasks (`<modid>` = the directory name under `mods/`)
 
 ```bash
 ./gradlew <modid>PrintVersions / <modid>PrintVersionsJson / <modid>PrintRecommended
 ./gradlew <modid>ValidateVersions
-./gradlew <modid>BuildAll          # その Mod の全 MC をビルド
-./gradlew <modid>CollectDist       # その Mod の配布 jar を dist/<modid>/<modversion>/ へ
+./gradlew <modid>BuildAll          # build every Minecraft version of that mod
+./gradlew <modid>CollectDist       # collect its jars into dist/<modid>/<modversion>/
 ./gradlew <modid>BuildRecommended
-
-# 単一 MC を直接ビルド / 起動:
-#
-#   ・旧来 Mod (mods/<id>/fabric を持つ通常マルチプロジェクト):
-#       ./gradlew :mods:<modid>:fabric:build -Pmc=<MC>
-#       ./gradlew :mods:<modid>:fabric:runClient -Pmc=<MC>
-#
-#   ・Stonecutter Mod (mods/<id>/settings.gradle.kts を持つ included build。 例: omnichest):
-#       上記 :mods:<id>:fabric:* は存在しない。 版ノードタスクを Mod ディレクトリ内で実行する:
-#       cd mods/<modid>
-#       ./gradlew :<MC>:build       # 例 :26.1.2:build
-#       ./gradlew :<MC>:runClient   # 例 :26.1.2:runClient  (26.1.x は JAVA_HOME=JDK25)
 ```
 
-成果物の出力先:
-- 旧来 Mod の per-MC jar: `mods/<modid>/fabric/build/libs/<MC>/<modid>-<modversion>+<MC>-fabric.jar`
-- Stonecutter Mod の版ノード jar: `mods/<modid>/versions/<MC>/build/libs/<modid>-<modversion>+<MC>.jar`
-- 配布用集約 (共通): `dist/<modid>/<modversion>/`
+For example, `./gradlew omnichestBuildAll` builds all six OmniChest versions.
 
----
+### Building or launching a single version
 
-## 新しい Mod を追加する手順
+Stonecutter mods expose their version nodes inside the mod directory:
 
-`settings.gradle` と `build.gradle` は `mods/*/` を走査して Mod を自動検出するため、
-**共有基盤のファイルを編集する必要はありません**。次の構成を作るだけです。
+```bash
+cd mods/<modid>
+./gradlew :<MC>:build       # e.g. :26.1.2:build
+./gradlew :<MC>:runClient   # e.g. :26.1.2:runClient  (26.1.x needs JAVA_HOME on JDK 25)
+```
 
-1. **ディレクトリを作る**: `mods/<newmodid>/`
+### Where the artifacts end up
 
-2. **Mod メタデータ** `mods/<newmodid>/gradle.properties`:
+- Version node jar: `mods/<modid>/versions/<MC>/build/libs/<modid>-<modversion>+<MC>.jar`
+- Collected inside the mod: `mods/<modid>/build/libs/<modversion>/<modid>-<modversion>+<MC>-fabric.jar`
+- Distribution output: `dist/<modid>/<modversion>/`
+
+## Adding a new mod
+
+`settings.gradle` and `build.gradle` discover mods by scanning `mods/*/`, so **no shared
+infrastructure file needs to be edited**. Copy an existing Stonecutter mod as a template
+(`mods/worldchange/` is the smallest one) and adjust:
+
+1. **Directory**: `mods/<newmodid>/`
+
+2. **Mod metadata** — `mods/<newmodid>/gradle.properties`:
    ```properties
    mod_id=<newmodid>
    mod_version=1.0.0
    maven_group=com.example.<newmodid>
    ```
 
-3. **対象 MC の登録** `mods/<newmodid>/versions/versions.json`（最小例）:
+3. **Registered Minecraft versions** — `mods/<newmodid>/mc-meta/versions.json` (minimal example):
    ```json
    {
      "schema": 1,
@@ -220,47 +214,60 @@ dist/omnichest/<mod_version>/
                  "warn_on_deprecated_loader": true, "warn_on_unsupported_version": true }
    }
    ```
-   と、各 MC の `mods/<newmodid>/versions/<MC>.properties`:
+   plus one `mods/<newmodid>/mc-meta/<MC>.properties` per version:
    ```properties
    minecraft_version=26.1.2
    loader_version=0.19.3
    fabric_api_version=0.150.0+26.1.2
    java_version=25
    remap=false
-   # 任意: mod_menu_version= / cloth_config_version= / yarn_mappings=
+   # optional: mod_menu_version= / cloth_config_version= / yarn_mappings=
    ```
-   > `remap=true` は難読化版 MC (例: 1.21.x、Mojang mappings で remap) 用。
-   > 非難読化版 (26.1+) は `remap=false`。
+   > `remap=true` is for obfuscated Minecraft (e.g. `1.21.x`, remapped with Mojang mappings);
+   > unobfuscated releases (`26.1+`) use `remap=false`.
 
-4. **サブプロジェクト** を置く:
-   - `mods/<newmodid>/common/build.gradle` … `java-library` の純粋 Java モジュール
-   - `mods/<newmodid>/fabric/build.gradle` … `fabricmod.fabric-version` plugin を apply し、
-     `:mods:<newmodid>:common` に依存する Fabric ビルダ
-   （`mods/omnichest/` の `common/` `fabric/` をテンプレートとして流用するのが簡単です。
-     その際 `fabric/build.gradle` 内の `project(':mods:omnichest:common')` を
-     `project(':mods:<newmodid>:common')` に直してください。）
+4. **Stonecutter nodes** — list the same versions in `mods/<newmodid>/settings.gradle.kts`:
+   ```kotlin
+   stonecutter {
+       create(rootProject) {
+           versions("26.1.2")
+           vcsVersion = "26.1.2"   // must match policy.default
+       }
+   }
+   rootProject.name = "<newmodid>"
+   ```
 
-5. **確認**:
+5. **Per-node dependencies** — `mods/<newmodid>/stonecutter.properties.toml`
+   (loader / Fabric API / Java per version; keep it in sync with `mc-meta/`).
+
+6. **Verify**:
    ```bash
-   ./gradlew projects                       # :mods:<newmodid>:common / :fabric が現れる
-   ./gradlew <newmodid>PrintVersions        # 登録 MC が出る
-   ./gradlew :mods:<newmodid>:fabric:build -Pmc=<MC>
+   ./gradlew <newmodid>PrintVersions        # the registered versions are printed
+   ./gradlew <newmodid>ValidateVersions     # checked against Mojang / Fabric Meta
+   cd mods/<newmodid> && ./gradlew :26.1.2:build
    ```
 
-### 仕組み（共有基盤が Mod 固有名を持たない理由）
+### How the shared infrastructure stays mod-agnostic
 
-- `settings.gradle` が `mods/*/` を走査し、各 Mod の `common`/`fabric` を
-  `:mods:<modid>:common` / `:mods:<modid>:fabric` として include。
-  各 Mod の `gradle.properties`（mod_id 等）を `beforeProject` でそのサブプロジェクトへ注入する。
-- convention plugin `fabricmod.fabric-version` は、自分の親ディレクトリ
-  （= `mods/<modid>/`）の `versions/` から `VersionRegistry` を読み、`mod_id` を
-  `archivesName` に流し込む。Mod 固有のパスは一切ハードコードしない。
-- ルート `build.gradle` は検出した各 Mod の registry を読み、Mod 毎タスクと
-  ルート集約タスクを生成する。
+- `settings.gradle` scans `mods/*/`. A directory with a `settings.gradle.kts` is pulled in with
+  `includeBuild` (Stonecutter); otherwise its `common`/`fabric` subprojects are included as
+  `:mods:<modid>:common` / `:mods:<modid>:fabric`, and the mod's `gradle.properties` is injected
+  into them via `beforeProject`. It also collects the registered Minecraft versions and turns a
+  `build<MC>` task name into `-Pmc=<MC>` automatically.
+- The root `build.gradle` reads each discovered mod's version registry and generates both the
+  per-mod tasks and the aggregate tasks from it. No mod-specific path is ever hardcoded.
+- The convention plugin `fabricmod.fabric-version` (used by the legacy layout) resolves
+  `versions/` from its own parent directory and feeds `mod_id` into `archivesName`.
 
----
+## Continuous integration
 
-## ライセンス
+- **`.github/workflows/build.yml`** — runs on every push and pull request. The build matrix is not
+  hardcoded: it is generated from `./gradlew printVersionsJson`, i.e. the union of the buildable
+  Minecraft versions of all mods.
+- **`.github/workflows/release.yml`** — runs when a `v*` tag is pushed. It validates the version
+  metadata, builds every registered version and attaches the jars to a draft GitHub Release.
 
-各 Mod のライセンスは `mods/<modid>/LICENSE` があればそれを、無ければルートの
-[LICENSE](LICENSE) を jar にバンドルします。
+## License
+
+Each mod bundles `mods/<modid>/LICENSE` into its jar if that file exists, and the root
+[LICENSE](LICENSE) otherwise. The shared default is **CC0 1.0 Universal**.
