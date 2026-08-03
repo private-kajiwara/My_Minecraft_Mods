@@ -12,7 +12,10 @@ name: build
 on:
   push:
     branches: ['**']
-    tags-ignore: ['v*']
+    # リリースタグ (<modid>-v<version>) は release.yml が担当するので除外する。
+    # 除外しないと、 タグ push だけで全 MC matrix がもう一度丸ごと走ってしまう
+    # (omnichest-v1.1.1 で実際に 11 分無駄になった)。
+    tags-ignore: ['*-v*']
   pull_request:
 
 permissions:
