@@ -2,7 +2,8 @@
 # .github/workflows/release.yml
 # ---------------------------------------------------------------------
 #   <modid>-v<version> タグの push で、 その Mod の登録済み全 MC バージョンを
-#   ビルドし、 dist/<modid>/<version>/ の jar を draft GitHub Release に添付する。
+#   ビルドし、 dist/<modid>/<version>/ の配布 jar を draft GitHub Release に添付する。
+#   添付するのは <modid>-<version>+<MC>-fabric.jar のみ (sources は含めない)。
 #
 #   タグ命名 (正式規約): <modid>-v<version>   例: omnichest-v1.1.1
 #     - <modid>   = mods/ 配下のディレクトリ名 (= Gradle タスク接頭辞)
@@ -129,30 +130,45 @@ jobs:
             "-Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64"
 
       # ---------------------------------------------------------------
-      # 添付前ガード: jar が 1 本も無ければここで落とす。
-      #   (過去の空 draft Release は、 添付段で no-match でも success 扱いに
-      #    なっていたのが直接の原因。)
+      # 添付する jar だけを staging ディレクトリへ集める。
+      #
+      #   「配布 jar」は否定リスト (*-sources.jar を除く…) ではなく肯定形で定義する:
+      #       <modid>-<version>+<MC>-fabric.jar
+      #   これはルートの build.gradle が collectDist で使っている
+      #   include "**/${modId}-${modVer}+*-fabric.jar" と同じ規約。
+      #   sources は "-fabric-sources.jar" で終わるためこの形に一致せず自然に外れ、
+      #   将来 別 suffix の jar が増えても命名規約に合うものだけが対象になる。
+      #
+      #   本数ガードは "除外後" の staging を数える。 除外前を数えると
+      #   sources だけあって mod jar が 0 本のケースを見逃す。
       # ---------------------------------------------------------------
-      - name: verify artifacts exist
+      - name: stage release assets
         shell: bash
         run: |
           set -euo pipefail
-          DIR="dist/${{ steps.tag.outputs.modid }}/${{ steps.tag.outputs.version }}"
+          MODID="${{ steps.tag.outputs.modid }}"
+          VER="${{ steps.tag.outputs.version }}"
+          SRC="dist/$MODID/$VER"
+          OUT="release-assets"
 
-          if [ ! -d "$DIR" ]; then
-            echo "::error::$DIR がありません。 ${{ steps.tag.outputs.modid }}BuildAll の出力先を確認してください。"
+          if [ ! -d "$SRC" ]; then
+            echo "::error::$SRC がありません。 ${MODID}BuildAll の出力先を確認してください。"
             exit 1
           fi
 
-          echo "--- $DIR ---"
-          ls -lah "$DIR"
+          echo "--- ビルド成果物 ($SRC) ---"
+          ls -lah "$SRC"
 
-          TOTAL=$(find "$DIR" -maxdepth 1 -type f -name '*.jar' | wc -l)
-          MODJARS=$(find "$DIR" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | wc -l)
-          echo "jar 総数=$TOTAL (うち mod jar=$MODJARS / sources=$((TOTAL - MODJARS)))"
+          mkdir -p "$OUT"
+          find "$SRC" -maxdepth 1 -type f -name "${MODID}-${VER}+*-fabric.jar" \
+            -exec cp -v {} "$OUT/" \;
 
-          if [ "$MODJARS" -eq 0 ]; then
-            echo "::error::$DIR に mod jar が 1 本もありません。 Release を作らずに終了します。"
+          COUNT=$(find "$OUT" -maxdepth 1 -type f -name '*.jar' | wc -l)
+          echo "--- 添付対象 ($OUT): $COUNT 本 ---"
+          ls -lah "$OUT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::$SRC に配布 jar (${MODID}-${VER}+<MC>-fabric.jar) が 1 本もありません。 Release を作らずに終了します。"
             exit 1
           fi
 
@@ -165,8 +181,6 @@ jobs:
           draft: true
           # パターンに 1 件もマッチしなければ fail させる (無言成功の再発防止)。
           fail_on_unmatched_files: true
-          # sources jar も添付される。 mod jar だけにしたい場合は
-          # 事前に staging ディレクトリへ非 sources だけコピーして、
-          # そのディレクトリを指すこと (glob に否定は書けない)。
+          # 添付は staging のみ (= 配布 jar だけ。 sources は含まない)。
           files: |
-            dist/${{ steps.tag.outputs.modid }}/${{ steps.tag.outputs.version }}/*.jar
+            release-assets/*.jar
