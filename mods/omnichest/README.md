@@ -18,13 +18,13 @@ Minecraft Fabric MOD「OmniChest」のリポジトリ。
 |---|---|---|---|---|---|
 | `1.21.10` / `1.21.11` | 旧世代 (難読化) | 21 | remap | Mojang (Mojmap) | `legacy-1.21.11` の挙動を単一ソースから再現 |
 | `26.1` / `26.1.1` / `26.1.2` | 新世代 (非難読化) | 25 | 非remap | なし | `26.1.2` が推奨。 ソースの基準名はこの世代の公式名 |
-| `26.2` | 新世代 (非難読化) | 25 | 非remap (Loom 1.16.3) | なし | **移植中 (held・`buildable:false`)**。 クライアント描画パイプライン破壊的変更を版別 `//?` で移植中。 下記「26.2（移植中）」参照 |
+| `26.2` | 新世代 (非難読化) | 25 | 非remap (Loom 1.16.3) | なし | **ビルド可 (`buildable:true`)**。 クライアント描画パイプライン破壊的変更を版別 `//?` で移植済。 下記「26.2」参照 |
 
 > **26.1 系の intermediary / Yarn は設計上「恒久的に提供されない」のが正常**（非難読化のため）。
 > 「マッピング公開待ち」「ビルド不能」と誤結論しないこと。
 
-> **26.2 は現在 held（移植作業中）。** ノードとツールチェーンは登録済みで `:26.2:` タスクは存在するが、
-> 在世界描画 (System A) の移植が未完のため `:26.2:build` / `:26.2:runClient` は**まだ compile に通らない**。
+> **26.2 は held を解除済み（`buildable:true`）。** 在世界描画 (System A) を含めて版別 `//?` で移植済で、
+> `:26.2:build` / `:26.2:runClient` はそのまま通り、 ルートの `buildAll` / CI matrix にも含まれる。
 > 26.1.x 系はこの追加の影響を受けず**バイト一致のまま**（`//?` 版分岐のみの加算的変更）。
 
 ---
@@ -71,7 +71,7 @@ cd C:\MyMinecraftMod\mods\omnichest
 `-Pmc=` は Stonecutter 化により**使えない**（`mods/omnichest` は included build で
 `:mods:omnichest:fabric` サブプロジェクトを持たない）。
 
-### 26.2（移植中）
+### 26.2
 
 26.2 も**同じ版ノードタスク**で起動 / ビルドする（`26.1.x` と同様に Gradle デーモンは JDK 25 が必須）:
 
@@ -83,16 +83,15 @@ cd C:\MyMinecraftMod\mods\omnichest
 .\gradlew.bat :26.2:runClient
 
 # jar 生成（版ノード直下に出力）
-.\gradlew.bat :26.2:build            # -> versions/26.2/build/libs/omnichest-1.0.6+26.2.jar
-.\gradlew.bat :26.2:buildAndCollect  # -> build/libs/1.0.6/omnichest-1.0.6+26.2-fabric.jar（命名 + sources 集約）
+.\gradlew.bat :26.2:build            # -> versions/26.2/build/libs/omnichest-<modver>+26.2.jar
+.\gradlew.bat :26.2:buildAndCollect  # -> build/libs/<modver>/omnichest-<modver>+26.2-fabric.jar（命名 + sources 集約）
 ```
 
-> ⚠ **現状 (held)**: 26.2 は `versions.json` で `buildable:false`。 在世界描画 (System A) の移植が
-> 完了するまで上記 `:26.2:build` / `:26.2:runClient` は **compile に通らない**（GUI 改名・ItemTags・
-> Mixin リターゲットは移植済だが System A が未了）。 進捗が完了し実機確認が取れたら `buildable:true`
-> へ flip する。 `buildable:false` の間は**ルートの `buildAll` / `buildRecommended` / CI matrix からは
-> 除外**される（`printVersionsJson` が buildable のみ出力するため）ので、 26.2 を触るときは上記の
-> **版ノードタスクを直接**叩く。 flip 後は他版と同様 `build26_2` / `buildAll` でも生成される。
+> **現状**: 26.2 は `versions.json` で `buildable:true`（held 解除済）。 GUI 改名・ItemTags・Mixin
+> リターゲットに加えて在世界描画 (System A) も移植済で、 **ルートの `buildAll` と CI matrix にも
+> 含まれる**（`printVersionsJson` が buildable のみ出力するため）。 上記の版ノードタスクを直接
+> 叩いてもよいし、 他版と同様 `build26_2` / `buildAll` でも生成される（`buildRecommended` は
+> `recommended` の 26.1.2 のみが対象で、 これは held とは無関係）。
 
 ### リポジトリルートからの集約ビルド
 
