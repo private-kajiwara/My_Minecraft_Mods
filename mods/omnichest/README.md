@@ -44,8 +44,8 @@ OmniChest は **自己完結した Stonecutter included build**（`mods/omniches
 Windows PowerShell:
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\ppapk\.jdks\jdk-25.0.3+9"
-cd C:\MyMinecraftMod\mods\omnichest
+$env:JAVA_HOME = "<JDK 25 のインストール先>"
+cd <このリポジトリのクローン先>\mods\omnichest
 .\gradlew.bat :26.1.2:runClient
 ```
 
@@ -58,13 +58,13 @@ cd C:\MyMinecraftMod\mods\omnichest
 ### Minecraft ビルド（jar 生成）— そのままコピペ
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\ppapk\.jdks\jdk-25.0.3+9"
-cd C:\MyMinecraftMod\mods\omnichest
+$env:JAVA_HOME = "<JDK 25 のインストール先>"
+cd <このリポジトリのクローン先>\mods\omnichest
 .\gradlew.bat :1.21.11:build        # jar -> versions/1.21.11/build/libs/ (remapJar まで生成)
 .\gradlew.bat :26.1.2:build         # jar -> versions/26.1.2/build/libs/
 ```
 
-> `JAVA_HOME` のパス（`C:\Users\ppapk\.jdks\jdk-25.0.3+9`）は環境に合わせて読み替える。
+> `JAVA_HOME` と `cd` のパスは自分の環境のものに読み替える。
 > 同じ PowerShell セッション内なら `$env:JAVA_HOME` と `cd` は一度設定すれば使い回せる。
 
 タスク名は **版ノード**（`:<MC>:build` / `:<MC>:runClient`）。 旧構成の `:fabric:runClient` /
@@ -76,8 +76,8 @@ cd C:\MyMinecraftMod\mods\omnichest
 26.2 も**同じ版ノードタスク**で起動 / ビルドする（`26.1.x` と同様に Gradle デーモンは JDK 25 が必須）:
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\ppapk\.jdks\jdk-25.0.3+9"
-cd C:\MyMinecraftMod\mods\omnichest
+$env:JAVA_HOME = "<JDK 25 のインストール先>"
+cd <このリポジトリのクローン先>\mods\omnichest
 
 # クライアント起動（dev の Iris/Sodium 26.2 ペアは modLocalRuntime で自動投入・配布 jar 非混入）
 .\gradlew.bat :26.2:runClient

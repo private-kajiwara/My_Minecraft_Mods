@@ -52,3 +52,11 @@ replay_*.log
 # git tooling diagnostics (machine-specific env dumps — do not track)
 
 gcm-diagnose.log
+
+# Claude Code
+#
+# settings.local.json は「その開発者のマシン固有」の許可リストで、 絶対パスや
+# OS 固有のシェル呼び出しがそのまま入る。 以前これが追跡されており、 特定の
+# マシンのユーザー名入りパスと PowerShell 専用エントリがリポジトリに載っていた。
+# 共有したい設定は .claude/settings.json (追跡対象) に書くこと。
+.claude/settings.local.json
