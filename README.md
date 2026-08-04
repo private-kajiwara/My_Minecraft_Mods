@@ -63,60 +63,125 @@ node tasks `:<MC>:build` / `:<MC>:runClient` inside `mods/<modid>/`.
 
 ## Requirements
 
-### JDK 21 **and** JDK 25
+You do **not** have to install a JDK, and you do **not** have to set `JAVA_HOME`.
 
-There is a generation boundary, and both JDKs are needed — with only one of them some Minecraft
-versions cannot be built:
-
-| Minecraft generation | Required JDK |
+| What | Who provides it |
 |---|---|
-| `1.21.x` (older generation, Mojmap, remapping Loom) | **JDK 21** |
-| `26.1` / `26.1.1` / `26.1.2` / `26.2` (new generation, unobfuscated) | **JDK 25** |
+| Git | you |
+| **Any** JVM on `PATH` or in `JAVA_HOME`, just to launch the Gradle wrapper | you |
+| Network access to the domains listed below | you |
+| ~10 GB of free disk | you |
+| Windows only: long paths enabled | you |
+| Gradle itself, the daemon JVM, JDK 21, JDK 25, Minecraft, mappings, every dependency | **the repository** |
 
-> For 26.1+ the Gradle daemon itself has to run on JDK 25
-> (`loom-back-compat` picks the Loom variant that matches the generation).
+There is a Minecraft generation boundary, and both JDKs are still needed — but Gradle now resolves
+and, if necessary, downloads them for you:
 
-### Toolchain (how the JDKs are supplied)
+| Minecraft generation | Compiled with |
+|---|---|
+| `1.21.x` (older generation, Mojmap, remapping Loom) | JDK 21 |
+| `26.1` / `26.1.1` / `26.1.2` / `26.2` (new generation, unobfuscated) | JDK 25 |
 
-Start by letting Gradle's toolchain auto-detection do the work — that is enough on most machines.
-If a JDK is not detected, register its install path in the **per-machine, non-committed**
-`~/.gradle/gradle.properties` (on Windows `%USERPROFILE%\.gradle\gradle.properties`):
+### How the JDKs are supplied
 
-```properties
-# Example — replace with the real paths on your machine; separate multiple entries with commas
-org.gradle.java.installations.paths=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home,/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home
+* **The Gradle daemon's own JVM** is pinned by the tracked file
+  `gradle/gradle-daemon-jvm.properties` (Java 25, Eclipse Adoptium). Each mod has its own copy so
+  that `cd mods/<modid> && ./gradlew …` works standalone too. If no matching JVM is installed,
+  Gradle downloads one on first use.
+* **The per-version toolchains** (21 / 25) are resolved by Gradle, falling back to the
+  [foojay](https://api.foojay.io) resolver, which is enabled in every `settings.gradle(.kts)`.
+
+Nothing here relies on `~/.gradle/gradle.properties`. If you had
+`org.gradle.java.installations.paths` set for this project you can drop it.
+
+### Check the machine-side prerequisites
+
+Run the bundled diagnostic straight after cloning. It does not start Gradle, so it also works when
+Gradle cannot start yet:
+
+```bash
+./doctor.sh          # macOS / Linux / Git Bash
+```
+```powershell
+.\doctor.bat         # Windows
 ```
 
-This file is deliberately not part of the repository, since it is environment-specific.
+It checks Git, the launcher JVM, the files the repository is supposed to ship, Windows long-path
+settings, free disk, and HTTPS reachability of every domain the first build needs — and prints how
+to fix whatever is missing.
+
+### Domains the first build needs
+
+`services.gradle.org` · `plugins.gradle.org` · `repo.maven.apache.org` · `maven.fabricmc.net` ·
+`meta.fabricmc.net` · `launchermeta.mojang.com` · `libraries.minecraft.net` · `maven.kikugie.dev` ·
+`maven.terraformersmc.com` · `maven.shedaniel.me` · `api.modrinth.com` · `api.foojay.io`
+
+### Windows: enable long paths
+
+The deepest path a build generates is **243 characters** (measured, inside the Loom cache). The
+classic `MAX_PATH` limit is 260, which leaves only 16 characters for the repository root — in
+practice too few wherever you clone. Enable long paths once, as administrator:
+
+```powershell
+New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
+git config --global core.longpaths true
+```
 
 ## Getting started
 
-The shared Gradle wrapper runs the same tasks on every OS. Development has mostly been done on
-Windows, but line endings, executable bits and POSIX wrappers are all in place, so cloning,
-building and launching from macOS/Linux is expected to work
-(**final verification on real macOS hardware is up to you**).
+After `git clone`, this is the whole procedure:
 
-- **Windows**: `.\gradlew.bat <task>` (in `cmd.exe`, `gradlew.bat <task>` also works)
-- **macOS / Linux**: `./gradlew <task>`
+**Windows**
 
-Helper scripts are provided for both:
+```powershell
+.\doctor.bat                    # optional, but tells you what is missing
+.\gradlew.bat buildRecommended
+```
+
+**macOS**
+
+```bash
+./doctor.sh
+./gradlew buildRecommended
+```
+
+**Linux**
+
+```bash
+./doctor.sh
+./gradlew buildRecommended
+```
+
+The three are deliberately identical apart from the wrapper name. Helper scripts exist as a
+matched pair for every OS, and none of them hardcodes a JDK path:
 
 | Purpose | Windows | macOS / Linux |
 |---|---|---|
+| Check the prerequisites | `doctor.bat` | `./doctor.sh` |
 | Build the recommended version | `build-mod.bat` | `./build-mod.sh` |
 | Launch the OmniChest client | `run-client.bat [MC]` | `./run-client.sh [MC]` |
 
-The `.sh` scripts do not hardcode any JDK path; they follow the toolchain setup above.
+The **first build downloads** Gradle, possibly a JDK or two, Minecraft itself, mappings and every
+dependency. Measured on Windows from a fresh clone with an empty Gradle home: **about 10 minutes
+and roughly 1 GB** for a single 26.1.2 node.
 
-The **first build after cloning downloads** Minecraft itself, mappings and the dependency
-libraries, so it needs network access to the allowed domains and takes a while (once only).
-
-If `./gradlew` does not run on macOS, the executable bit is committed but may not have survived —
-restore it with:
+If `./gradlew` does not run on macOS or Linux, the executable bit is committed (mode `100755`) but
+may not have survived — restore it with:
 
 ```bash
-chmod +x gradlew mods/*/gradlew build-mod.sh run-client.sh
+chmod +x gradlew mods/*/gradlew build-mod.sh run-client.sh doctor.sh
 ```
+
+### What is verified on which OS
+
+| | Build from a cold clone | `runClient` (actual rendering, shaders) |
+|---|---|---|
+| **Windows** | verified on real hardware | verified on real hardware |
+| **Linux** | verified by CI (`build.yml` every push, `cold-clone.yml` weekly) | **not verified** |
+| **macOS** | verified by CI (`cold-clone.yml` weekly) | **not verified** |
+
+CI can only prove that the build produces jars. It never launches Minecraft, so anything about
+rendering, Iris/Sodium shaders or input handling on macOS and Linux is still unverified.
 
 ## Build tasks
 
@@ -264,8 +329,14 @@ infrastructure file needs to be edited**. Copy an existing Stonecutter mod as a 
 - **`.github/workflows/build.yml`** — runs on every push and pull request. The build matrix is not
   hardcoded: it is generated from `./gradlew printVersionsJson`, i.e. the union of the buildable
   Minecraft versions of all mods.
-- **`.github/workflows/release.yml`** — runs when a `v*` tag is pushed. It validates the version
-  metadata, builds every registered version and attaches the jars to a draft GitHub Release.
+- **`.github/workflows/release.yml`** — runs when a `<modid>-v<version>` tag is pushed. It
+  validates the version metadata, builds every registered version and attaches the jars to a draft
+  GitHub Release.
+- **`.github/workflows/cold-clone.yml`** — manual (`workflow_dispatch`) plus weekly, on
+  `ubuntu-latest` / `macos-latest` / `windows-latest`. It proves that a fresh clone builds with no
+  repository-specific setup: **no `actions/setup-java`, no Gradle cache, no `chmod +x`**. That is
+  also why it must stay slow — adding a cache would make it prove nothing. `build.yml` cannot serve
+  this purpose because it installs the JDKs itself with `actions/setup-java`.
 
 ## License
 

@@ -63,57 +63,123 @@ Mod 固有名をハードコードせずに各 Mod をビルドします。
 
 ## 必要なもの
 
-### JDK **21 と 25 の両方**
+JDK を自分でインストールする必要は**ありません**。`JAVA_HOME` を設定する必要も**ありません**。
 
-世代境界があり、両方の JDK が要ります (片方だけでは一部の MC がビルドできません):
-
-| MC 世代 | 必要 JDK |
+| 何を | 誰が用意するか |
 |---|---|
-| `1.21.x` (旧世代・Mojmap・remap Loom) | **JDK 21** |
-| `26.1` / `26.1.1` / `26.1.2` / `26.2` (新世代・非難読化) | **JDK 25** |
+| Git | あなた |
+| Gradle wrapper を起動するための **任意の** JVM (`PATH` か `JAVA_HOME`) | あなた |
+| 下記ドメインへのネットワーク接続 | あなた |
+| ディスク空き 10 GB 程度 | あなた |
+| Windows のみ: 長パスの有効化 | あなた |
+| Gradle 本体・デーモン JVM・JDK 21・JDK 25・Minecraft・マッピング・全依存 | **リポジトリ** |
 
-> 26.1+ は Gradle デーモン自身が JDK 25 で動いている必要があります
-> (`loom-back-compat` が世代に応じて Loom 変種を切り替えます)。
+MC の世代境界と必要 JDK 自体は変わりませんが、その調達は Gradle が行います:
 
-### toolchain (JDK の供給)
+| MC 世代 | コンパイルに使う JDK |
+|---|---|
+| `1.21.x` (旧世代・Mojmap・remap Loom) | JDK 21 |
+| `26.1` / `26.1.1` / `26.1.2` / `26.2` (新世代・非難読化) | JDK 25 |
 
-まず Gradle の toolchain 自動検出に任せます (多くの環境はこれで通ります)。検出されない場合は、
-**マシン毎の非コミット設定** `~/.gradle/gradle.properties`
-(Windows は `%USERPROFILE%\.gradle\gradle.properties`) に JDK のインストール先を登録します:
+### JDK の供給のしくみ
 
-```properties
-# 例 (実際のパスは自分の環境のものに置き換える。複数はカンマ区切り)
-org.gradle.java.installations.paths=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home,/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home
+* **Gradle デーモン自身の JVM** は追跡ファイル `gradle/gradle-daemon-jvm.properties` が
+  Java 25 (Eclipse Adoptium) に固定します。`cd mods/<modid> && ./gradlew …` の単体実行でも
+  効くよう、各 mod にも同じファイルを置いています。合致する JVM が無ければ初回に
+  自動ダウンロードされます。
+* **版ごとの toolchain** (21 / 25) は Gradle が解決し、見つからなければ
+  [foojay](https://api.foojay.io) リゾルバ (全 `settings.gradle(.kts)` で有効) が取得します。
+
+`~/.gradle/gradle.properties` には一切依存しません。このプロジェクトのために
+`org.gradle.java.installations.paths` を設定していたなら、もう外して構いません。
+
+### マシン側の前提をチェックする
+
+クローン直後にこれを叩いてください。Gradle を起動しないので、Gradle がまだ動かない状態でも
+実行できます:
+
+```bash
+./doctor.sh          # macOS / Linux / Git Bash
+```
+```powershell
+.\doctor.bat         # Windows
 ```
 
-このファイルは環境依存のためリポジトリには含めません。
+Git・ランチャ用 JVM・リポジトリが供給すべきファイル・Windows の長パス設定・ディスク空き・
+初回ビルドに必要な全ドメインへの HTTPS 到達性を検査し、足りないものと直し方を表示します。
+
+### 初回ビルドに必要なドメイン
+
+`services.gradle.org` · `plugins.gradle.org` · `repo.maven.apache.org` · `maven.fabricmc.net` ·
+`meta.fabricmc.net` · `launchermeta.mojang.com` · `libraries.minecraft.net` · `maven.kikugie.dev` ·
+`maven.terraformersmc.com` · `maven.shedaniel.me` · `api.modrinth.com` · `api.foojay.io`
+
+### Windows: 長パスを有効にする
+
+ビルドが生成する最深パスは**実測 243 文字**です (Loom キャッシュ内)。従来の `MAX_PATH` は 260 なので
+リポジトリのルートに使える余裕は 16 文字しかなく、実質どこにクローンしても足りません。
+管理者権限で一度だけ有効化してください:
+
+```powershell
+New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
+git config --global core.longpaths true
+```
 
 ## セットアップ
 
-共有 Gradle wrapper で全 OS から同じタスクを実行できます。これまでの動作確認は主に Windows
-ですが、改行コード・実行ビット・POSIX ラッパーを整備済みで、macOS/Linux でもクローン →
-ビルド → 起動できる想定です (**macOS 実機での最終確認は環境準備のうえ各自で**)。
+`git clone` の後にやることはこれだけです。
 
-- **Windows**: `.\gradlew.bat <task>` (cmd.exe では `gradlew.bat <task>` でも可)
-- **macOS / Linux**: `./gradlew <task>`
+**Windows**
 
-補助スクリプトも OS 別に用意しています:
+```powershell
+.\doctor.bat                    # 任意。足りないものを教えてくれる
+.\gradlew.bat buildRecommended
+```
+
+**macOS**
+
+```bash
+./doctor.sh
+./gradlew buildRecommended
+```
+
+**Linux**
+
+```bash
+./doctor.sh
+./gradlew buildRecommended
+```
+
+3 つは wrapper 名以外まったく同じです。補助スクリプトも OS ごとに対で用意してあり、
+どれも JDK パスをハードコードしていません:
 
 | 用途 | Windows | macOS / Linux |
 |---|---|---|
+| 前提チェック | `doctor.bat` | `./doctor.sh` |
 | 推奨版ビルド | `build-mod.bat` | `./build-mod.sh` |
 | OmniChest クライアント起動 | `run-client.bat [MC]` | `./run-client.sh [MC]` |
 
-`.sh` は JDK パスをハードコードせず、上記 toolchain 設定に従います。
+**初回ビルドは** Gradle 本体・場合によっては JDK・Minecraft 本体・マッピング・全依存を
+ダウンロードします。Windows で新規クローン＋空の Gradle ホームから実測したところ、
+26.1.2 の 1 ノードで**約 10 分・約 1 GB** でした。
 
-クローン直後の**初回ビルドは Minecraft 本体・マッピング・依存ライブラリをダウンロード**します
-(許可ドメインへのネット接続が必要・初回のみ時間がかかります)。
-
-macOS で `./gradlew` が動かない場合、実行ビットは付与済みですが効いていなければ:
+macOS / Linux で `./gradlew` が動かない場合、実行ビットは付与済み (mode `100755`) ですが
+効いていなければ:
 
 ```bash
-chmod +x gradlew mods/*/gradlew build-mod.sh run-client.sh
+chmod +x gradlew mods/*/gradlew build-mod.sh run-client.sh doctor.sh
 ```
+
+### どの OS で何が検証済みか
+
+| | cold clone からのビルド | `runClient` (実際の描画・シェーダー) |
+|---|---|---|
+| **Windows** | 実機で検証済 | 実機で検証済 |
+| **Linux** | CI で検証 (`build.yml` 毎 push・`cold-clone.yml` 週次) | **未検証** |
+| **macOS** | CI で検証 (`cold-clone.yml` 週次) | **未検証** |
+
+CI が証明できるのは「jar が生成できる」ところまでです。Minecraft を起動しないため、
+macOS / Linux での描画・Iris/Sodium シェーダー・入力まわりは依然として未検証です。
 
 ## ビルド方法
 
@@ -261,8 +327,14 @@ cd mods/<modid>
 - **`.github/workflows/build.yml`** … push と pull request で実行。ビルド matrix は
   ハードコードせず `./gradlew printVersionsJson` (全 Mod の buildable な MC の和集合) から
   動的に生成する。
-- **`.github/workflows/release.yml`** … `v*` タグの push で実行。版メタを検証し、登録済みの
-  全 MC をビルドして jar を draft の GitHub Release に添付する。
+- **`.github/workflows/release.yml`** … `<modid>-v<version>` タグの push で実行。版メタを検証し、
+  登録済みの全 MC をビルドして jar を draft の GitHub Release に添付する。
+- **`.github/workflows/cold-clone.yml`** … 手動 (`workflow_dispatch`) と週次。
+  `ubuntu-latest` / `macos-latest` / `windows-latest` の 3 OS で、
+  **新規 clone がリポジトリ固有の準備なしにビルドできる**ことを継続的に検証する。
+  意図的に `actions/setup-java` を使わず、Gradle キャッシュも復元せず、`chmod +x` もしない。
+  遅いのは仕様で、キャッシュを足した瞬間に何も証明しなくなる。`build.yml` は
+  `actions/setup-java` で JDK を自前に入れているため、この役目は果たせない。
 
 ## ライセンス
 

@@ -1,0 +1,127 @@
+# =====================================================================
+# .github/workflows/cold-clone.yml
+# ---------------------------------------------------------------------
+#   「git clone しただけの状態から、 リポジトリ固有の準備を一切せずに
+#    ビルドできる」ことを継続的に機械検証するワークフロー。
+#
+#   ★これはビルドを速く回すための CI ではない。
+#     build.yml (毎 push・ubuntu) とは目的が違う。 速度のためにキャッシュや
+#     JDK の事前セットアップを足したくなっても足さないこと。 足した瞬間に
+#     このワークフローは何も証明しなくなる。
+#
+#   build.yml との違い (なぜ別ワークフローが要るか):
+#     build.yml は 3 ジョブとも actions/setup-java で JDK を外から与えている。
+#     つまり「ubuntu で緑」は「JDK さえあれば Linux でビルドが通る」までしか
+#     証明していない。 JDK の手配込みで pull だけで動くかは未証明だった。
+#     こちらはその欠けている部分を埋める。
+#
+#   意図的にやらないこと:
+#     - actions/setup-java を使わない
+#       (JDK はランナーに元からある JVM でランチャを起こし、 デーモン JVM と
+#        版ごとの toolchain は gradle/gradle-daemon-jvm.properties と foojay
+#        がリポジトリ側で調達する)
+#     - Gradle キャッシュを復元しない (毎回 cold からダウンロードさせる)
+#     - chmod +x ./gradlew をしない
+#       (実行ビットは 100755 でコミット済。 ここで chmod すると実行ビットが
+#        壊れていても気付けなくなる = Linux/macOS での回帰検知を潰す)
+#
+#   頻度: 手動 (workflow_dispatch) + 週次。 毎 push には回さない。
+#   リリース用ワークフロー・タグ規約・draft 運用には一切触れない。
+# =====================================================================
+
+name: cold-clone
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 毎週月曜 03:17 UTC (= 12:17 JST)
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  cold-build:
+    name: cold clone -> build 26.1.2 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # ---------------------------------------------------------------
+      # マシン側に元からあるもの = 「pull で来ないもの」の実体を記録する。
+      # 失敗したときにここを見れば前提の違いが分かる。
+      # ---------------------------------------------------------------
+      - name: record what the machine already provides
+        shell: bash
+        run: |
+          echo "--- ambient JVM (Gradle ランチャ用。 これだけがマシン側の前提) ---"
+          java -version 2>&1 || echo "(PATH に java 無し)"
+          echo "JAVA_HOME=${JAVA_HOME:-(未設定)}"
+          echo "--- git ---"
+          git --version
+
+      # ---------------------------------------------------------------
+      # 実行ビットが commit されたまま残っているかの検証。
+      # chmod で救わないので、 壊れていればここで落ちる。
+      # ---------------------------------------------------------------
+      - name: gradlew keeps its executable bit (POSIX only)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
+          for f in gradlew mods/*/gradlew build-mod.sh run-client.sh doctor.sh; do
+            if [ ! -x "$f" ]; then
+              echo "::error::$f に実行ビットがありません (git 側の mode 100755 が壊れています)"
+              exit 1
+            fi
+          done
+          echo "実行ビット OK"
+
+      # ---------------------------------------------------------------
+      # 前提チェック自体も動くことを確認する (落ちても続行 = 参考情報)。
+      # ---------------------------------------------------------------
+      - name: doctor (informational)
+        continue-on-error: true
+        shell: bash
+        run: ./doctor.sh
+
+      - name: build MC 26.1.2 (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          # maven (modmenu beta) の一過性 HTTP 400 に備え最大 3 回リトライ。
+          # build.yml と同じ理由・同じ形。
+          attempt=1; max=3
+          until ./gradlew build26_1_2 --stacktrace; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::build26_1_2 が $max 回失敗しました"; exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "::warning::失敗 (一過性 maven?); $attempt/$max 回目を 45s 後に再試行"
+            sleep 45
+          done
+
+      - name: build MC 26.1.2 (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call .\gradlew.bat build26_1_2 --stacktrace
+          if errorlevel 1 (
+            echo Retrying once after a transient failure...
+            timeout /t 45 /nobreak > NUL
+            call .\gradlew.bat build26_1_2 --stacktrace
+          )
+
+      # ---------------------------------------------------------------
+      # 何が実際に使われたかを残す (デーモン JVM がリポジトリ側で決まって
+      # いることの証跡)。
+      # ---------------------------------------------------------------
+      - name: record the resolved daemon JVM
+        if: always()
+        shell: bash
+        run: ./gradlew --version || true
