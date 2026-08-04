@@ -94,8 +94,13 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          # maven (modmenu beta) の一過性 HTTP 400 に備え最大 3 回リトライ。
-          # build.yml と同じ理由・同じ形。
+          # 最大 3 回リトライ。 理由は 2 つ:
+          #   1. maven (modmenu beta) の一過性 HTTP 400 (build.yml と同じ)
+          #   2. 完全に空の Gradle ホームでの初回に、 展開した JDK を
+          #      jdks/ へ移す段階が失敗することがある (Windows で cold 3 回中
+          #      1 回発生を実測。 "Unable to download toolchain ... due to:
+          #      ...\.tmp\jdks\... -> ...\jdks\eclipse_adoptium-25-...")。
+          #      再実行すれば後始末なしで成功する。
           attempt=1; max=3
           until ./gradlew build26_1_2 --stacktrace; do
             if [ "$attempt" -ge "$max" ]; then

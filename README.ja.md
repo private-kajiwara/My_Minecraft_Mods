@@ -163,6 +163,13 @@ git config --global core.longpaths true
 ダウンロードします。Windows で新規クローン＋空の Gradle ホームから実測したところ、
 26.1.2 の 1 ノードで**約 10 分・約 1 GB** でした。
 
+> **初回ビルドが JDK の設置で失敗したら、そのまま同じコマンドをもう一度実行してください。**
+> Windows での実測で、cold 実行 3 回のうち 1 回が
+> `Unable to download toolchain matching the requirements … due to: …\.tmp\jdks\… -> …\jdks\eclipse_adoptium-25-amd64-windows.2`
+> で失敗しました。ダウンロード自体は成功しており、展開した JDK を所定の場所へ移す段階だけが
+> 失敗しています。**再実行すれば手動の後始末なしで成功します**。これが起きるのは Gradle ホームが
+> 完全に空のときの初回だけです。
+
 macOS / Linux で `./gradlew` が動かない場合、実行ビットは付与済み (mode `100755`) ですが
 効いていなければ:
 

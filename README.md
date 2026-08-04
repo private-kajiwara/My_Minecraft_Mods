@@ -165,6 +165,13 @@ The **first build downloads** Gradle, possibly a JDK or two, Minecraft itself, m
 dependency. Measured on Windows from a fresh clone with an empty Gradle home: **about 10 minutes
 and roughly 1 GB** for a single 26.1.2 node.
 
+> **If the very first build fails while installing a JDK, just run it again.** Measured on Windows:
+> one cold run out of three failed with
+> `Unable to download toolchain matching the requirements … due to: …\.tmp\jdks\… -> …\jdks\eclipse_adoptium-25-amd64-windows.2`.
+> The download itself had succeeded; only moving the unpacked JDK into place failed. Re-running the
+> same command succeeded with no manual cleanup. This happens at most once, on a completely empty
+> Gradle home.
+
 If `./gradlew` does not run on macOS or Linux, the executable bit is committed (mode `100755`) but
 may not have survived — restore it with:
 
