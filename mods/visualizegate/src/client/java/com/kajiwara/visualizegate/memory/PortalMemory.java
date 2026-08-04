@@ -641,11 +641,21 @@ public final class PortalMemory {
      * ("New World", "New World (1)"…) ため確実にユニーク。 {@code getWorldPath(ROOT)} は本 mod の
      * サーバ側 (全6版でビルド実証済) と同じ公開 API で、 新規 Mixin/版差規則を要さない。 取得失敗時のみ
      * 旧来の表示名へフォールバック (= 万一でも null で記憶機能を全停止させない)。
+     *
+     * <p><b>{@code normalize()} が必須</b>: {@code LevelResource.ROOT} の id は空文字ではなく
+     * <b>{@code "."}</b> (javap で 1.21.11/26.2 の両端を実証) なので、 {@code getWorldPath(ROOT)} は
+     * {@code <saves>/<フォルダ>/.} を返す。 そのまま {@code getFileName()} を取ると<b>常に {@code "."}</b>
+     * になり、 しかも {@code isBlank()} が false なので下のフォールバックにも落ちない＝全ワールドの
+     * world-id が定数 {@code "sp:."} へ縮退して分離が完全に壊れる (v1.0.2〜v1.0.14 の実害)。
+     * {@code toAbsolutePath().normalize()} で末尾の {@code "."} 成分を畳んでから名前を取る。
+     * サーバ側 {@code ServerTerrainTiles} は同じ Path を<b>解決先として</b>使うだけなので無影響。
      */
     private static String worldId(Minecraft mc) {
         if (mc.hasSingleplayerServer() && mc.getSingleplayerServer() != null) {
             try {
-                Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
+                // ROOT の id は "." ＝ normalize しないと getFileName() が "." になる (上の Javadoc 参照)。
+                Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT)
+                        .toAbsolutePath().normalize();
                 java.nio.file.Path name = root.getFileName();
                 if (name != null && !name.toString().isBlank()) {
                     return "sp:" + name;

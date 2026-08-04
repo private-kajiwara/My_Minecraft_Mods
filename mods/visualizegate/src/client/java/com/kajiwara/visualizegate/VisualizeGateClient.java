@@ -16,6 +16,8 @@ import com.kajiwara.visualizegate.client.render.SearchDomeRenderer;
 import com.kajiwara.visualizegate.client.render.VgDockRenderer;
 import com.kajiwara.visualizegate.config.GateConfigManager;
 import com.kajiwara.visualizegate.memory.PortalMemory;
+import com.kajiwara.visualizegate.pointcloud.DockRadar;
+import com.kajiwara.visualizegate.pointcloud.PointCloudAnalysis;
 import com.kajiwara.visualizegate.scan.PortalIndex;
 import com.kajiwara.visualizegate.state.VgOverlayState;
 import com.kajiwara.visualizegate.terrain.TerrainStore;
@@ -50,6 +52,10 @@ public class VisualizeGateClient implements ClientModInitializer {
         // 地形カラム代表点の蓄積 (点群ポップアップの地形素材)。 PortalMemory の後に登録し、
         // world-id 確定後に CHUNK_LOAD でサンプリングする (描画はまだ無し＝蓄積基盤のみ)。
         TerrainStore.register();
+        // per-world 分離の仕上げ: 切断で点群スナップショット (フル画面/ドック) を破棄する。 ストアは
+        // world-id キーで既に分離済みだが、 完成品のスナップショットだけは前ワールドの絵が残るため。
+        PointCloudAnalysis.register();
+        DockRadar.register();
         // シェーダ (Iris) 時のワイヤー描き先＝レベル (Iris ラップ) バッファを毎フレーム capture する (>=26.1)。
         //   OverlayDraw を使う各 wire レンダラより前に発火させたいので、 それらより先に register する。
         OverlayDraw.register();

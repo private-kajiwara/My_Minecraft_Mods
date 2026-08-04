@@ -12,6 +12,7 @@ import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.terrain.TerrainStore;
 
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
@@ -62,6 +63,22 @@ public final class DockRadar {
 
     public static DockRadar get() {
         return INSTANCE;
+    }
+
+    /**
+     * 切断でスナップショットを破棄する登録 (per-world 分離の仕上げ・{@link PointCloudAnalysis#register()} と同型)。
+     * ドックは ~3Hz で自力更新するが、 入場直後の最初の capture が publish されるまでは前ワールドの絵が
+     * 残るため、 DISCONNECT で EMPTY に戻す (スロットル/capture 内容は不変)。
+     */
+    public static void register() {
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> INSTANCE.reset());
+    }
+
+    /** スナップショットを破棄する (世代を進めて実行中ワーカーの publish も無効化・スロットルもリセット)。 */
+    private void reset() {
+        generation++; // 実行中の build が古い結果を publish しないように (myGen != generation)
+        snapshot = PointCloudSnapshot.EMPTY;
+        lastCaptureNanos = 0; // 次ワールドの初回 capture をスロットルで遅らせない
     }
 
     /**

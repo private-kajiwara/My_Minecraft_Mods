@@ -13,6 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 採番のジャンプは開発版から公開版への昇格を表すもので、`0.131.7` と `1.0.0` の間に
 > 大きな変更があるわけではありません。
 
+## [1.0.15] - 2026-08-04
+
+### Fixed
+
+- **Point cloud, gates and links were shared by every single-player world (1.0.2 – 1.0.14).** The
+  world key used to separate saved data collapsed to the constant `sp:.` for *all* single-player
+  worlds, so whatever was observed in the first world you played kept showing up in every other
+  world. The cause was in 1.0.2's own fix: `LevelResource.ROOT` carries the id `"."`, not an empty
+  string, so `getWorldPath(ROOT).getFileName()` always returned `"."` (and, not being blank, never
+  fell through to the display-name fallback). The path is now normalized before the folder name is
+  taken, so the key is the actual save-folder name, which Minecraft keeps unique. Point cloud
+  terrain, gates and links are all fixed by this single change, on both the full-screen point cloud
+  and the dock radar.
+- **The previous world's point cloud could linger for a few frames after switching worlds.** The
+  stores were already keyed per world, but the finished point-cloud snapshots (full screen and dock)
+  were held in singletons and were not discarded on disconnect. They are now cleared when you leave
+  a world.
+
+### Migration — please read if you used 1.0.2 – 1.0.14
+
+Nothing is deleted or moved automatically; old data is simply no longer read.
+
+1. **Anything recorded between 1.0.2 and 1.0.14 (stored under the `sp:.` key) is not carried over.**
+   That bucket is a merge of every world you played in that period, so it cannot be attributed to any
+   single world without inventing an answer. It is left on disk, untouched, but unused.
+2. **Data recorded before 1.0.2 is still read**, because it was keyed by the world's *display* name
+   and, for the usual case where the save folder matches the display name, that key is now produced
+   again. Note that display names are not unique: if you had several worlds with the same name
+   (Minecraft only disambiguates the *folder*, e.g. `New World` and `New World (1)`, both shown as
+   "New World"), their pre-1.0.2 records may be mixed together in that one key. This is inherited
+   from old data and is not re-created going forward.
+3. **To start clean**, delete `config/visualizegate-portals.json` and the `config/visualizegate/`
+   directory by hand. Both are re-created empty.
+
 ## [1.0.14] - 2026-06-25
 
 ### Fixed
@@ -189,6 +223,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   old display name (typically the first "New World") keep their existing data; other previously-collided
   worlds start fresh, and the old display-name entries simply remain unread in the JSON (harmless
   orphans). Move them manually if you want to reassign old data.
+
+> **Correction (see 1.0.15):** this change did not work. `getWorldPath(ROOT)` ends in a `"."`
+> component, so the derived key was the constant `sp:.` for every single-player world — worse
+> isolation than before, not better. Fixed in 1.0.15.
 
 ## [1.0.1] - 2026-06-23
 

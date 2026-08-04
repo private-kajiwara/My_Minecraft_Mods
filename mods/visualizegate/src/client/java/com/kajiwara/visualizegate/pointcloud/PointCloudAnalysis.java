@@ -8,6 +8,7 @@ import com.kajiwara.visualizegate.domain.PortalDimension;
 import com.kajiwara.visualizegate.memory.PortalMemory;
 import com.kajiwara.visualizegate.terrain.TerrainStore;
 
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
@@ -51,6 +52,23 @@ public final class PointCloudAnalysis {
 
     public static PointCloudAnalysis get() {
         return INSTANCE;
+    }
+
+    /**
+     * 切断でスナップショットを破棄する登録 (per-world 分離の仕上げ)。 ストア類は world-id キーなので
+     * <b>データ</b>は既に分離されているが、 この volatile スナップショットだけは前ワールドの完成品が
+     * 残るため、 別ワールドへ入った直後の数フレーム<b>前ワールドの絵</b>が見え得る。 DISCONNECT で
+     * EMPTY へ戻し、 次の {@code requestAnalysis()} まで何も出さない (再解析トリガ/表示内容は不変)。
+     */
+    public static void register() {
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> INSTANCE.reset());
+    }
+
+    /** スナップショットを破棄し IDLE へ戻す (世代を進めて実行中ワーカーの publish も無効化)。 */
+    private void reset() {
+        generation++; // 実行中の build が古い結果を publish しないように (myGen != generation)
+        snapshot = PointCloudSnapshot.EMPTY;
+        state = State.IDLE;
     }
 
     /**
