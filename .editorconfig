@@ -1,0 +1,45 @@
+# =====================================================================
+# .editorconfig — エディタ非依存の最小限の書式規約
+# ---------------------------------------------------------------------
+#   目的は「どの PC / どのエディタで開いても、 既存ファイルに勝手な差分が
+#   出ない」こと。 リポジトリを整形し直すためのものではない。
+#
+#   ここに入れる規則は全て「現物を計測してから」決めてある:
+#     - .java は 200 件サンプルで先頭タブ 0 / 4 スペース 178 → space 4 で安全
+#     - .json はタブとスペースが混在している (fabric.mod.json はタブ、
+#       omnichest の lang はスペース) → indent 規則は **入れない**
+#     - 末尾改行が無い追跡ファイルが 4 件ある (LICENSE /
+#       omnichest.client.mixins.json / OmniChest.java / fabric.mod.json)
+#       → insert_final_newline は **有効化しない**
+#     - 行末空白は追跡ファイル全体で 0 件 → trim_trailing_whitespace は安全
+#
+#   end_of_line は .gitattributes と矛盾させないこと。 索引 (index) は LF
+#   なので既定は lf、 .gitattributes が crlf でチェックアウトする .bat /
+#   .cmd だけ上書きする。
+# =====================================================================
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+trim_trailing_whitespace = true
+
+# .gitattributes が `*.bat` / `*.cmd` を eol=crlf でチェックアウトするため揃える
+[*.{bat,cmd}]
+end_of_line = crlf
+
+[*.java]
+indent_style = space
+indent_size = 4
+
+[*.{gradle,kts}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Markdown は行末 2 スペースが改行を意味しうるので削らない
+[*.md]
+trim_trailing_whitespace = false
