@@ -3,9 +3,10 @@
 # Launches the OmniChest (Stonecutter included build) client for a given MC by
 # running the version-node task :<MC>:runClient inside mods/omnichest.
 #
-# JAVA_HOME is intentionally NOT hardcoded. 26.1.x needs the Gradle daemon on
-# JDK 25; 1.21.x needs JDK 21. Supply both via toolchain auto-detection or
-# org.gradle.java.installations.paths in ~/.gradle/gradle.properties. See README.
+# JAVA_HOME is intentionally NOT hardcoded, and you do not need to set it.
+# gradle/gradle-daemon-jvm.properties (tracked) pins the daemon JVM, and the
+# per-version toolchains (21 for 1.21.x, 25 for 26.1+) are resolved by Gradle.
+# Anything missing is downloaded on first use. See README.
 #
 # Usage:
 #   ./run-client.sh            # launch recommended MC 26.1.2

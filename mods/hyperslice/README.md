@@ -259,7 +259,8 @@ v0.2 は**差分なしの全送信** (毎 tick・該当プレイヤーに見え�
 cd mods/hyperslice && ./gradlew :26.1.2:build
 ```
 
-26.1.2 は **Gradle デーモンが JDK 25 で動いている必要がある** (`JAVA_HOME` を JDK 25 に)。
+`JAVA_HOME` の事前設定は不要 (追跡ファイル `gradle/gradle-daemon-jvm.properties` が
+Gradle デーモンの JVM を固定し、 無ければ自動ダウンロードする)。
 
 成果物: `versions/26.1.2/build/libs/hyperslice-<mod_version>+26.1.2.jar`
 

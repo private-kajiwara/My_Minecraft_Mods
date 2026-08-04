@@ -35,16 +35,16 @@ OmniChest は **自己完結した Stonecutter included build**（`mods/omniches
 `gradlew` / `settings.gradle.kts` / `stonecutter.gradle.kts` を持つ）。 版ごとのタスクは
 **`mods/omnichest/` の中で**実行する。
 
-> **JDK 要件**: `26.1.x` は Java 25 で動き、 loom-back-compat の都合で **Gradle デーモン自身が
-> JDK 25** で起動している必要がある。 そのため 26.1.x を触る際は `JAVA_HOME` を JDK 25 に
-> 向けて `gradlew` を起動する（JDK 25 デーモンは toolchain=21 経由で 1.21.11 ノードも問題なくビルドできる）。
+> **JDK 要件**: `JAVA_HOME` を自分で設定する必要は無い。 追跡ファイル
+> `gradle/gradle-daemon-jvm.properties` が Gradle デーモンの JVM を Java 25 (Adoptium) に固定し、
+> 版ごとの toolchain（`1.21.x`=21 / `26.1+`=25）は Gradle が解決する。 手元に無ければ初回に
+> 自動ダウンロードされる。
 
 ### クライアント起動（runClient）— そのままコピペ
 
 Windows PowerShell:
 
 ```powershell
-$env:JAVA_HOME = "<JDK 25 のインストール先>"
 cd <このリポジトリのクローン先>\mods\omnichest
 .\gradlew.bat :26.1.2:runClient
 ```
@@ -58,14 +58,13 @@ cd <このリポジトリのクローン先>\mods\omnichest
 ### Minecraft ビルド（jar 生成）— そのままコピペ
 
 ```powershell
-$env:JAVA_HOME = "<JDK 25 のインストール先>"
 cd <このリポジトリのクローン先>\mods\omnichest
 .\gradlew.bat :1.21.11:build        # jar -> versions/1.21.11/build/libs/ (remapJar まで生成)
 .\gradlew.bat :26.1.2:build         # jar -> versions/26.1.2/build/libs/
 ```
 
-> `JAVA_HOME` と `cd` のパスは自分の環境のものに読み替える。
-> 同じ PowerShell セッション内なら `$env:JAVA_HOME` と `cd` は一度設定すれば使い回せる。
+> `cd` のパスは自分の環境のものに読み替える。 同じ PowerShell セッション内なら
+> `cd` は一度実行すれば使い回せる。
 
 タスク名は **版ノード**（`:<MC>:build` / `:<MC>:runClient`）。 旧構成の `:fabric:runClient` /
 `-Pmc=` は Stonecutter 化により**使えない**（`mods/omnichest` は included build で
@@ -73,10 +72,9 @@ cd <このリポジトリのクローン先>\mods\omnichest
 
 ### 26.2
 
-26.2 も**同じ版ノードタスク**で起動 / ビルドする（`26.1.x` と同様に Gradle デーモンは JDK 25 が必須）:
+26.2 も**同じ版ノードタスク**で起動 / ビルドする:
 
 ```powershell
-$env:JAVA_HOME = "<JDK 25 のインストール先>"
 cd <このリポジトリのクローン先>\mods\omnichest
 
 # クライアント起動（dev の Iris/Sodium 26.2 ペアは modLocalRuntime で自動投入・配布 jar 非混入）
@@ -104,8 +102,8 @@ cd <このリポジトリのクローン先>\mods\omnichest
 .\gradlew buildAll            # 全 MC をビルドし dist/<modid>/<modver>/ へ集約
 ```
 
-> 集約タスクが 26.1.x を含む場合（`buildAll` / `build26_1_x` / `buildRecommended`）も
-> `JAVA_HOME` を JDK 25 にして起動すること。
+> どの集約タスクでも `JAVA_HOME` の事前設定は不要（デーモン JVM は
+> `gradle/gradle-daemon-jvm.properties` が決める）。
 
 ---
 
@@ -185,7 +183,7 @@ Stonecutter の string 置換は **双方向**に効く。 `direction=true`（1.
 #     .\gradlew build26_1_2 collectDist
 .\gradlew collectDist
 
-# IDE 起動 (版ノードタスク。 mods/omnichest の中で実行。 26.1.x は JAVA_HOME=JDK25)
+# IDE 起動 (版ノードタスク。 mods/omnichest の中で実行)
 #   cd mods\omnichest
 #   .\gradlew.bat :26.1.2:runClient     # 推奨版
 #   .\gradlew.bat :1.21.11:runClient    # 別世代

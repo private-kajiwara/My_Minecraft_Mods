@@ -5,9 +5,10 @@ REM ---------------------------------------------------------------------
 REM   omnichest は自己完結した Stonecutter included build。 版ノードタスク
 REM   :<MC>:runClient を mods\omnichest の中で実行する。
 REM
-REM   JAVA_HOME はここでは設定しない。 以前は特定マシンの JDK パスが
-REM   直書きされており、 そのPCでしか動かなかった。 JDK の供給は Gradle 側に
-REM   任せる (README の「必要なもの」/「toolchain」節を参照)。
+REM   JAVA_HOME はここでは設定しない。 設定する必要も無い。
+REM   デーモン JVM は追跡ファイル gradle\gradle-daemon-jvm.properties が固定し、
+REM   版ごとの toolchain (1.21.x=21 / 26.1+=25) は Gradle が解決する。
+REM   手元に無いものは初回に自動ダウンロードされる (README 参照)。
 REM
 REM   使い方:
 REM     run-client.bat              -^> 推奨版 26.1.2 を起動

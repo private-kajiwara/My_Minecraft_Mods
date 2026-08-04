@@ -197,7 +197,6 @@ seed translations (not yet natively reviewed)** — corrections and PRs are welc
 
 # 単一ノードを起動して確認 / run a node
 ./gradlew :26.1.2:runClient
-$env:JAVA_HOME = '<JDK 25 のインストール先>'
 .\gradlew.bat :visualizegate:1.21.11:runClient --console=plain
 
 # 全 6 ノードをビルドし dist/ に集約（リポジトリルートから）

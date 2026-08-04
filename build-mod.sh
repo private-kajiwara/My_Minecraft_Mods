@@ -2,9 +2,10 @@
 # build-mod.sh — POSIX (macOS/Linux) equivalent of build-mod.bat.
 # Builds the recommended MC build for every mod (root buildRecommended task).
 #
-# JAVA_HOME is intentionally NOT hardcoded here. Provide JDK 21 (1.21.x) and
-# JDK 25 (26.1+) via Gradle toolchain auto-detection, or register their paths in
-# ~/.gradle/gradle.properties (org.gradle.java.installations.paths). See README.
+# JAVA_HOME is intentionally NOT hardcoded here, and you do not need to set it.
+# gradle/gradle-daemon-jvm.properties (tracked) pins the daemon JVM, and the
+# per-version toolchains (21 for 1.21.x, 25 for 26.1+) are resolved by Gradle.
+# Anything missing is downloaded on first use. See README.
 #
 # Usage:
 #   ./build-mod.sh            # build recommended (MC 26.1.2)

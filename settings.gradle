@@ -35,11 +35,26 @@ pluginManagement {
 }
 
 // ---------------------------------------------------------------------
+// toolchain の自動取得 (foojay)
+//   mods/<modid>/settings.gradle.kts は以前からこの plugin を入れていたが、
+//   ルートには無かった。 ルートにも入れる理由は 2 つ:
+//     1. `./gradlew updateDaemonJvm` が toolchain download repository を
+//        要求する (gradle/gradle-daemon-jvm.properties の再生成に必要)。
+//     2. ルート単体でも toolchain を自前調達できるようにする。
+//   デーモン JVM 自体のプロビジョニングは gradle/gradle-daemon-jvm.properties
+//   に焼き込まれた URL をランチャが直接引くため、 この plugin には依存しない。
+// ---------------------------------------------------------------------
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+// ---------------------------------------------------------------------
 // Java toolchain について
 //   MC 26.1.x は Java 25 を要求する (1.21.11 は Java 21)。
 //   convention plugin が entry.javaVersion を toolchain.languageVersion に
 //   流し込むので、 ビルドマシンに JDK 21 / 25 が「検出可能な状態」で
-//   存在すれば Gradle が自動で使い分ける。
+//   存在すれば Gradle が自動で使い分ける。 検出できなくても foojay が
+//   自動取得する。
 // ---------------------------------------------------------------------
 
 rootProject.name = 'fabric-mods'
