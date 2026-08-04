@@ -15,6 +15,14 @@ mods/*/gradlew  text eol=lf
 *.bat           text eol=crlf
 *.cmd           text eol=crlf
 
+# LICENSE is bundled verbatim into every mod jar (as LICENSE_<modid>), so its
+# on-disk line endings end up inside a build artifact. Without a rule here the
+# checkout depends on core.autocrlf: a Windows clone with autocrlf=true gets
+# CRLF while CI (Linux) gets LF, and the two jars differ. Measured: 7047 bytes
+# (LF) vs 7167 bytes (CRLF) => different CRC for the LICENSE_omnichest entry.
+# Pin it to LF, which is what the index already stores and what CI produces.
+/LICENSE  text eol=lf
+
 # Known binaries — never apply EOL normalization or diff as text
 *.png  binary
 *.jar  binary
