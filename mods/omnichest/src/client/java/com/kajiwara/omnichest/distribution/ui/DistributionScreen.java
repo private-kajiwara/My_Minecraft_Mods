@@ -655,6 +655,10 @@ public final class DistributionScreen extends Screen {
             case WOOD -> Items.OAK_LOG;
             case ORE -> Items.DIAMOND_ORE;
             case REDSTONE -> Items.REDSTONE;
+            case REDSTONE_CIRCUIT -> Items.REPEATER;
+            case REDSTONE_TRANSPORT -> Items.HOPPER;
+            case REDSTONE_MOVEMENT -> Items.PISTON;
+            case REDSTONE_TRAP -> Items.TRIPWIRE_HOOK;
             case FOOD -> Items.BREAD;
             case FARM -> Items.WHEAT;
             case COMBAT -> Items.IRON_SWORD;

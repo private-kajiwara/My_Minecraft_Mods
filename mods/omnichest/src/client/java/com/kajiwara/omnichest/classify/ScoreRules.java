@@ -157,6 +157,66 @@ public final class ScoreRules {
         rules.add(tagRule(ItemTags.RAILS, StorageCategory.REDSTONE, MEDIUM));
 
         // ════════════════════════════════════════════════════════════════
+        // REDSTONE サブカテゴリ: 傘 REDSTONE の内訳 (回路 / 搬送 / 移動 / トラップ)
+        //
+        //   加点の型は 2 通りある:
+        //   - 既に傘 REDSTONE が付くアイテム (piston / hopper / repeater / rail 等)
+        //     → サブ側にだけ加点する (= 上の 13 ルールは一切変えない)。
+        //   - 傘が付いていなかったアイテム (target / tnt / tripwire_hook / 感圧板 /
+        //     slime_block / honey_block)
+        //     → 「傘 + サブ」の両方へ加点する。 傘に入らないとレッドストーン一族として
+        //       1 位を取れず、 ChestClassifier のサブ判定 (フェーズ 2) まで到達しないため。
+        //
+        //   版差メモ: 26.2 で削除された ItemTags.BUTTONS はここでは使わず path 判定にする
+        //   (RAILS は 26.2 にも現存するのでタグのままで良い)。
+        //   → このセクションに //? 版分岐は 1 つも要らない = 全ノードで同一挙動。
+        //
+        //   なお「サブに入れないもの」は意図的な据え置き:
+        //     string (= MOB_DROP) / lightning_rod (= 未分類) / daylight_detector /
+        //     note_block / crafter。
+        // ════════════════════════════════════════════════════════════════
+
+        // ── 回路 (信号を作る・伝える・受ける) ──
+        rules.add(pathExactRule("redstone", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathExactRule("redstone_torch", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathExactRule("redstone_block", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathExactRule("redstone_lamp", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathContainsRule("repeater", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathContainsRule("comparator", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathContainsRule("observer", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        rules.add(pathContainsRule("lever", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        // ボタンは BUTTONS タグ (26.2 で削除) を避けて path 末尾一致で拾う。
+        rules.add(pathSuffixRule("_button", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+        // target は今まで無分類 → 傘 + サブの両方へ。
+        rules.add(pathExactRule("target", StorageCategory.REDSTONE, STRONG));
+        rules.add(pathExactRule("target", StorageCategory.REDSTONE_CIRCUIT, STRONG));
+
+        // ── 搬送 (アイテムを運ぶ) ──
+        rules.add(pathContainsRule("hopper", StorageCategory.REDSTONE_TRANSPORT, STRONG));
+        rules.add(pathContainsRule("dropper", StorageCategory.REDSTONE_TRANSPORT, STRONG));
+        rules.add(pathContainsRule("dispenser", StorageCategory.REDSTONE_TRANSPORT, STRONG));
+        rules.add(tagRule(ItemTags.RAILS, StorageCategory.REDSTONE_TRANSPORT, STRONG));
+
+        // ── 移動 (ブロックを動かす) ──
+        rules.add(pathContainsRule("piston", StorageCategory.REDSTONE_MOVEMENT, STRONG));
+        // slime_block / honey_block は今まで無分類 → 傘 + サブの両方へ。
+        rules.add(pathExactRule("slime_block", StorageCategory.REDSTONE, STRONG));
+        rules.add(pathExactRule("slime_block", StorageCategory.REDSTONE_MOVEMENT, STRONG));
+        rules.add(pathExactRule("honey_block", StorageCategory.REDSTONE, STRONG));
+        rules.add(pathExactRule("honey_block", StorageCategory.REDSTONE_MOVEMENT, STRONG));
+
+        // ── トラップ (検知・起爆) ──
+        //   感圧板は木/石/黒石/重み付きを path 末尾一致でまとめて拾う。
+        //   石・磨いた黒石の感圧板は今まで BUILDING / NETHER 側に寄っていたが、
+        //   ここで意図的に TRAP へ寄せる (= 合意済みの flip)。
+        rules.add(pathSuffixRule("_pressure_plate", StorageCategory.REDSTONE, STRONG));
+        rules.add(pathSuffixRule("_pressure_plate", StorageCategory.REDSTONE_TRAP, STRONG));
+        rules.add(pathExactRule("tripwire_hook", StorageCategory.REDSTONE, STRONG));
+        rules.add(pathExactRule("tripwire_hook", StorageCategory.REDSTONE_TRAP, STRONG));
+        rules.add(pathExactRule("tnt", StorageCategory.REDSTONE, STRONG));
+        rules.add(pathExactRule("tnt", StorageCategory.REDSTONE_TRAP, STRONG));
+
+        // ════════════════════════════════════════════════════════════════
         // BUILDING: 建築ブロック (石系/コンクリ/ガラス/羊毛/階段/塀)
         // ════════════════════════════════════════════════════════════════
         rules.add(tagRule(ItemTags.STONE_BRICKS, StorageCategory.BUILDING, STRONG));

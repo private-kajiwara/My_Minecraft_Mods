@@ -27,6 +27,13 @@ public final class ItemCategoryResolver {
     /** ItemStack の identity を生かして使い回す 1 プロセス共有キャッシュ。 */
     private static final Map<String, StorageCategory> CACHE = new HashMap<>();
 
+    /** カテゴリ枠の候補から外す「倉庫バッジ専用」の下位区分。 */
+    private static final java.util.EnumSet<StorageCategory> REDSTONE_SUBS = java.util.EnumSet.of(
+            StorageCategory.REDSTONE_CIRCUIT,
+            StorageCategory.REDSTONE_TRANSPORT,
+            StorageCategory.REDSTONE_MOVEMENT,
+            StorageCategory.REDSTONE_TRAP);
+
     private ItemCategoryResolver() {
     }
 
@@ -79,6 +86,12 @@ public final class ItemCategoryResolver {
         int tie = 0;
         for (StorageCategory cat : StorageCategory.values()) {
             if (!cat.isConcrete())
+                continue;
+            // レッドストーンのサブカテゴリ (回路/搬送/移動/トラップ) は「倉庫バッジの内訳」専用で、
+            // テンプレートのカテゴリ枠は従来どおり傘 REDSTONE の粒度で扱う。
+            // ここを外さないと piston / repeater 等が「傘とサブが同点」で拮抗 → null になり、
+            // 保存済みテンプレの REDSTONE 枠とも一致しなくなる。
+            if (REDSTONE_SUBS.contains(cat))
                 continue;
             int v = score.get(cat);
             if (v <= 0)

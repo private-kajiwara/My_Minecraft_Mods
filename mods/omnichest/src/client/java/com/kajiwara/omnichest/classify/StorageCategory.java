@@ -33,6 +33,14 @@ public enum StorageCategory {
     WOOD("木材倉庫", 0x9B6B3F),
     ORE("鉱石倉庫", 0xC0C0C0),
     REDSTONE("レッドストーン倉庫", 0xD63A3A),
+    // ── REDSTONE の下位区分 (= 傘 REDSTONE はそのまま残す) ──
+    //   ChestClassifier が「レッドストーン一族が 1 位」と判定したときだけ、
+    //   さらに内訳が偏っていれば傘の代わりにこれらを表示する。
+    //   詳細は ChestClassifier の 2 フェーズ判定を参照。
+    REDSTONE_CIRCUIT("回路倉庫", 0xD64545),
+    REDSTONE_TRANSPORT("搬送倉庫", 0xC85A2E),
+    REDSTONE_MOVEMENT("移動倉庫", 0xB0603A),
+    REDSTONE_TRAP("トラップ倉庫", 0xA83A5A),
     FOOD("食料倉庫", 0xF4B860),
     FARM("農業倉庫", 0x6FBF3A),
     COMBAT("戦闘装備倉庫", 0xB23B3B),
