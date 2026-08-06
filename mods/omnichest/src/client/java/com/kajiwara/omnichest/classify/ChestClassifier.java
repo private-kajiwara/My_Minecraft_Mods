@@ -24,9 +24,12 @@ import java.util.Map;
  * {@link StorageCategory#UNKNOWN}。</li>
  * </ul>
  * </li>
- * <li>1 位が傘 {@link StorageCategory#REDSTONE} のときだけ、 その内訳
- * (回路 / 搬送 / 移動 / トラップ) を見てサブカテゴリへ差し替える。
- * 上記 1〜3 の競争にサブカテゴリは参加しないので、 レッドストーン以外の結果は不変。</li>
+ * <li>1 位が傘カテゴリだったときだけ、 その内訳を見てサブカテゴリへ差し替える。
+ * 対象は 2 一族:
+ * {@link StorageCategory#REDSTONE} (回路 / 搬送 / 移動 / トラップ) と
+ * {@link StorageCategory#BUILDING} (石材の材質軸 9 種 + 中間層)。
+ * 上記 1〜3 の競争にサブカテゴリは参加しないので、 この 2 つ以外の結果は不変。
+ * 2 一族は互いのサブを参照しないので、 片方を変えてももう片方には影響しない。</li>
  * </ol>
  *
  * <p>
@@ -51,7 +54,7 @@ public final class ChestClassifier {
     // レッドストーン一族のロールアップ (= 傘 REDSTONE → サブカテゴリ)
     //
     //   判定は 2 フェーズ:
-    //     フェーズ 1 (競争)   : サブ 4 種を集計から除外して従来どおり 1 位 / MIXED を決める。
+    //     フェーズ 1 (競争)   : 全サブ (両一族) を集計から除外して従来どおり 1 位 / MIXED を決める。
     //                          → 勝者が REDSTONE 以外なら、 結果は従来と完全に一致する。
     //     フェーズ 2 (内訳)   : 勝者が REDSTONE のときだけ、 サブの内訳を見る。
     //                          下の 2 つのゲートを両方通ればサブ名で表示し、
@@ -72,6 +75,58 @@ public final class ChestClassifier {
             StorageCategory.REDSTONE_TRANSPORT,
             StorageCategory.REDSTONE_MOVEMENT,
             StorageCategory.REDSTONE_TRAP);
+
+    // ────────────────────────────────────────────────────────────────────
+    // 建築ブロック一族のロールアップ (= 傘 BUILDING → 石材サブ)
+    //
+    //   レッドストーン一族と <b>完全に独立</b> した 2 フェーズ判定。 フェーズ 1 の勝者が
+    //   BUILDING のときだけ石材の内訳を見る (REDSTONE のときは従来どおり
+    //   rollUpRedstone しか動かない)。 どちらの一族も相手のサブを一切参照しない。
+    //
+    //   レッドストーンとの違いは 1 点だけ: dominance を割ったときに傘へ戻さず、
+    //   中間層 BUILDING_STONE_MIXED (= 石材ではあるが材質が 1 つに寄っていない) を返す。
+    //   これが無いと「花崗岩+閃緑岩+安山岩の箱」が羊毛やコンクリートの箱と同じ
+    //   傘 BUILDING になって区別できない。
+    //
+    //   しきい値はここ 1 箇所。 表示が細かすぎ/粗すぎのときはこの 2 つだけを動かす。
+    // ────────────────────────────────────────────────────────────────────
+
+    /** サブ合計 / 傘 BUILDING スコア がこの値未満なら「石材の手掛かりが薄い」= 傘のまま。 */
+    public static final float BUILDING_SUB_PRESENCE = 0.50f;
+
+    /** 最大サブ / サブ合計 がこの値未満なら「材質同士が拮抗」= 石材混合。 */
+    public static final float BUILDING_SUB_DOMINANCE = 0.60f;
+
+    /**
+     * 傘 BUILDING の下位区分 (= 石材の材質軸)。
+     *
+     * <p>
+     * {@link StorageCategory#BUILDING_STONE_MIXED} はここに入れない。 あれはスコアを
+     * 受け取らず、 dominance を割ったときの <i>戻り値</i> としてのみ現れる中間層だから。
+     */
+    private static final EnumSet<StorageCategory> STONE_SUBS = EnumSet.of(
+            StorageCategory.BUILDING_STONE,
+            StorageCategory.BUILDING_GRANITE,
+            StorageCategory.BUILDING_DIORITE,
+            StorageCategory.BUILDING_ANDESITE,
+            StorageCategory.BUILDING_DEEPSLATE,
+            StorageCategory.BUILDING_TUFF,
+            StorageCategory.BUILDING_SANDSTONE,
+            StorageCategory.BUILDING_PRISMARINE,
+            StorageCategory.BUILDING_MUD_BRICK);
+
+    /**
+     * フェーズ 1 (競争) から外す全サブカテゴリ = 両一族の合併。
+     * これらは 1 位候補にも占有率の分母にも 2 位にも入らないので、
+     * サブを足してもフェーズ 1 の勝敗は従来と完全に一致する。
+     */
+    private static final EnumSet<StorageCategory> ALL_SUBS = allSubs();
+
+    private static EnumSet<StorageCategory> allSubs() {
+        EnumSet<StorageCategory> set = EnumSet.copyOf(REDSTONE_SUBS);
+        set.addAll(STONE_SUBS);
+        return set;
+    }
 
     private final CategoryScorer scorer;
 
@@ -138,11 +193,14 @@ public final class ChestClassifier {
         boolean mixed = share < LOW_CONFIDENCE_THRESHOLD || gap < MIXED_GAP_THRESHOLD;
 
         StorageCategory finalCategory = mixed ? StorageCategory.MIXED : top.category();
-        // ─── フェーズ 2: 勝者が傘 REDSTONE のときだけ内訳を見る ───
+        // ─── フェーズ 2: 勝者が傘カテゴリのときだけ内訳を見る ───
         //   confidence / totalScore は一族としての値 (= フェーズ 1 の結果) をそのまま使い、
         //   表示カテゴリだけをサブへ差し替える。
+        //   2 つの一族は排他: REDSTONE が勝てば石材は一切見ないし、 その逆も同じ。
         if (finalCategory == StorageCategory.REDSTONE) {
             finalCategory = rollUpRedstone(aggregate, top.score());
+        } else if (finalCategory == StorageCategory.BUILDING) {
+            finalCategory = rollUpStone(aggregate, top.score());
         }
         return new Classification(finalCategory, share, top.score(), aggregate.asMap(),
                 timestamp, false);
@@ -160,7 +218,7 @@ public final class ChestClassifier {
         StorageCategory best = null;
         int bestVal = Integer.MIN_VALUE;
         for (Map.Entry<StorageCategory, Integer> e : score.asMap().entrySet()) {
-            if (REDSTONE_SUBS.contains(e.getKey()))
+            if (ALL_SUBS.contains(e.getKey()))
                 continue;
             if (e.getValue() > bestVal) {
                 bestVal = e.getValue();
@@ -174,7 +232,7 @@ public final class ChestClassifier {
     private static int positiveTotal(CategoryScore score) {
         int sum = 0;
         for (Map.Entry<StorageCategory, Integer> e : score.asMap().entrySet()) {
-            if (REDSTONE_SUBS.contains(e.getKey()))
+            if (ALL_SUBS.contains(e.getKey()))
                 continue;
             if (e.getValue() > 0)
                 sum += e.getValue();
@@ -188,7 +246,7 @@ public final class ChestClassifier {
         for (Map.Entry<StorageCategory, Integer> e : score.asMap().entrySet()) {
             if (e.getKey() == excluded)
                 continue;
-            if (REDSTONE_SUBS.contains(e.getKey()))
+            if (ALL_SUBS.contains(e.getKey()))
                 continue;
             if (e.getValue() > second)
                 second = e.getValue();
@@ -233,6 +291,55 @@ public final class ChestClassifier {
             return StorageCategory.REDSTONE;
         if ((float) bestSubScore / (float) subTotal < REDSTONE_SUB_DOMINANCE)
             return StorageCategory.REDSTONE;
+        return bestSub;
+    }
+
+    /**
+     * フェーズ 2: 傘 BUILDING が 1 位だったときの石材内訳判定。
+     *
+     * <p>
+     * 二重ゲート ({@link #rollUpRedstone} と同型):
+     * <ol>
+     * <li>サブ合計 / 傘スコア &ge; {@link #BUILDING_SUB_PRESENCE}
+     * (= そもそも石材が中身の主役である)</li>
+     * <li>最大サブ / サブ合計 &ge; {@link #BUILDING_SUB_DOMINANCE}
+     * (= 石材の中で 1 つの材質に寄っている)</li>
+     * </ol>
+     *
+     * <p>
+     * レッドストーンとの唯一の違いは 2 番目を割ったときの戻り値:
+     * <ul>
+     * <li>1 を割る → 石材が主役ではない (羊毛/コンクリート/ガラス/木材混じり等)
+     * ので傘 {@link StorageCategory#BUILDING}。</li>
+     * <li>2 を割る → 石材ではあるが材質が拮抗しているので中間層
+     * {@link StorageCategory#BUILDING_STONE_MIXED}。</li>
+     * </ul>
+     * 非石材の建材には石材サブの加点が 1 点も入らないため、 それらの箱は
+     * subTotal = 0 で 1 番目を割り、 従来どおり傘 BUILDING のままになる。
+     */
+    private static StorageCategory rollUpStone(CategoryScore score, int umbrellaScore) {
+        if (umbrellaScore <= 0)
+            return StorageCategory.BUILDING;
+
+        int subTotal = 0;
+        StorageCategory bestSub = null;
+        int bestSubScore = 0;
+        for (StorageCategory sub : STONE_SUBS) {
+            int v = score.get(sub);
+            if (v <= 0)
+                continue;
+            subTotal += v;
+            if (v > bestSubScore) {
+                bestSubScore = v;
+                bestSub = sub;
+            }
+        }
+        if (bestSub == null)
+            return StorageCategory.BUILDING;
+        if ((float) subTotal / (float) umbrellaScore < BUILDING_SUB_PRESENCE)
+            return StorageCategory.BUILDING;
+        if ((float) bestSubScore / (float) subTotal < BUILDING_SUB_DOMINANCE)
+            return StorageCategory.BUILDING_STONE_MIXED;
         return bestSub;
     }
 
