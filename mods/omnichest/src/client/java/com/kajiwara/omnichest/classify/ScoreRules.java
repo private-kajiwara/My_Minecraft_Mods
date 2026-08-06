@@ -241,6 +241,84 @@ public final class ScoreRules {
         rules.add(pathContainsRule("brick", StorageCategory.BUILDING, MEDIUM));
 
         // ════════════════════════════════════════════════════════════════
+        // BUILDING サブカテゴリ: 傘 BUILDING の内訳を「石材の材質軸」で分ける
+        //
+        //   加点は全て MEDIUM (= 傘 BUILDING の最頻値と同じ 6 点)。 STRONG にしない理由:
+        //   フェーズ 2 の PRESENCE は「サブ合計 / 傘スコア」なので、 サブ加点が傘より大きいと
+        //   石材が 1/4 しか入っていない箱でも比が 0.5 を超えてしまう。 6 に揃えると
+        //   PRESENCE が素直に「箱に占める石材の割合」を表す (実測: 石材 25% → 0.32 で傘のまま)。
+        //
+        //   判定は全て Identifier path のみ。 石材の「材質軸」を束ねるバニラ item タグは
+        //   存在せず (あるのは形状軸の slabs/stairs/walls と stone_bricks 4 件のみ)、
+        //   しかもそれらは 26.2 で定数が消える。 path 判定なら版差ゼロなので、
+        //   → このセクションに //? 版分岐は 1 つも要らない = 全ノードで同一挙動。
+        //   材質トークンは階段/ハーフ/塀も同時に拾える (例: "granite" だけで 7 件全部)。
+        //
+        //   なお「サブに入れないもの」は合意済みの意図的な据え置き:
+        //     blackstone / basalt (= NETHER) / quartz (= NETHER) /
+        //     end_stone / purpur (= END)。 これらは次元素材としての識別を優先する。
+        // ════════════════════════════════════════════════════════════════
+
+        // ── 石・丸石・石レンガ ──
+        //   "stone" は redstone / sandstone / blackstone / end_stone / glowstone /
+        //   lodestone / grindstone / dripstone / stonecutter / 石ツール まで拾ってしまう
+        //   ノイズの多い語なので、 除外リスト付きで使う。 除外後は 29 件ちょうどで、
+        //   全て現行でも BUILDING が 1 位のもの (= 他カテゴリからの奪取ゼロ)。
+        //   stone_button / stone_pressure_plate も除外し、 レッドストーン一族と独立させる。
+        rules.add(pathContainsExceptRule("stone",
+                List.of("redstone", "sandstone", "blackstone", "end_stone", "glowstone",
+                        "lodestone", "grindstone", "dripstone", "stonecutter",
+                        "stone_axe", "stone_hoe", "stone_sword", "stone_shovel",
+                        "stone_pickaxe", "stone_spear", "stone_button", "stone_pressure_plate"),
+                StorageCategory.BUILDING_STONE, MEDIUM));
+
+        // ── 花崗岩 / 閃緑岩 / 安山岩 (衝突ゼロの安全トークン) ──
+        rules.add(pathContainsRule("granite", StorageCategory.BUILDING_GRANITE, MEDIUM));
+        rules.add(pathContainsRule("diorite", StorageCategory.BUILDING_DIORITE, MEDIUM));
+        rules.add(pathContainsRule("andesite", StorageCategory.BUILDING_ANDESITE, MEDIUM));
+
+        // ── 深層岩 (deepslate_*_ore 8 件は ORE / REDSTONE なので除外) ──
+        rules.add(pathContainsExceptRule("deepslate", List.of("_ore"),
+                StorageCategory.BUILDING_DEEPSLATE, MEDIUM));
+
+        // ── 凝灰岩 + 方解石 (方解石は 1 件しかないので同居させる) ──
+        rules.add(pathContainsRule("tuff", StorageCategory.BUILDING_TUFF, MEDIUM));
+        rules.add(pathContainsRule("calcite", StorageCategory.BUILDING_TUFF, MEDIUM));
+
+        // ── 砂岩 (red_sandstone も同じトークンで拾える。 衝突ゼロ) ──
+        rules.add(pathContainsRule("sandstone", StorageCategory.BUILDING_SANDSTONE, MEDIUM));
+
+        // ── プリズマリン (shard / crystals は建材ではないので除外) ──
+        rules.add(pathContainsExceptRule("prismarine",
+                List.of("prismarine_shard", "prismarine_crystals"),
+                StorageCategory.BUILDING_PRISMARINE, MEDIUM));
+
+        // ── 泥レンガ ──
+        rules.add(pathContainsRule("mud_brick", StorageCategory.BUILDING_MUD_BRICK, MEDIUM));
+
+        // ── 傘 BUILDING への補完 (= サブ加点だけではフェーズ 2 に届かない素ブロック) ──
+        //   下の 20 件は現行ルールで BUILDING が 0 点 (= 無分類) だった。 階段/ハーフ/塀だけが
+        //   形状タグで拾われ、 素ブロックと磨かれた形は id に "stone" を含まないため
+        //   HINT すら当たっていなかった。 傘に入らないと一族として 1 位を取れず、
+        //   フェーズ 2 のサブ判定まで到達しないので、 傘 + サブの両方へ加点する。
+        //
+        //   ここを pathContains で一括にしないのは意図的:
+        //   トークン加点にすると granite_slab 等の <b>既存</b> BUILDING 点が 6 → 12 に増え、
+        //   フェーズ 1 の他カテゴリとの勝敗が動いてしまう。 pathExact で 0 点の item だけを
+        //   個別に持ち上げれば、 それ以外の item のスコアはビット単位で不変になる。
+        for (String bare : List.of(
+                "granite", "polished_granite",
+                "diorite", "polished_diorite",
+                "andesite", "polished_andesite",
+                "deepslate", "cobbled_deepslate", "polished_deepslate", "chiseled_deepslate",
+                "deepslate_tiles", "cracked_deepslate_tiles", "infested_deepslate",
+                "reinforced_deepslate",
+                "tuff", "polished_tuff", "chiseled_tuff", "calcite",
+                "prismarine", "dark_prismarine")) {
+            rules.add(pathExactRule(bare, StorageCategory.BUILDING, MEDIUM));
+        }
+
+        // ════════════════════════════════════════════════════════════════
         // COMBAT: 武器・防具・矢・トライデント・盾
         // ════════════════════════════════════════════════════════════════
         rules.add(tagRule(ItemTags.SWORDS, StorageCategory.COMBAT, STRONG));
@@ -405,6 +483,33 @@ public final class ScoreRules {
             if (id.getPath().contains(f)) {
                 sink.add(category, score);
             }
+        };
+    }
+
+    /**
+     * Item の Identifier path に部分一致し、 かつ除外語をどれも含まないなら加点。
+     *
+     * <p>
+     * ノイズの多い語 (例: "stone" は redstone / sandstone / blackstone まで拾う) を
+     * それでも使いたいときの限定版。 {@link #pathContainsRule} と同じく path 判定だけなので
+     * バニラのタグ構成に依存せず、 版差 (26.2 のタグ定数削除) の影響を受けない。
+     */
+    public static ScoreRule pathContainsExceptRule(String fragment, List<String> excluded,
+            StorageCategory category, int score) {
+        String f = fragment.toLowerCase(Locale.ROOT);
+        List<String> ex = excluded.stream().map(s -> s.toLowerCase(Locale.ROOT)).toList();
+        return (stack, sink) -> {
+            Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            if (id == null)
+                return;
+            String path = id.getPath();
+            if (!path.contains(f))
+                return;
+            for (String e : ex) {
+                if (path.contains(e))
+                    return;
+            }
+            sink.add(category, score);
         };
     }
 
