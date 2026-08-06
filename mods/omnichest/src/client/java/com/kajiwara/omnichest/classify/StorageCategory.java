@@ -30,6 +30,30 @@ import net.minecraft.network.chat.Component;
 public enum StorageCategory {
 
     BUILDING("建築ブロック倉庫", 0xA0A0A0),
+    // ── BUILDING の下位区分 = 「石材の材質軸」 (= 傘 BUILDING はそのまま残す) ──
+    //   ChestClassifier が「建築ブロック一族が 1 位」と判定したときだけ、
+    //   さらに内訳が特定の材質へ偏っていれば傘の代わりにこれらを表示する。
+    //   詳細は ChestClassifier の 2 フェーズ判定を参照。
+    //   非石材の建材 (木材/羊毛/コンクリート/ガラス/テラコッタ) には一切加点しないので、
+    //   それらの箱はフェーズ 2 の PRESENCE を割って従来どおり傘 BUILDING のままになる。
+    BUILDING_STONE("石・丸石倉庫", 0x9A9A9A),
+    BUILDING_GRANITE("花崗岩倉庫", 0xB0705A),
+    BUILDING_DIORITE("閃緑岩倉庫", 0xD8D8D0),
+    BUILDING_ANDESITE("安山岩倉庫", 0x8A8C8A),
+    BUILDING_DEEPSLATE("深層岩倉庫", 0x4A4A50),
+    BUILDING_TUFF("凝灰岩・方解石倉庫", 0x7C7D6E),
+    BUILDING_SANDSTONE("砂岩倉庫", 0xDCCFA0),
+    BUILDING_PRISMARINE("プリズマリン倉庫", 0x5FA8A0),
+    BUILDING_MUD_BRICK("泥レンガ倉庫", 0x9C7B5E),
+    /**
+     * 石材の中間層 = 「石材ではあるが材質が 1 つに寄っていない」。
+     *
+     * <p>
+     * これは <b>分類結果としてのみ出る集約バッジ</b> であり、 プレイヤーが手動で選ぶ意味を持たない。
+     * よって {@link #MIXED} / {@link #UNKNOWN} と同じく {@link #isConcrete()} が false を返し、
+     * 手動割り当ての候補 (カテゴリ設定 / 投入先 / タブ一覧) には並ばない。
+     */
+    BUILDING_STONE_MIXED("石材混合倉庫", 0x8F8B80),
     WOOD("木材倉庫", 0x9B6B3F),
     ORE("鉱石倉庫", 0xC0C0C0),
     REDSTONE("レッドストーン倉庫", 0xD63A3A),
@@ -86,10 +110,15 @@ public enum StorageCategory {
     }
 
     /**
-     * 「分類結果として有効か」 = MIXED / UNKNOWN ではないか。
+     * 「分類結果として有効か」 = MIXED / UNKNOWN / BUILDING_STONE_MIXED ではないか。
      * 自動投入の振り分け先として選んで良いかの判定に使う。
+     *
+     * <p>
+     * {@link #BUILDING_STONE_MIXED} をここに含めるのは、 それが
+     * 「複数の石材が混ざっている」 という <i>集約</i> であって手動で選ぶ行き先ではないため。
+     * 既存の MIXED / UNKNOWN と同じ除外機構に乗せるだけで、 新しい仕組みは足していない。
      */
     public boolean isConcrete() {
-        return this != MIXED && this != UNKNOWN;
+        return this != MIXED && this != UNKNOWN && this != BUILDING_STONE_MIXED;
     }
 }

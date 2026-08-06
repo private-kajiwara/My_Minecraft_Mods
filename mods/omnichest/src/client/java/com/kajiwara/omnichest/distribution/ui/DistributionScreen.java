@@ -652,6 +652,17 @@ public final class DistributionScreen extends Screen {
     private static Item categoryIcon(StorageCategory c) {
         return switch (c) {
             case BUILDING -> Items.BRICKS;
+            // 石材サブ (= 網羅 switch のコンパイル必須アーム。 全ノードに存在するバニラ item のみ使う)。
+            case BUILDING_STONE -> Items.COBBLESTONE;
+            case BUILDING_GRANITE -> Items.GRANITE;
+            case BUILDING_DIORITE -> Items.DIORITE;
+            case BUILDING_ANDESITE -> Items.ANDESITE;
+            case BUILDING_DEEPSLATE -> Items.DEEPSLATE;
+            case BUILDING_TUFF -> Items.TUFF;
+            case BUILDING_SANDSTONE -> Items.SANDSTONE;
+            case BUILDING_PRISMARINE -> Items.PRISMARINE;
+            case BUILDING_MUD_BRICK -> Items.MUD_BRICKS;
+            case BUILDING_STONE_MIXED -> Items.STONE_BRICKS;
             case WOOD -> Items.OAK_LOG;
             case ORE -> Items.DIAMOND_ORE;
             case REDSTONE -> Items.REDSTONE;
