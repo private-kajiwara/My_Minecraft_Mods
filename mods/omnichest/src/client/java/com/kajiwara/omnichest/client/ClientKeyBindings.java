@@ -78,6 +78,35 @@ public final class ClientKeyBindings {
     public static final String TOGGLE_DIMENSION_MENU_KEY = "key.omnichest.toggle_dimension_menu";
 
     /**
+     * Container Peek: 設置済みコンテナに照準を合わせている間、 中身のポップアップを出す
+     * <b>押しっぱなし</b>キー。 デフォルトは <b>左 Alt</b>。
+     *
+     * <p>
+     * <b>押下判定は {@link KeyMapping#isDown()} のみ</b> ({@link #containerPeekMapping()} 経由で
+     * 描画側が毎フレーム読む)。 ここで {@code consumeClick} しないのは、 これが
+     * 「押した瞬間に 1 回」 ではなく 「押している間ずっと」 のキーだから。
+     *
+     * <p>
+     * <b>Screen 中・チャット入力中に暴発しないのはバニラの構造による</b> (= 自前ガード不要):
+     * {@code Minecraft#setScreen} は Screen を開く瞬間に {@code MouseHandler#releaseMouse} と
+     * <b>{@code KeyMapping#releaseAll}</b> を呼び (バイトコード実測)、 さらに
+     * {@code KeyboardHandler#keyPress} は {@code screen == null} のときしか
+     * {@code KeyMapping.set} を呼ばない。 よって <b>いずれかの Screen が開いている間
+     * {@code isDown()} は必ず false</b> になる。
+     *
+     * <p>
+     * <b>既知の衝突</b>: 既定の左 Alt を押している最中に <b>C</b> / <b>D</b> を押すと、
+     * 既存の Alt+C (ディメンションメニュー) / Alt+D (全ピン解除) が発火する。 これらは
+     * KeyMapping ではなく GLFW 生ポーリングなので抑止していない (= 既存挙動を変えない方針)。
+     * 気になる場合は本キーを別のキーへ再割当するか、 Alt+C 側を設定
+     * {@code render.dimensionMenuAltC} で OFF にできる。
+     *
+     * <p>
+     * 未割当にすると {@code isDown()} が常に false になり、 設定が ON のままでも発火しない。
+     */
+    public static final String CONTAINER_PEEK_KEY = "key.omnichest.container_peek";
+
+    /**
      * 独自カテゴリを 1.21.11+ の新 API ({@link KeyMapping.Category#register}) で登録する。
      * String 版は package-private に変わったため、 Identifier 版を経由する。
      * 同名カテゴリが既に存在する場合は同じインスタンスが返る。
@@ -92,6 +121,7 @@ public final class ClientKeyBindings {
     private static KeyMapping clearAllSlotLocks;
     private static KeyMapping toggleSelectedItemHud;
     private static KeyMapping toggleDimensionMenu;
+    private static KeyMapping containerPeek;
 
     /** Alt+C グローバル ポールのエッジ検出フラグ (Alt+D と同方式)。 */
     private static boolean lastAltCDown = false;
@@ -168,7 +198,26 @@ public final class ClientKeyBindings {
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
 
+        // コンテナ ピーク (= 押している間だけ中身ポップアップ)。 既定は左 Alt。
+        // tick では一切 consume しない: 判定は描画側が isDown() を毎フレーム読む。
+        containerPeek = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                CONTAINER_PEEK_KEY,
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_LEFT_ALT,
+                CATEGORY));
+
         ClientTickEvents.END_CLIENT_TICK.register(ClientKeyBindings::onTick);
+    }
+
+    /**
+     * コンテナ ピークの {@link KeyMapping} を返す (= 描画側が毎フレーム {@code isDown()} を読む)。
+     *
+     * <p>
+     * 初期化前 (= {@link #register()} 前) は null を返しうるので、 呼び出し側で null を
+     * 「押されていない」 として扱うこと。
+     */
+    public static KeyMapping containerPeekMapping() {
+        return containerPeek;
     }
 
     /**

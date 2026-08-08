@@ -116,6 +116,10 @@ public class OmniChestClient implements ClientModInitializer {
         // 選択アイテム情報 HUD (読み取り専用・純追加)。 ChestHighlighter.active を相乗り集計するため
         // その register 後に登録する (依存方向を明示)。 描画は既存の HUD パスに載る (新規 Mixin なし)。
         com.kajiwara.omnichest.client.render.SelectedItemHudRenderer.register();
+        // コンテナ ピーク (読み取り専用・既定 OFF)。 ChestNetworkManager を読むだけなので
+        // ContainerScanner の後に登録する (依存方向を明示)。 描画は既存の HUD パスに載る
+        // (新規 Mixin なし)。 設定 OFF の間は描画コールバックの 1 行目で return する。
+        com.kajiwara.omnichest.client.render.ContainerPeekRenderer.register();
         ClientKeyBindings.register();
         // クライアント専用コマンド /omnichest hud <on|off|toggle> (= HUD 即消し/トグル)。
         com.kajiwara.omnichest.client.command.OmniChestCommands.register();
