@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.mixin;
 
 import com.kajiwara.omnichest.catsort.engine.CategorySortEngine;
 import com.kajiwara.omnichest.catsort.ui.SortButtonWidget;
+import com.kajiwara.omnichest.chestsearch.ChestSearchQuery;
 import com.kajiwara.omnichest.client.ClientKeyBindings;
 import com.kajiwara.omnichest.client.gui.CategoryBadgeRenderer;
 import com.kajiwara.omnichest.client.gui.OmniChestScaledScreen;
@@ -61,6 +62,21 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
     @Unique
     private EditBox cits$searchBox;
+
+    /**
+     * 検索欄に今入っているクエリを、 判定に使う<b>語のリスト</b>へ正規化して保持したもの。
+     *
+     * <p>
+     * {@link EditBox#setResponder} 経由で<b>打鍵のたびに</b>更新する。 毎フレーム
+     * {@code getValue()} を語分割し直すのを避けるため、 入力側で 1 度だけ正規化して持つ
+     * (= v1.0.0 が {@code cits$searchQuery} に小文字化済み文字列を持っていたのと同じ考え方)。
+     *
+     * <p>
+     * <b>空リスト = 検索していない</b>。 このとき絞り込み描画は 1 枚も行われない
+     * (= 検索欄が空のときのチェスト GUI は復旧前とピクセル等価)。 描画側は次コミットで足す。
+     */
+    @Unique
+    private java.util.List<String> cits$searchTerms = java.util.List.of();
 
     @Unique
     private Button cits$sortByTypeButton;
@@ -860,6 +876,11 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // という不整合になる。 生成前に必ず null へ戻して 「今回 init で作られたものだけ」 にする。
         // ───────────────────────────────────────────────────────────
         this.cits$searchBox = null;
+        // 検索欄は init のたびに新しい空の EditBox として作り直される (= 値は空に戻る) が、
+        // 新規構築では responder が発火しないため、 語のリストも明示的に空へ戻す。
+        // これを忘れると 「resize 後は欄が空なのに絞り込みだけ生きている」 状態になり、
+        // 消せない暗転が残る。 v1.0.0 も init 冒頭で searchQuery を "" に戻していた。
+        this.cits$searchTerms = java.util.List.of();
         this.cits$sortByTypeButton = null;
         this.cits$sortByCountButton = null;
         this.cits$layoutLeftButton = null;
@@ -1091,22 +1112,25 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
         // Main Menu Visibility: 検索バーの表示トグルが ON のときだけ生成する。
         //
-        // ⚠ <b>既知の不具合 (1.1.1 時点): この検索欄は現在<u>無機能</u></b>。
-        //   v1.0.0 (1c3b444) には
-        //     ・{@code setResponder} でクエリを保持する入力配線
-        //     ・{@code render} TAIL でクエリに一致しないスロットを暗くする絞り込み描画
-        //   があったが、 1.21.11 移行コミット 8a16b71 ("Minecraftバージョンを1.21.11に更新し、
-        //   不要なファイルを削除") で両方とも巻き添えで削除され、 以降 再実装されていない
-        //   (履歴確認: {@code git log --all -S 'cits$searchQuery'} が導入/削除の 2 件のみ、
-        //    {@code cits$searchBox.getValue} は全履歴で 0 件)。
-        //   現在この欄の値を読む箇所はリポジトリ全体に存在せず、 入力しても何も起きない。
+        // <b>入力配線 (setResponder)</b>: 打鍵のたびにクエリを語へ正規化して
+        // {@link #cits$searchTerms} へ保持する。 実際の絞り込み描画は
+        // {@link #cits$dimNonMatchingSlots} (extractContents TAIL) が行う。
+        //
+        //   ※ この 2 つは v1.0.0 (1c3b444) に存在したが、 1.21.11 移行コミット 8a16b71
+        //     ("Minecraftバージョンを1.21.11に更新し、不要なファイルを削除") で巻き添えで
+        //     削除され、 検索欄は EditBox の生成と描画登録だけが残った状態が続いていた
+        //     (= 打っても何も起きない)。 1.1.1 の CHANGELOG に 「既知の不具合」 として
+        //     記載したもので、 ここで復旧させる。
+        //
+        //   正規化を {@link ChestSearchQuery} (common の MC 非依存 純関数) へ出しているのは、
+        //   trim / 語分割 / 全角スペース (U+3000) の扱いを単体テストで固定するため。
+        //   自前で {@code trim()} や {@code split("\\s+")} を書くと U+3000 が区切りにならず、
+        //   日本語入力のときだけ無言で 0 件になる (詳細は ChestSearchQuery の doc)。
         //
         //   なお {@link com.kajiwara.omnichest.client.render.SearchMatchSlotRenderer} による
-        //   スロットのハイライトは {@link com.kajiwara.omnichest.client.render.ChestHighlighter}
-        //   由来 (= {@code SearchScreen} でピンしたアイテム) であって、 この欄とは無関係。
-        //   ツールチップ ({@link Keys#EDITBOX_SEARCH_TOOLTIP}
-        //   "Highlight items in this chest by name.") は現状の挙動と一致していない。
-        //   機能復旧は次バージョン予定 (CHANGELOG の 1.1.1「既知の不具合」参照)。
+        //   スロットの黄ハイライトは {@link com.kajiwara.omnichest.client.render.ChestHighlighter}
+        //   由来 (= {@code SearchScreen} でピンしたアイテム) で、 この欄とは<b>別系統</b>。
+        //   この欄はピン集合へ <b>populate しない</b> (= 読みも書きもしない)。
         //
         //   ※ 検索索引 ({@code ContainerScanner} / {@code SearchIndex}) と倉庫検索 ({@code SearchScreen})
         //     は<b>この欄とは独立</b>に従来どおり動作する (= 表示トグルを OFF にしても影響しない)。
@@ -1119,6 +1143,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
                 Keys.EDITBOX_SEARCH_HINT_GENERIC, "Search..."));
         cits$applyTooltip(this.cits$searchBox, Keys.EDITBOX_SEARCH_TOOLTIP,
                 "Highlight items in this chest by name.");
+        this.cits$searchBox.setResponder(q -> this.cits$searchTerms = ChestSearchQuery.terms(q));
         this.addRenderableWidget(this.cits$searchBox);
         }
 
