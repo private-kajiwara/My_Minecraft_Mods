@@ -27,12 +27,21 @@ public final class ItemCategoryResolver {
     /** ItemStack の identity を生かして使い回す 1 プロセス共有キャッシュ。 */
     private static final Map<String, StorageCategory> CACHE = new HashMap<>();
 
-    /** カテゴリ枠の候補から外す「倉庫バッジ専用」の下位区分。 */
-    private static final java.util.EnumSet<StorageCategory> REDSTONE_SUBS = java.util.EnumSet.of(
+    /** カテゴリ枠の候補から外す「倉庫バッジ専用」の下位区分 (レッドストーン一族 + 石材一族)。 */
+    private static final java.util.EnumSet<StorageCategory> BADGE_ONLY_SUBS = java.util.EnumSet.of(
             StorageCategory.REDSTONE_CIRCUIT,
             StorageCategory.REDSTONE_TRANSPORT,
             StorageCategory.REDSTONE_MOVEMENT,
-            StorageCategory.REDSTONE_TRAP);
+            StorageCategory.REDSTONE_TRAP,
+            StorageCategory.BUILDING_STONE,
+            StorageCategory.BUILDING_GRANITE,
+            StorageCategory.BUILDING_DIORITE,
+            StorageCategory.BUILDING_ANDESITE,
+            StorageCategory.BUILDING_DEEPSLATE,
+            StorageCategory.BUILDING_TUFF,
+            StorageCategory.BUILDING_SANDSTONE,
+            StorageCategory.BUILDING_PRISMARINE,
+            StorageCategory.BUILDING_MUD_BRICK);
 
     private ItemCategoryResolver() {
     }
@@ -87,11 +96,13 @@ public final class ItemCategoryResolver {
         for (StorageCategory cat : StorageCategory.values()) {
             if (!cat.isConcrete())
                 continue;
-            // レッドストーンのサブカテゴリ (回路/搬送/移動/トラップ) は「倉庫バッジの内訳」専用で、
-            // テンプレートのカテゴリ枠は従来どおり傘 REDSTONE の粒度で扱う。
-            // ここを外さないと piston / repeater 等が「傘とサブが同点」で拮抗 → null になり、
-            // 保存済みテンプレの REDSTONE 枠とも一致しなくなる。
-            if (REDSTONE_SUBS.contains(cat))
+            // レッドストーンのサブ (回路/搬送/移動/トラップ) と石材のサブ (材質軸 9 種) は
+            // 「倉庫バッジの内訳」専用で、テンプレートのカテゴリ枠は従来どおり
+            // 傘 REDSTONE / 傘 BUILDING の粒度で扱う。
+            // ここを外さないと piston / repeater / granite 等が「傘とサブが同点」で拮抗 → null になり、
+            // 保存済みテンプレの REDSTONE / BUILDING 枠とも一致しなくなる。
+            // (BUILDING_STONE_MIXED は isConcrete() が false なので上の判定で既に落ちている。)
+            if (BADGE_ONLY_SUBS.contains(cat))
                 continue;
             int v = score.get(cat);
             if (v <= 0)
