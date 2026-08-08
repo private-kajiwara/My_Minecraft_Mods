@@ -414,6 +414,7 @@
   "omnichest.peek.age.hours": "%1$d 時間前",
   "omnichest.peek.age.days": "%1$d 日前",
   "omnichest.peek.age.long_ago": "%1$d 日以上前",
+  "omnichest.peek.more_kinds": "他 %1$d 種",
   "omnichest.peek.not_recorded": "— 未登録 —",
   "omnichest.peek.not_recorded.hint": "一度開くと中身を記録します。",
   "omnichest.peek.ender_disabled": "— エンダーチェスト検索が OFF —",

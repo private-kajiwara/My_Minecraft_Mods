@@ -4,19 +4,30 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
+import com.kajiwara.omnichest.peek.ContainerPeekFit.Layout;
+import com.kajiwara.omnichest.peek.ContainerPeekFit.Placement;
 import org.junit.jupiter.api.Test;
 
 /**
  * コンテナ ピーク ポップアップの<b>配置</b>の回帰テスト。
  *
  * <p>
- * <b>捉えている不具合</b>: 実機 (26.1.2 / シェーダー ON) で、 ラージチェスト (54 スロット = 6 行 =
- * 高さ 154px) のときだけポップアップ下端が<b>ホットバーに重なり</b>、 サマリ行
- * 「3 / 54 · ×4」 が読めなくなった。 27 スロット (3 行 = 100px) や未登録表示 (49px) では
- * 起きなかった。 原因は {@link ContainerPeekFit#popupY} の下端基準が
- * 「画面下端 − マージン 4px」 でしかなく、 <b>画面下部 HUD の存在を知らなかった</b>こと。
+ * <b>捉えている不具合は 2 世代ある</b>:
+ * <ol>
+ *   <li><b>第 1 世代</b>: 下端の基準が 「画面下端 − マージン 4px」 でしかなく、 下部 HUD を
+ *       知らなかったため、 ラージチェスト (54 スロット = 6 行 = 154px) のサマリ行が
+ *       ホットバーに重なった。</li>
+ *   <li><b>第 2 世代</b>: 上下どちらにも入らないときパネルを画面中央へ置き、 描画順で
+ *       クロスヘアを手前に出して 「見える」 ようにしていた。 しかし<b>クロスヘアが
+ *       グリッド内のアイテムに重なってそのアイテムが読めない</b>。 「見える」 と 「読める」 は
+ *       別なので、 重ねること自体をやめ、 <b>横に逃がす</b> → それでも無理なら
+ *       <b>要約リスト (コンパクトモード)</b> に切り替える方式にした。</li>
+ * </ol>
+ * 判定条件 ③ は 「クロスヘアが可視」 ではなく <b>「クロスヘアの矩形と交差しない」</b> である。
  *
  * <p>
  * <b>下部 HUD の高さは発明せず、 バニラのバイトコード実測値を使う</b>
@@ -48,11 +59,7 @@ class ContainerPeekPlacementTest {
     /** GUI スケール設定。 {@code 0} = Auto。 */
     private static final int[] GUI_SCALES = { 1, 2, 3, 4, 5, 6, 7, 8, 0 };
 
-    /**
-     * スロット数。 {@code -1} = 未登録 / 設定 OFF のお知らせパネル (= グリッドなし)。
-     * 5 = ホッパー相当、 9 = ディスペンサー相当、 27 = チェスト / 樽 / シュルカー、
-     * 54 = ラージチェスト (= 症状が出たケース)。
-     */
+    /** スロット数。 {@code -1} = 未登録 / 設定 OFF のお知らせパネル (= グリッドなし)。 */
     private static final int[] SLOT_COUNTS = { -1, 5, 9, 27, 54 };
 
     /** 総組み合わせ数 (= 20 x 9 x 5)。 */
@@ -88,6 +95,10 @@ class ContainerPeekPlacementTest {
     private static final int SEPARATOR_GAP = 3;
     private static final int LINE_H = 9;
 
+    /** パネルの固定部 (= 余白 + タイトル + セパレータ 2 本 + サマリ)。 グリッドもコンパクトも共通。 */
+    private static final int PANEL_BASE =
+            PANEL_PADDING * 2 + TITLE_HEIGHT + (SEPARATOR_GAP + 1 + SEPARATOR_GAP) * 2 + SUMMARY_HEIGHT;
+
     /** {@code AltPreviewPopupRenderer.panelWidth} のミラー。 */
     private static int panelWidth(int columns) {
         return PANEL_PADDING * 2 + columns * CELL;
@@ -96,12 +107,7 @@ class ContainerPeekPlacementTest {
     /** {@code AltPreviewPopupRenderer.panelHeight} のミラー。 */
     private static int panelHeight(int columns, int slotCount) {
         int rows = Math.max(1, (slotCount + columns - 1) / columns);
-        return PANEL_PADDING * 2
-                + TITLE_HEIGHT
-                + SEPARATOR_GAP + 1 + SEPARATOR_GAP
-                + rows * CELL
-                + SEPARATOR_GAP + 1 + SEPARATOR_GAP
-                + SUMMARY_HEIGHT;
+        return PANEL_BASE + rows * CELL;
     }
 
     /** {@code ContainerPeekRenderer.drawNotice} のパネル高 (= タイトル + 区切り + 2 行)。 */
@@ -113,12 +119,33 @@ class ContainerPeekPlacementTest {
     /** 未登録パネルの代表幅 (= 日本語の案内文がおよそ収まる幅)。 */
     private static final int NOTICE_PANEL_WIDTH = 220;
 
-    private static int panelWidthFor(int slotCount) {
+    // ── コンパクトモードのミラー ({@code ContainerPeekRenderer.compactHeight/Width}) ──
+    /** 1 行の高さ = {@code font.lineHeight} (= 既存ピン行と同じ、 アイコンも同サイズ)。 */
+    private static final int COMPACT_ROW_H = LINE_H;
+
+    /** コンパクトの高さ。 行数 = 上位 N 種 + (他 M 種 の行)。 */
+    private static int compactHeight(int slotCount) {
+        if (slotCount < 0) {
+            return noticePanelHeight();
+        }
+        // 最悪ケース: 種類数が上限を超えて 「他 M 種」 行が付く。
+        int rows = Math.min(PeekSummary.TOP_N, slotCount) + 1;
+        return PANEL_BASE + rows * COMPACT_ROW_H;
+    }
+
+    /** コンパクトの幅は上限で頭打ち ({@code ContainerPeekRenderer.COMPACT_MAX_WIDTH})。 */
+    private static final int COMPACT_MAX_WIDTH = 174;
+
+    private static int compactWidth(int slotCount) {
+        return slotCount < 0 ? NOTICE_PANEL_WIDTH : COMPACT_MAX_WIDTH;
+    }
+
+    private static int gridWidth(int slotCount) {
         return slotCount < 0 ? NOTICE_PANEL_WIDTH
                 : panelWidth(ContainerPeekFit.gridColumns(slotCount));
     }
 
-    private static int panelHeightFor(int slotCount) {
+    private static int gridHeight(int slotCount) {
         return slotCount < 0 ? noticePanelHeight()
                 : panelHeight(ContainerPeekFit.gridColumns(slotCount), slotCount);
     }
@@ -128,65 +155,45 @@ class ContainerPeekPlacementTest {
     // ════════════════════════════════════════════════════════════════════
 
     private record Case(int fbW, int fbH, int scaleSetting, int slots,
-            int guiW, int guiH, int panelW, int panelH, int x, int y) {
+            int guiW, int guiH, Layout layout) {
 
         @Override
         public String toString() {
-            return String.format("%dx%d scale=%s slots=%s logical=%dx%d panel=%dx%d at (%d,%d)",
+            return String.format("%dx%d scale=%s slots=%s logical=%dx%d -> %s%s panel=%dx%d at (%d,%d)",
                     fbW, fbH, scaleSetting == 0 ? "Auto" : String.valueOf(scaleSetting),
                     slots < 0 ? "notice" : String.valueOf(slots),
-                    guiW, guiH, panelW, panelH, x, y);
+                    guiW, guiH, layout.placement(), layout.compact() ? "/compact" : "",
+                    layout.width(), layout.height(), layout.x(), layout.y());
         }
     }
 
     /** ① 下部 HUD 帯に侵入していない。 */
     private static boolean clearsBottomHud(Case c) {
-        return c.y + c.panelH <= c.guiH - ContainerPeekFit.BOTTOM_HUD_HEIGHT;
+        return c.layout.y() + c.layout.height() <= c.guiH - ContainerPeekFit.BOTTOM_HUD_HEIGHT;
     }
 
     /** ② 画面外に出ていない (上下左右)。 */
     private static boolean insideScreen(Case c) {
-        return c.x >= 0 && c.y >= 0
-                && c.x + c.panelW <= c.guiW
-                && c.y + c.panelH <= c.guiH;
+        return c.layout.x() >= 0 && c.layout.y() >= 0
+                && c.layout.x() + c.layout.width() <= c.guiW
+                && c.layout.y() + c.layout.height() <= c.guiH;
     }
 
-    /** ③ クロスヘア (中央 15x15) を覆っていない。 */
+    /** ③ ★クロスヘアの矩形と 1px も交差しない (= 「可視」 ではなく 「非重複」)。 */
     private static boolean clearsCrosshair(Case c) {
         int cx = c.guiW / 2;
         int cy = c.guiH / 2;
         int half = ContainerPeekFit.CROSSHAIR_HALF;
-        boolean overlapX = c.x < cx + half && c.x + c.panelW > cx - half;
-        boolean overlapY = c.y < cy + half && c.y + c.panelH > cy - half;
+        boolean overlapX = c.layout.x() < cx + half && c.layout.x() + c.layout.width() > cx - half;
+        boolean overlapY = c.layout.y() < cy + half && c.layout.y() + c.layout.height() > cy - half;
         return !(overlapX && overlapY);
     }
 
-    /** ④ タイトル行とサマリ行がともに可視 (= パネルの上端と下端が安全帯の中)。 */
+    /** ④ タイトル行とサマリ行がともに可視 (= パネル全体が安全帯の中)。 */
     private static boolean titleAndSummaryVisible(Case c) {
-        boolean titleOk = c.y >= 0 && c.y + TITLE_HEIGHT <= c.guiH;
-        boolean summaryOk = c.y + c.panelH <= c.guiH - ContainerPeekFit.BOTTOM_HUD_HEIGHT;
-        return titleOk && summaryOk;
+        return c.layout.y() >= ContainerPeekFit.SCREEN_MARGIN && clearsBottomHud(c);
     }
 
-    /**
-     * 「クロスヘアを避けた配置が幾何的に可能か」 を<b>実装とは独立に</b>判定する。
-     * 上側にも下側にも入らないパネルは、 どう置いてもクロスヘア帯と縦に重なる。
-     */
-    private static boolean crosshairAvoidanceIsPossible(int guiH, int panelH) {
-        int gap = ContainerPeekFit.CROSSHAIR_GAP;
-        int margin = ContainerPeekFit.SCREEN_MARGIN;
-        int cy = guiH / 2;
-        boolean below = cy + gap + panelH <= guiH - ContainerPeekFit.BOTTOM_HUD_HEIGHT;
-        boolean above = cy - gap - panelH >= margin;
-        return below || above;
-    }
-
-    /** 安全帯 (= 上マージン 〜 HUD 帯上端) にパネルが収まるか。 */
-    private static boolean fitsInSafeBand(int guiH, int panelH) {
-        return panelH <= guiH - ContainerPeekFit.BOTTOM_HUD_HEIGHT - ContainerPeekFit.SCREEN_MARGIN;
-    }
-
-    /** 現行実装で全組み合わせを算出する。 */
     private static List<Case> sweep() {
         List<Case> out = new ArrayList<>(TOTAL);
         for (int[] res : RESOLUTIONS) {
@@ -195,11 +202,10 @@ class ContainerPeekPlacementTest {
                 int guiW = logical(res[0], scale);
                 int guiH = logical(res[1], scale);
                 for (int slots : SLOT_COUNTS) {
-                    int panelW = panelWidthFor(slots);
-                    int panelH = panelHeightFor(slots);
-                    int x = ContainerPeekFit.popupX(guiW, panelW, guiW / 2);
-                    int y = ContainerPeekFit.popupY(guiH, panelH, guiH / 2);
-                    out.add(new Case(res[0], res[1], setting, slots, guiW, guiH, panelW, panelH, x, y));
+                    Layout l = ContainerPeekFit.layout(guiW, guiH, guiW / 2, guiH / 2,
+                            gridWidth(slots), gridHeight(slots),
+                            compactWidth(slots), compactHeight(slots));
+                    out.add(new Case(res[0], res[1], setting, slots, guiW, guiH, l));
                 }
             }
         }
@@ -223,8 +229,7 @@ class ContainerPeekPlacementTest {
                 bad.add(c.toString());
             }
         }
-        assertTrue(bad.isEmpty(),
-                "下部 HUD に侵入した組み合わせ " + bad.size() + " 件: " + head(bad));
+        assertTrue(bad.isEmpty(), "下部 HUD に侵入 " + bad.size() + " 件: " + head(bad));
     }
 
     @Test
@@ -235,7 +240,19 @@ class ContainerPeekPlacementTest {
                 bad.add(c.toString());
             }
         }
-        assertTrue(bad.isEmpty(), "画面外へ出た組み合わせ " + bad.size() + " 件: " + head(bad));
+        assertTrue(bad.isEmpty(), "画面外へ出た " + bad.size() + " 件: " + head(bad));
+    }
+
+    /** ★今回の症状。 クロスヘアと 1px も重ならないことを<b>全通りで</b>要求する。 */
+    @Test
+    void neverOverlapsTheCrosshair() {
+        List<String> bad = new ArrayList<>();
+        for (Case c : sweep()) {
+            if (!clearsCrosshair(c)) {
+                bad.add(c.toString());
+            }
+        }
+        assertTrue(bad.isEmpty(), "クロスヘアと重なった " + bad.size() + " 件: " + head(bad));
     }
 
     @Test
@@ -246,208 +263,193 @@ class ContainerPeekPlacementTest {
                 bad.add(c.toString());
             }
         }
-        assertTrue(bad.isEmpty(),
-                "タイトル / サマリが隠れた組み合わせ " + bad.size() + " 件: " + head(bad));
+        assertTrue(bad.isEmpty(), "タイトル / サマリが隠れた " + bad.size() + " 件: " + head(bad));
     }
 
-    /**
-     * ③ クロスヘア非被り。 <b>幾何的に可能な組み合わせでは必ず避ける</b>ことを固定する。
-     *
-     * <p>
-     * 縦長パネル (= 54 スロット) × 縦の狭い論理画面では、 上下どちらの側にも入らないため
-     * どう置いても重なる。 その組み合わせでは重なりを許すが、 <b>実装が勝手にサボっていない</b>
-     * ことを保証するため、 「可能かどうか」 は実装と独立な {@link #crosshairAvoidanceIsPossible}
-     * で判定している。 重なる場合でもバニラのクロスヘアが上に描かれる (=
-     * {@code ContainerPeekRenderer} を {@code VanillaHudElements.CROSSHAIR} の<b>前</b>に登録)
-     * ため、 照準は画面上では見えたままになる。
-     */
+    /** サポート範囲では最後の砦 ({@link Placement#CLAMPED}) に落ちないこと。 */
     @Test
-    void avoidsTheCrosshairWheneverGeometricallyPossible() {
+    void neverFallsBackToTheClampedPlacement() {
         List<String> bad = new ArrayList<>();
         for (Case c : sweep()) {
-            if (crosshairAvoidanceIsPossible(c.guiH, c.panelH) && !clearsCrosshair(c)) {
+            if (c.layout.placement() == Placement.CLAMPED) {
                 bad.add(c.toString());
             }
         }
-        assertTrue(bad.isEmpty(),
-                "避けられるのに覆った組み合わせ " + bad.size() + " 件: " + head(bad));
-    }
-
-    /** 重なりを許した組み合わせでも、 ①②④ は必ず満たしていること (= 逃げ道にしない)。 */
-    @Test
-    void unavoidableCrosshairOverlapStillSatisfiesEveryOtherRule() {
-        int overlaps = 0;
-        for (Case c : sweep()) {
-            if (crosshairAvoidanceIsPossible(c.guiH, c.panelH)) {
-                continue;
-            }
-            overlaps++;
-            assertTrue(clearsBottomHud(c), "HUD 侵入: " + c);
-            assertTrue(insideScreen(c), "画面外: " + c);
-            assertTrue(titleAndSummaryVisible(c), "タイトル/サマリ不可視: " + c);
-            assertEquals(ContainerPeekFit.Placement.CENTERED,
-                    ContainerPeekFit.placeY(c.guiH, c.panelH, c.guiH / 2),
-                    "重なる場合は安全帯中央に置くこと: " + c);
-        }
-        // 実際に発生する組み合わせがあること (= この分岐が死んでいないことの確認)。
-        assertTrue(overlaps > 0, "重なりが起きる組み合わせが 1 つも無い = 判定式が誤っている疑い");
-    }
-
-    /**
-     * 掃き出しの全域で {@link ContainerPeekFit.Placement#CLAMPED_TOP} に落ちないこと。
-     * = MC が許すどのウィンドウでもグリッドが下端で切れることはない。
-     */
-    @Test
-    void neverFallsBackToTopClampInTheSupportedMatrix() {
-        List<String> bad = new ArrayList<>();
-        for (Case c : sweep()) {
-            if (ContainerPeekFit.placeY(c.guiH, c.panelH, c.guiH / 2)
-                    == ContainerPeekFit.Placement.CLAMPED_TOP) {
-                bad.add(c.toString());
-            }
-        }
-        assertTrue(bad.isEmpty(), "上端クランプに落ちた組み合わせ " + bad.size() + " 件: " + head(bad));
+        assertTrue(bad.isEmpty(), "CLAMPED に落ちた " + bad.size() + " 件: " + head(bad));
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ★ 修正前の実装が同じ判定式で落ちること (= テストが症状を捉えている証明)
+    // 配置モードの内訳 (= 想定どおりの分布か)
+    // ════════════════════════════════════════════════════════════════════
+
+    @Test
+    void placementBreakdownMatchesTheMeasuredDistribution() {
+        Map<Placement, Integer> byPlacement = new EnumMap<>(Placement.class);
+        int compact = 0;
+        int compactNon54 = 0;
+        for (Case c : sweep()) {
+            byPlacement.merge(c.layout.placement(), 1, Integer::sum);
+            if (c.layout.compact()) {
+                compact++;
+                if (c.slots != 54) {
+                    compactNon54++;
+                }
+            }
+        }
+        String s = byPlacement + " compact=" + compact;
+        // 大半は素直にクロスヘアの下。
+        assertTrue(byPlacement.getOrDefault(Placement.BELOW, 0) > TOTAL / 2, s);
+        // 横に逃がす手が実際に効いていること (= 死んだ分岐ではない)。
+        assertTrue(byPlacement.getOrDefault(Placement.SIDE_RIGHT, 0)
+                + byPlacement.getOrDefault(Placement.SIDE_LEFT, 0) > 0, s);
+        // ★コンパクトはあくまでフォールバック。 全体の 5% 未満に収まっていること。
+        assertTrue(compact * 100 < TOTAL * 5, "コンパクトが多すぎる: " + s);
+        // コンパクトへ落ちるのはラージチェストだけ (= 27 以下は必ずグリッドで置ける)。
+        assertEquals(0, compactNon54, "54 スロット以外がコンパクトへ落ちた: " + s);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // ★ 前世代の実装が新条件で落ちること (= テストが症状を捉えている証明)
     // ════════════════════════════════════════════════════════════════════
 
     /**
-     * 修正前の {@code popupY} をそのまま写したもの。 下端の基準が
-     * 「画面下端 − マージン」 でしかなく、 下部 HUD を知らない。
+     * 前世代 (= 横逃がし無し・上下に入らなければ安全帯の中央へ重ねる) の配置を写したもの。
      */
-    private static int legacyPopupY(int guiHeight, int panelHeight, int crosshairY) {
+    private static int[] legacyCenteredXY(int guiW, int guiH, int pw, int ph) {
         int gap = ContainerPeekFit.CROSSHAIR_GAP;
-        int margin = ContainerPeekFit.SCREEN_MARGIN;
-        int below = crosshairY + gap;
-        if (below + panelHeight + margin <= guiHeight) {
-            return below;
+        int m = ContainerPeekFit.SCREEN_MARGIN;
+        int safeBottom = guiH - Math.max(m, ContainerPeekFit.BOTTOM_HUD_HEIGHT);
+        int x = ContainerPeekFit.popupX(guiW, pw, guiW / 2);
+        if (guiH / 2 + gap + ph <= safeBottom) {
+            return new int[] { x, guiH / 2 + gap };
         }
-        int above = crosshairY - gap - panelHeight;
-        if (above >= margin) {
-            return above;
+        if (guiH / 2 - gap - ph >= m) {
+            return new int[] { x, guiH / 2 - gap - ph };
         }
-        int max = guiHeight - margin - panelHeight;
-        if (max < margin) {
-            return margin;
+        if (ph <= safeBottom - m) {
+            return new int[] { x, m + (safeBottom - m - ph) / 2 };
         }
-        return Math.min(Math.max(below, margin), max);
+        return new int[] { x, m };
     }
 
-    /**
-     * スロット数ごとの「修正前に HUD へ侵入した組み合わせ数 / 180」を返す。
-     * 添字は {@link #SLOT_COUNTS} と同じ並び。
-     */
-    private static int[] legacyIntrusionsPerSlotCount() {
-        int[] bad = new int[SLOT_COUNTS.length];
+    @Test
+    void previousImplementationOverlapsTheCrosshairAndTheFixRemovesIt() {
+        int legacyOverlap = 0;
+        int legacyOverlap54 = 0;
         for (int[] res : RESOLUTIONS) {
             for (int setting : GUI_SCALES) {
                 int scale = calculateScale(setting, res[0], res[1], false);
+                int guiW = logical(res[0], scale);
                 int guiH = logical(res[1], scale);
-                for (int s = 0; s < SLOT_COUNTS.length; s++) {
-                    int panelH = panelHeightFor(SLOT_COUNTS[s]);
-                    int y = legacyPopupY(guiH, panelH, guiH / 2);
-                    if (y + panelH > guiH - ContainerPeekFit.BOTTOM_HUD_HEIGHT) {
-                        bad[s]++;
+                for (int slots : SLOT_COUNTS) {
+                    int pw = gridWidth(slots);
+                    int ph = gridHeight(slots);
+                    int[] xy = legacyCenteredXY(guiW, guiH, pw, ph);
+                    int cx = guiW / 2;
+                    int cy = guiH / 2;
+                    int half = ContainerPeekFit.CROSSHAIR_HALF;
+                    boolean ox = xy[0] < cx + half && xy[0] + pw > cx - half;
+                    boolean oy = xy[1] < cy + half && xy[1] + ph > cy - half;
+                    if (ox && oy) {
+                        legacyOverlap++;
+                        if (slots == 54) {
+                            legacyOverlap54++;
+                        }
                     }
                 }
             }
         }
-        return bad;
-    }
+        assertTrue(legacyOverlap > 0,
+                "前世代がクロスヘアと重ならない = テストが症状を捉えていない");
+        assertEquals(legacyOverlap, legacyOverlap54,
+                "重なりは 54 スロット限定のはず (合計=" + legacyOverlap + ")");
 
-    @Test
-    void legacyImplementationIntrudesIntoTheHotbarAndTheFixRemovesIt() {
-        int[] legacy = legacyIntrusionsPerSlotCount();
-        int perSlotTotal = RESOLUTIONS.length * GUI_SCALES.length;   // = 180
-
-        StringBuilder breakdown = new StringBuilder();
-        for (int s = 0; s < SLOT_COUNTS.length; s++) {
-            breakdown.append(SLOT_COUNTS[s] < 0 ? "notice" : String.valueOf(SLOT_COUNTS[s]))
-                    .append('=').append(legacy[s]).append('/').append(perSlotTotal).append(' ');
-        }
-
-        // 症状の再現: ラージチェスト (= user が実機で見たケース) が最も高い率で落ちる。
-        int idx54 = SLOT_COUNTS.length - 1;
-        assertEquals(54, SLOT_COUNTS[idx54]);
-        assertTrue(legacy[idx54] > 0,
-                "修正前の実装が 54 スロットで HUD に侵入しない = テストが症状を捉えていない ["
-                        + breakdown + "]");
-        for (int s = 0; s < idx54; s++) {
-            assertTrue(legacy[idx54] >= legacy[s],
-                    "54 スロットの侵入率が最大でないのはおかしい [" + breakdown + "]");
-        }
-        // 修正前は全体でも相当数落ちていたことを固定する
-        // (= 症状は 54 だけの問題ではなく、 縦の狭い画面では 27 や未登録でも起きていた)。
-        int legacyTotal = 0;
-        for (int n : legacy) {
-            legacyTotal += n;
-        }
-        assertTrue(legacyTotal >= 400,
-                "修正前の総侵入数が想定より少ない [" + breakdown + " total=" + legacyTotal + "]");
-
-        // 修正後は同じ判定式で 0 件。
-        int fixedBad = 0;
+        int fixedOverlap = 0;
         for (Case c : sweep()) {
-            if (!clearsBottomHud(c)) {
-                fixedBad++;
+            if (!clearsCrosshair(c)) {
+                fixedOverlap++;
             }
         }
-        assertEquals(0, fixedBad,
-                "修正後は 0 件でなければならない (修正前 [" + breakdown + "] total=" + legacyTotal + ")");
+        assertEquals(0, fixedOverlap, "修正後は 0 件 (前世代: " + legacyOverlap + " 件)");
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // 個別の境界 (= 上の掃き出しでは見えにくい代表点)
+    // 個別の境界
     // ════════════════════════════════════════════════════════════════════
 
     @Test
-    void reportedSymptomCaseIsFixed() {
-        // 1920x1080 / GUI スケール 3 → 論理 640x360。 54 スロット (154px)。
-        int guiH = 360;
-        int panelH = panelHeight(9, 54);
-        assertEquals(154, panelH, "54 スロットのパネル高");
-        // 修正前: 180+12 = 192、 下端 346 > ホットバー上端 338 → 侵入していた。
-        assertTrue(legacyPopupY(guiH, panelH, guiH / 2) + panelH
-                > guiH - ContainerPeekFit.HOTBAR_TOP_OFFSET, "修正前は侵入していたはず");
-        // 修正後: 上へ反転して 180-12-154 = 14。
-        assertEquals(ContainerPeekFit.Placement.ABOVE,
-                ContainerPeekFit.placeY(guiH, panelH, guiH / 2));
-        assertEquals(14, ContainerPeekFit.popupY(guiH, panelH, guiH / 2));
+    void largeChestOnATallScreenStaysBelowTheCrosshair() {
+        // 1920x1080 / GUI スケール 2 → 論理 960x540。
+        Layout l = ContainerPeekFit.layout(960, 540, 480, 270,
+                gridWidth(54), gridHeight(54), compactWidth(54), compactHeight(54));
+        assertEquals(Placement.BELOW, l.placement());
+        assertEquals(false, l.compact());
+        assertEquals(270 + ContainerPeekFit.CROSSHAIR_GAP, l.y());
     }
 
     @Test
-    void tallScreensStillPlaceThePopupBelowTheCrosshair() {
-        // 1920x1080 / GUI スケール 2 → 論理 960x540。 下に余裕があるので反転しない。
-        assertEquals(ContainerPeekFit.Placement.BELOW,
-                ContainerPeekFit.placeY(540, panelHeight(9, 54), 270));
-        assertEquals(270 + ContainerPeekFit.CROSSHAIR_GAP,
-                ContainerPeekFit.popupY(540, panelHeight(9, 54), 270));
+    void largeChestFlipsAboveOnAMediumScreen() {
+        // 1920x1080 / GUI スケール 3 → 論理 640x360。
+        Layout l = ContainerPeekFit.layout(640, 360, 320, 180,
+                gridWidth(54), gridHeight(54), compactWidth(54), compactHeight(54));
+        assertEquals(Placement.ABOVE, l.placement());
+        assertEquals(false, l.compact());
+        assertEquals(180 - ContainerPeekFit.CROSSHAIR_GAP - 154, l.y());
     }
 
     @Test
-    void smallPanelsAreUnaffectedByTheFix() {
-        // 27 スロット / 未登録は従来どおりクロスヘアの下。
-        for (int panelH : new int[] { noticePanelHeight(), panelHeight(9, 27) }) {
-            assertEquals(ContainerPeekFit.Placement.BELOW,
-                    ContainerPeekFit.placeY(360, panelH, 180), "panelH=" + panelH);
-            assertEquals(192, ContainerPeekFit.popupY(360, panelH, 180), "panelH=" + panelH);
+    void largeChestGoesToTheSideOnAShortWideScreen() {
+        // 1920x1080 / GUI スケール 4 → 論理 480x270。 上下に入らないので右へ逃がす。
+        // (前世代はここでクロスヘアに重ねていた。)
+        Layout l = ContainerPeekFit.layout(480, 270, 240, 135,
+                gridWidth(54), gridHeight(54), compactWidth(54), compactHeight(54));
+        assertEquals(Placement.SIDE_RIGHT, l.placement());
+        assertEquals(false, l.compact(), "横に逃がせるならグリッドのままであること");
+        assertEquals(240 + ContainerPeekFit.CROSSHAIR_GAP, l.x());
+        assertTrue(l.x() + l.width() <= 480 - ContainerPeekFit.SCREEN_MARGIN);
+    }
+
+    @Test
+    void largeChestFallsBackToCompactOnASmallScreen() {
+        // 640x480 / GUI スケール 2 以上 → 論理 320x240。 上下にも横にも入らない。
+        Layout l = ContainerPeekFit.layout(320, 240, 160, 120,
+                gridWidth(54), gridHeight(54), compactWidth(54), compactHeight(54));
+        assertEquals(true, l.compact(), "グリッドを諦めてコンパクトへ落ちること");
+        assertTrue(l.placement() != Placement.CLAMPED, "CLAMPED まで落ちてはいけない");
+        assertEquals(compactHeight(54), l.height());
+        assertTrue(l.y() + l.height() <= 240 - ContainerPeekFit.BOTTOM_HUD_HEIGHT);
+    }
+
+    @Test
+    void smallPanelsAreUnaffected() {
+        for (int slots : new int[] { -1, 5, 9, 27 }) {
+            Layout l = ContainerPeekFit.layout(640, 360, 320, 180,
+                    gridWidth(slots), gridHeight(slots), compactWidth(slots), compactHeight(slots));
+            assertEquals(false, l.compact(), "slots=" + slots);
+            assertTrue(l.placement() == Placement.BELOW || l.placement() == Placement.ABOVE,
+                    "slots=" + slots + " -> " + l.placement());
         }
+    }
+
+    @Test
+    void compactIsShorterThanTheGridForLargeChests() {
+        // フォールバックの意味があること (= コンパクトのほうが確実に低い)。
+        assertTrue(compactHeight(54) < gridHeight(54),
+                "compact=" + compactHeight(54) + " grid=" + gridHeight(54));
+        // 論理 320x240 の安全帯 (= 240-59-4 = 177) に収まること。
+        assertTrue(compactHeight(54) <= 240 - ContainerPeekFit.BOTTOM_HUD_HEIGHT
+                - ContainerPeekFit.SCREEN_MARGIN, "compact=" + compactHeight(54));
     }
 
     @Test
     void bottomHudHeightMatchesTheVanillaMeasurements() {
-        // 出典が動いていないことの自己点検 (= 定数を書き換えたら気付ける)。
         assertEquals(22, ContainerPeekFit.HOTBAR_TOP_OFFSET);
         assertEquals(29, ContainerPeekFit.CONTEXTUAL_BAR_TOP_OFFSET);
         assertEquals(39, ContainerPeekFit.STATUS_BAR_TOP_OFFSET);
         assertEquals(49, ContainerPeekFit.ARMOR_BAR_TOP_OFFSET);
         assertEquals(59, ContainerPeekFit.HELD_ITEM_NAME_TOP_OFFSET);
-        // 予約帯は最も高い要素まで含む。
         assertEquals(59, ContainerPeekFit.BOTTOM_HUD_HEIGHT);
-        assertTrue(ContainerPeekFit.BOTTOM_HUD_HEIGHT >= ContainerPeekFit.ARMOR_BAR_TOP_OFFSET);
-        // クロスヘア回避の下駄は、 クロスヘア半径より大きいこと。
+        // クロスヘア非重複が構造的に保証される条件。
         assertTrue(ContainerPeekFit.CROSSHAIR_GAP > ContainerPeekFit.CROSSHAIR_HALF);
     }
 

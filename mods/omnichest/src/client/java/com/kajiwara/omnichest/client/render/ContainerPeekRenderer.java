@@ -10,6 +10,7 @@ import com.kajiwara.omnichest.config.ConfigManager;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import com.kajiwara.omnichest.peek.ContainerPeekFit;
 import com.kajiwara.omnichest.peek.PeekFreshness;
+import com.kajiwara.omnichest.peek.PeekSummary;
 import com.kajiwara.omnichest.search.ChestNetworkManager;
 import com.kajiwara.omnichest.search.ContainerSnapshot;
 import com.kajiwara.omnichest.search.ContainerType;
@@ -31,6 +32,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 「コンテナ ピーク」 — 設置済みコンテナに照準を合わせ、 ピークキーを<b>押している間だけ</b>
@@ -348,34 +350,208 @@ public final class ContainerPeekRenderer {
 
     private void draw(GuiGraphicsExtractor g, Minecraft mc, ContainerType type, Resolved resolved) {
         if (resolved.status() == ContainerPeekFit.Status.AVAILABLE && resolved.snapshot() != null) {
-            drawGrid(g, mc, type, resolved.snapshot());
+            drawContents(g, mc, type, resolved.snapshot());
             return;
         }
         drawNotice(g, mc, type, resolved.status());
     }
 
     /**
-     * 記録済み: 既存の ALT プレビュー Popup をそのまま呼ぶ (= 見た目・挙動を一切変えない)。
+     * 記録済み。 グリッドが置ければ既存の ALT プレビュー Popup をそのまま呼び、
+     * 置けなければ要約リスト (= コンパクトモード) へ落とす。
      *
      * <p>
-     * 鮮度は <b>タイトル行</b> に淡色で併記する。 サマリ行 ({@code "M / N · ×T"}) は
+     * <b>どこに置くか</b>は {@link ContainerPeekFit#layout} が決める。 下 → 上 → 右 → 左 の順に試し、
+     * どれも駄目ならコンパクトで同じ順を試す。 いずれの配置でも<b>クロスヘアの矩形と 1px も
+     * 交差しない</b> (= 照準がグリッド内のアイテムに重なって読めなくなる不具合への対処)。
+     *
+     * <p>
+     * 鮮度は <b>タイトル行</b> に淡色で併記する。 グリッドのサマリ行 ({@code "M / N · ×T"}) は
      * {@link AltPreviewPopupRenderer#renderSlots} が内部で描くもので、 そこへ鮮度を差し込むには
      * 既存レンダラの改造が要る。 既存プレビューの見た目を 1 ピクセルも動かさないほうを優先し、
      * こちら側で足せるタイトルに寄せている。
      */
-    private void drawGrid(GuiGraphicsExtractor g, Minecraft mc, ContainerType type,
+    private void drawContents(GuiGraphicsExtractor g, Minecraft mc, ContainerType type,
             ContainerSnapshot snapshot) {
         List<ItemStack> slots = snapshot.items();
         int slotCount = Math.max(slots.size(), defaultSlotCount(type));
         int columns = ContainerPeekFit.gridColumns(slotCount);
-        int panelW = AltPreviewPopupRenderer.panelWidth(columns);
-        int panelH = AltPreviewPopupRenderer.panelHeight(columns, slotCount);
+        int gridW = AltPreviewPopupRenderer.panelWidth(columns);
+        int gridH = AltPreviewPopupRenderer.panelHeight(columns, slotCount);
 
-        int x = ContainerPeekFit.popupX(g.guiWidth(), panelW, g.guiWidth() / 2);
-        int y = ContainerPeekFit.popupY(g.guiHeight(), panelH, g.guiHeight() / 2);
+        Component title = titleWithAge(type, snapshot);
+        Compact compact = buildCompact(mc.font, title, slots, slotCount);
 
-        AltPreviewPopupRenderer.renderSlots(g, mc.font, titleWithAge(type, snapshot),
-                slots, slotCount, x, y, columns, false, fadeToken);
+        ContainerPeekFit.Layout layout = ContainerPeekFit.layout(
+                g.guiWidth(), g.guiHeight(), g.guiWidth() / 2, g.guiHeight() / 2,
+                gridW, gridH, compact.width(), compact.height());
+
+        if (!layout.compact()) {
+            AltPreviewPopupRenderer.renderSlots(g, mc.font, title,
+                    slots, slotCount, layout.x(), layout.y(), columns, false, fadeToken);
+            return;
+        }
+        drawCompact(g, mc.font, title, compact, layout.x(), layout.y());
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // コンパクトモード (= グリッドがどこにも置けないときのフォールバック)
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * コンパクト表示の幅の上限 (論理 px)。 9 列グリッドと同じ値にしてあるので、
+     * 横へ逃がせるかどうかの判定がグリッドと同条件になる (= 予測しやすい)。
+     */
+    private static final int COMPACT_MAX_WIDTH = 174;
+
+    /** アイコンと行の高さは {@code font.lineHeight}。 既存のピン行 ({@code ChestHighlighter}) と同じ流儀。 */
+    private static int compactRowHeight(Font font) {
+        return font.lineHeight;
+    }
+
+    /** 描画前に確定させたコンパクト表示の内容と寸法。 */
+    private record Compact(List<CompactRow> rows, Component summary, int width, int height) {
+    }
+
+    /** 1 行ぶん。 {@code icon} が null なら 「他 M 種」 の行。 */
+    private record CompactRow(ItemStack icon, Component text) {
+    }
+
+    /**
+     * コンパクト表示を組み立てる (= 描画せず、 内容と寸法だけ決める)。
+     *
+     * <p>
+     * 同種スタックの判定は Minecraft 側でしかできない ({@code isSameItemSameComponents}) ので
+     * ここで採番し、 <b>合算 / 並べ替え / 上位 N / 「他 M 種」 の算出は {@link PeekSummary}</b>
+     * (= 単体テスト済みの純関数) に委ねる。
+     */
+    private static Compact buildCompact(Font font, Component title,
+            List<ItemStack> slots, int slotCount) {
+        // (1) 同種スタックへ id を採番する。 スナップショットは高々 54 スロットなので素朴な比較で足りる。
+        List<ItemStack> representatives = new ArrayList<>();
+        List<PeekSummary.Slot> summarySlots = new ArrayList<>();
+        for (ItemStack stack : slots) {
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            int id = -1;
+            for (int i = 0; i < representatives.size(); i++) {
+                if (ItemStack.isSameItemSameComponents(representatives.get(i), stack)) {
+                    id = i;
+                    break;
+                }
+            }
+            if (id < 0) {
+                id = representatives.size();
+                representatives.add(stack);
+            }
+            summarySlots.add(new PeekSummary.Slot(id, stack.getCount()));
+        }
+        PeekSummary.Summary summary = PeekSummary.summarize(summarySlots);
+
+        // (2) 行を作る。 名前は上限幅まで切り詰めてパネル幅の暴発を防ぐ。
+        int rowH = compactRowHeight(font);
+        int contentMax = COMPACT_MAX_WIDTH - PopupThemeResolver.PANEL_PADDING * 2;
+        List<CompactRow> rows = new ArrayList<>();
+        int contentW = Math.min(font.width(title), contentMax);
+        for (PeekSummary.Line line : summary.top()) {
+            ItemStack icon = representatives.get(line.id());
+            String count = " ×" + line.count();
+            int countW = font.width(count);
+            int nameMax = Math.max(0, contentMax - rowH - COMPACT_ICON_GAP - countW);
+            String name = clip(font, icon.getHoverName().getString(), nameMax);
+            Component text = Component.empty()
+                    .append(Component.literal(name).withColor(PopupThemeResolver.TEXT_PRIMARY & 0xFFFFFF))
+                    .append(Component.literal(count)
+                            .withColor(PopupThemeResolver.TEXT_SECONDARY & 0xFFFFFF));
+            rows.add(new CompactRow(icon, text));
+            contentW = Math.max(contentW, rowH + COMPACT_ICON_GAP + font.width(text));
+        }
+        if (summary.otherKinds() > 0) {
+            // 上限を超えた種類数。 0 のときは行そのものを出さない (= 「他 0 種」 を描かない)。
+            Component more = OmniChestLocale.get("omnichest.peek.more_kinds",
+                    "+%1$d more kinds", summary.otherKinds());
+            rows.add(new CompactRow(null, more.copy()
+                    .withColor(ThemeColorResolver.TEXT_DIM & 0xFFFFFF)));
+            contentW = Math.max(contentW, font.width(more));
+        }
+
+        // (3) サマリはグリッドと同じ書式 (= "M / N · ×T") にして見た目を揃える。
+        Component summaryText = Component.literal(String.format(Locale.ROOT, "%d / %d · ×%d",
+                summary.usedSlots(), slotCount, summary.totalCount()));
+        contentW = Math.max(contentW, font.width(summaryText));
+        contentW = Math.min(contentW, contentMax);
+
+        int pad = PopupThemeResolver.PANEL_PADDING;
+        int gap = PopupThemeResolver.SEPARATOR_GAP;
+        int width = pad * 2 + contentW;
+        int height = pad * 2 + PopupThemeResolver.TITLE_HEIGHT
+                + (gap + 1 + gap) + rows.size() * rowH + (gap + 1 + gap)
+                + PopupThemeResolver.SUMMARY_HEIGHT;
+        return new Compact(rows, summaryText, width, height);
+    }
+
+    /** アイコンと文字の間隔 (px)。 既存ピン行と同値。 */
+    private static final int COMPACT_ICON_GAP = 2;
+
+    /**
+     * コンパクト表示を描く。 パネル / 区切り / 配色は既存の {@link UnifiedPanelRenderer} と
+     * {@link PopupThemeResolver} を<b>呼ぶだけ</b>で、 新しいデザインや配色は作らない。
+     */
+    private void drawCompact(GuiGraphicsExtractor g, Font font, Component title,
+            Compact compact, int x, int y) {
+        int pad = PopupThemeResolver.PANEL_PADDING;
+        int gap = PopupThemeResolver.SEPARATOR_GAP;
+        int rowH = compactRowHeight(font);
+        int contentW = compact.width() - pad * 2;
+
+        UnifiedPanelRenderer.drawPanel(g, x, y, compact.width(), compact.height(), 1.0f);
+
+        int left = x + pad;
+        g.text(font, title, left, y + pad - 1, PopupThemeResolver.TEXT_PRIMARY, false);
+
+        int sepY = y + pad + PopupThemeResolver.TITLE_HEIGHT + gap;
+        UnifiedPanelRenderer.drawSeparator(g, left, sepY, contentW, 1.0f);
+
+        int rowY = sepY + 1 + gap;
+        for (CompactRow row : compact.rows()) {
+            if (row.icon() != null) {
+                drawSmallIcon(g, row.icon(), left, rowY, rowH);
+                g.text(font, row.text(), left + rowH + COMPACT_ICON_GAP, rowY,
+                        PopupThemeResolver.TEXT_PRIMARY, false);
+            } else {
+                g.text(font, row.text(), left, rowY, ThemeColorResolver.TEXT_DIM, false);
+            }
+            rowY += rowH;
+        }
+
+        int sep2Y = rowY + gap;
+        UnifiedPanelRenderer.drawSeparator(g, left, sep2Y, contentW, 1.0f);
+        g.text(font, compact.summary(), left, sep2Y + 1 + gap,
+                PopupThemeResolver.TEXT_SECONDARY, false);
+    }
+
+    /** 16px のアイテムを {@code size} px へ縮めて描く (= 既存ピン行と同じ pose スケール方式)。 */
+    private static void drawSmallIcon(GuiGraphicsExtractor g, ItemStack stack, int x, int y, int size) {
+        float scale = size / 16.0f;
+        var pose = g.pose();
+        pose.pushMatrix();
+        try {
+            pose.translate((float) x, (float) y);
+            pose.scale(scale, scale);
+            g.item(stack, 0, 0);
+        } finally {
+            pose.popMatrix();
+        }
+    }
+
+    /** 文字列を最大幅で切り詰める (超過時のみ末尾を省略記号化)。 */
+    private static String clip(Font font, String s, int maxWidth) {
+        if (font.width(s) <= maxWidth) {
+            return s;
+        }
+        int ellipsisW = font.width("…");
+        return font.plainSubstrByWidth(s, Math.max(0, maxWidth - ellipsisW)) + "…";
     }
 
     /**
@@ -411,8 +587,13 @@ public final class ContainerPeekRenderer {
         int panelW = pad * 2 + contentW;
         int panelH = pad * 2 + PopupThemeResolver.TITLE_HEIGHT + gap + 1 + gap + lh + gap + lh;
 
-        int x = ContainerPeekFit.popupX(g.guiWidth(), panelW, g.guiWidth() / 2);
-        int y = ContainerPeekFit.popupY(g.guiHeight(), panelH, g.guiHeight() / 2);
+        // お知らせパネルは小さいので、 グリッドと同じ配置規則にそのまま乗る
+        // (= グリッド寸法とコンパクト寸法に同じ値を渡す)。
+        ContainerPeekFit.Layout layout = ContainerPeekFit.layout(
+                g.guiWidth(), g.guiHeight(), g.guiWidth() / 2, g.guiHeight() / 2,
+                panelW, panelH, panelW, panelH);
+        int x = layout.x();
+        int y = layout.y();
 
         UnifiedPanelRenderer.drawPanel(g, x, y, panelW, panelH, 1.0f);
 

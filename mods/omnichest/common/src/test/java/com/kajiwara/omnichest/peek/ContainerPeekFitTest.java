@@ -127,24 +127,34 @@ class ContainerPeekFitTest {
     }
 
     @Test
-    void popupIsPlacedJustBelowTheCrosshairWhenItFits() {
+    void layoutPlacesThePopupJustBelowTheCrosshairWhenItFits() {
         // 高さ 540、 パネル高 140、 クロスヘア中央 270。
         // 下端 270+12+140 = 422 <= 540 - BOTTOM_HUD_HEIGHT(59) = 481 なので下に置く。
-        assertEquals(282, ContainerPeekFit.popupY(540, 140, 270));
+        ContainerPeekFit.Layout l = ContainerPeekFit.layout(960, 540, 480, 270, 174, 140, 174, 100);
+        assertEquals(ContainerPeekFit.Placement.BELOW, l.placement());
+        assertEquals(282, l.y());
+        assertEquals(480 - 87, l.x(), "横はクロスヘア中心に中央寄せ");
     }
 
     @Test
-    void popupFlipsAboveTheCrosshairWhenItWouldOverlapTheBottomHud() {
+    void layoutFlipsAboveTheCrosshairWhenItWouldOverlapTheBottomHud() {
         // 下に置くと 180+12+140 = 332 > 360 - 59 = 301 (= HUD 帯の上端) なので上へ回す。
-        // → 180 - 12 - 140 = 28。 「画面内には入るが HUD に被る」 のを弾くのが今回の修正点。
-        assertEquals(28, ContainerPeekFit.popupY(360, 140, 180));
-        assertEquals(28, ContainerPeekFit.popupY(320, 140, 180));
+        // 「画面内には入るが HUD に被る」 のを弾く。
+        ContainerPeekFit.Layout l = ContainerPeekFit.layout(640, 360, 320, 180, 174, 140, 174, 100);
+        assertEquals(ContainerPeekFit.Placement.ABOVE, l.placement());
+        assertEquals(28, l.y());
     }
 
     @Test
-    void popupNeverLeavesTheScreenAtAnyPlausibleGuiSize() {
+    void oversizedPanelsPreferTheLeftMarginRatherThanNegativeCoordinates() {
+        // パネルが画面より広い病的ケースでも負座標にしない (= 左端へ張り付けて右へ流す)。
+        assertEquals(ContainerPeekFit.SCREEN_MARGIN, ContainerPeekFit.popupX(200, 400, 100));
+    }
+
+    @Test
+    void layoutNeverReturnsNegativeCoordinates() {
         // Window#calculateScale により論理サイズは常に 320x240 以上 (Force Unicode 時のみ最悪 160x120)。
-        // 念のためそれより狭い病的サイズまで含めて総当たりする。
+        // 念のためそれより狭い病的サイズまで含めて総当たりし、 左上へ飛び出さないことだけは保証する。
         int[] widths = { 160, 200, 320, 427, 640, 854, 1280, 1920, 3840 };
         int[] heights = { 120, 150, 240, 320, 360, 480, 720, 1080, 2160 };
         int[] panelW = { 40, 120, 174, 210, 400, 1000 };
@@ -153,30 +163,24 @@ class ContainerPeekFitTest {
             for (int h : heights) {
                 for (int pw : panelW) {
                     for (int ph : panelH) {
-                        int x = ContainerPeekFit.popupX(w, pw, w / 2);
-                        int y = ContainerPeekFit.popupY(h, ph, h / 2);
-                        String at = "gui=" + w + "x" + h + " panel=" + pw + "x" + ph;
-                        assertTrue(x >= ContainerPeekFit.SCREEN_MARGIN, "左端が画面外: " + at + " x=" + x);
-                        assertTrue(y >= ContainerPeekFit.SCREEN_MARGIN, "上端が画面外: " + at + " y=" + y);
-                        // パネルが画面に収まるサイズなら、 右端 / 下端も必ず内側に入る。
-                        if (pw + 2 * ContainerPeekFit.SCREEN_MARGIN <= w) {
-                            assertTrue(x + pw <= w - ContainerPeekFit.SCREEN_MARGIN,
-                                    "右端が画面外: " + at + " x=" + x);
-                        }
-                        if (ph + 2 * ContainerPeekFit.SCREEN_MARGIN <= h) {
-                            assertTrue(y + ph <= h - ContainerPeekFit.SCREEN_MARGIN,
-                                    "下端が画面外: " + at + " y=" + y);
+                        ContainerPeekFit.Layout l =
+                                ContainerPeekFit.layout(w, h, w / 2, h / 2, pw, ph, pw, ph);
+                        String at = "gui=" + w + "x" + h + " panel=" + pw + "x" + ph
+                                + " -> " + l.placement();
+                        assertTrue(l.x() >= ContainerPeekFit.SCREEN_MARGIN, "左端が画面外: " + at);
+                        assertTrue(l.y() >= ContainerPeekFit.SCREEN_MARGIN, "上端が画面外: " + at);
+                        // CLAMPED 以外は必ずクロスヘアと非重複であること。
+                        if (l.placement() != ContainerPeekFit.Placement.CLAMPED) {
+                            int cx = w / 2;
+                            int cy = h / 2;
+                            int half = ContainerPeekFit.CROSSHAIR_HALF;
+                            boolean ox = l.x() < cx + half && l.x() + l.width() > cx - half;
+                            boolean oy = l.y() < cy + half && l.y() + l.height() > cy - half;
+                            assertTrue(!(ox && oy), "クロスヘアと重なった: " + at);
                         }
                     }
                 }
             }
         }
-    }
-
-    @Test
-    void oversizedPanelsPreferTheTopLeftMarginRatherThanNegativeCoordinates() {
-        // パネルが画面より大きい病的ケースでも負座標にしない (= 左上へ張り付けて右下へ流す)。
-        assertEquals(ContainerPeekFit.SCREEN_MARGIN, ContainerPeekFit.popupX(200, 400, 100));
-        assertEquals(ContainerPeekFit.SCREEN_MARGIN, ContainerPeekFit.popupY(150, 400, 75));
     }
 }

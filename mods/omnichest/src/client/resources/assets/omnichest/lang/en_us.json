@@ -499,6 +499,7 @@
   "omnichest.peek.age.hours": "%1$d h ago",
   "omnichest.peek.age.days": "%1$d d ago",
   "omnichest.peek.age.long_ago": "over %1$d d ago",
+  "omnichest.peek.more_kinds": "+%1$d more kinds",
   "omnichest.peek.not_recorded": "— not recorded —",
   "omnichest.peek.not_recorded.hint": "Open it once and the contents are remembered.",
   "omnichest.peek.ender_disabled": "— ender chest search is off —",
