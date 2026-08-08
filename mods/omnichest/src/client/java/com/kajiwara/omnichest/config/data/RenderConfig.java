@@ -32,6 +32,23 @@ public final class RenderConfig {
     public boolean dimensionMenuAltC = true;
 
     /**
+     * 「コンテナ ピーク」 (= 設置済みコンテナに照準を合わせ、 修飾キーを押している間だけ
+     * 中身をポップアップ表示する読み取り専用ビュー) を有効化するか。 既定 <b>false</b>。
+     * <p>
+     * <b>既定 OFF の理由</b>: 既存ユーザーの操作感を勝手に変えないため。 OFF の間は
+     * {@code ContainerPeekRenderer} が最初の 1 行で return し、 視線判定 ({@code mc.hitResult})
+     * にもキャッシュ参照にも一切入らない (= 性能影響ゼロを構造で保証)。
+     * <p>
+     * <b>これは読み取り専用の表示機能</b>: バニラはコンテナの中身をクライアントへ同期しないため、
+     * 表示できるのは 「既に開いて記録済みのスナップショット」 だけ。 サーバへの問い合わせも
+     * キャッシュへの書き込みも一切行わない。 未記録のコンテナには 「未登録」 と正直に表示する。
+     * <p>
+     * キーは再割当可能な {@code key.omnichest.container_peek} (既定 <b>Z</b>)。 未割当にすれば
+     * ON のままでも発火しない。
+     */
+    public boolean enableContainerPeek = false;
+
+    /**
      * ハイライト枠の色 (0xRRGGBB)。
      * Cloth Config の Color Picker (= startColorField) で編集する想定。
      * デフォルト 0xFFAA00 (= オレンジ)。

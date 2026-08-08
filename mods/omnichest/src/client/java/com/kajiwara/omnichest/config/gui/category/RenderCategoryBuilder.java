@@ -31,6 +31,14 @@ public final class RenderCategoryBuilder {
                                 + "Turn off if Alt+C conflicts; you can still open it via the "
                                 + "rebindable key (Controls > OmniChest)."));
 
+        b.toggle(ConfigLabels.entry("render.enableContainerPeek", "Container Peek"),
+                cfg.enableContainerPeek, v -> cfg.enableContainerPeek = v,
+                ConfigLabels.tooltip("render.enableContainerPeek",
+                        "Aim at a placed chest / barrel / shulker box and hold the peek key "
+                                + "(Controls > OmniChest, default Z) to preview its contents "
+                                + "without opening it. Read-only: it shows the last recorded snapshot "
+                                + "with its age, and says \"not recorded\" for containers you never opened."));
+
         b.color(ConfigLabels.entry("render.highlightColorRgb", "Highlight Color"),
                 cfg.highlightColorRgb, v -> cfg.highlightColorRgb = v,
                 ConfigLabels.tooltip("render.highlightColorRgb",

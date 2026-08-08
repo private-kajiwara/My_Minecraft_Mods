@@ -78,6 +78,47 @@ public final class ClientKeyBindings {
     public static final String TOGGLE_DIMENSION_MENU_KEY = "key.omnichest.toggle_dimension_menu";
 
     /**
+     * Container Peek: 設置済みコンテナに照準を合わせている間、 中身のポップアップを出す
+     * <b>押しっぱなし</b>キー。 デフォルトは <b>Z</b>。
+     *
+     * <p>
+     * <b>押下判定は {@link KeyMapping#isDown()} のみ</b> ({@link #containerPeekMapping()} 経由で
+     * 描画側が毎フレーム読む)。 ここで {@code consumeClick} しないのは、 これが
+     * 「押した瞬間に 1 回」 ではなく 「押している間ずっと」 のキーだから。
+     *
+     * <p>
+     * <b>Screen 中・チャット入力中に暴発しないのはバニラの構造による</b> (= 自前ガード不要):
+     * {@code Minecraft#setScreen} は Screen を開く瞬間に {@code MouseHandler#releaseMouse} と
+     * <b>{@code KeyMapping#releaseAll}</b> を呼び (バイトコード実測)、 さらに
+     * {@code KeyboardHandler#keyPress} は {@code screen == null} のときしか
+     * {@code KeyMapping.set} を呼ばない。 よって <b>いずれかの Screen が開いている間
+     * {@code isDown()} は必ず false</b> になる。
+     *
+     * <p>
+     * <b>なぜ Alt ではなく Z か</b>:
+     * <ul>
+     * <li>Alt は OS の修飾キー (Alt+Tab / Alt+F4 / ウィンドウメニュー / macOS の Option) であり、
+     *     <b>押しっぱなしが前提</b>の本機能では事故を起こしやすい。</li>
+     * <li>本 MOD には Alt+C (ディメンションメニュー) / Alt+D (全ピン解除) という
+     *     <b>GLFW 生ポーリング</b>のコンボが既にあり、 Alt を押している最中に C / D を触ると
+     *     それらが発火してしまう。</li>
+     * <li>Z はバニラの既定キーに存在せず (26.1.2 の {@code Options} バイトコードで全既定コードを
+     *     列挙して確認)、 本 MOD の既存キー (G / J / H / 中クリック) とも、 同居する
+     *     VisualizeGate (V) / HyperSlice (PageUp・PageDown) とも衝突しない。</li>
+     * <li>移動キー (WASD) から離れているので、 押しっぱなしでも移動に混ざらない
+     *     (= 旧 Alt+A を Alt+C へ変えたときと同じ理由)。</li>
+     * </ul>
+     *
+     * <p>
+     * <b>Alt+C / Alt+D 側は一切変更していない</b>。 ユーザーが本キーを<b>自分で Alt に
+     * 割り当てた</b>場合は従来どおり衝突しうるが、 既定では起こらない。
+     *
+     * <p>
+     * 未割当にすると {@code isDown()} が常に false になり、 設定が ON のままでも発火しない。
+     */
+    public static final String CONTAINER_PEEK_KEY = "key.omnichest.container_peek";
+
+    /**
      * 独自カテゴリを 1.21.11+ の新 API ({@link KeyMapping.Category#register}) で登録する。
      * String 版は package-private に変わったため、 Identifier 版を経由する。
      * 同名カテゴリが既に存在する場合は同じインスタンスが返る。
@@ -92,6 +133,7 @@ public final class ClientKeyBindings {
     private static KeyMapping clearAllSlotLocks;
     private static KeyMapping toggleSelectedItemHud;
     private static KeyMapping toggleDimensionMenu;
+    private static KeyMapping containerPeek;
 
     /** Alt+C グローバル ポールのエッジ検出フラグ (Alt+D と同方式)。 */
     private static boolean lastAltCDown = false;
@@ -168,7 +210,27 @@ public final class ClientKeyBindings {
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
 
+        // コンテナ ピーク (= 押している間だけ中身ポップアップ)。 既定は Z
+        // (= バニラ既定にもモッド既存キーにも無く、 移動キーからも離れている)。
+        // tick では一切 consume しない: 判定は描画側が isDown() を毎フレーム読む。
+        containerPeek = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                CONTAINER_PEEK_KEY,
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_Z,
+                CATEGORY));
+
         ClientTickEvents.END_CLIENT_TICK.register(ClientKeyBindings::onTick);
+    }
+
+    /**
+     * コンテナ ピークの {@link KeyMapping} を返す (= 描画側が毎フレーム {@code isDown()} を読む)。
+     *
+     * <p>
+     * 初期化前 (= {@link #register()} 前) は null を返しうるので、 呼び出し側で null を
+     * 「押されていない」 として扱うこと。
+     */
+    public static KeyMapping containerPeekMapping() {
+        return containerPeek;
     }
 
     /**
