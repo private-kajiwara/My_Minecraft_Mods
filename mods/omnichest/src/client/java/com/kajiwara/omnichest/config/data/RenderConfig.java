@@ -43,7 +43,7 @@ public final class RenderConfig {
      * 表示できるのは 「既に開いて記録済みのスナップショット」 だけ。 サーバへの問い合わせも
      * キャッシュへの書き込みも一切行わない。 未記録のコンテナには 「未登録」 と正直に表示する。
      * <p>
-     * キーは再割当可能な {@code key.omnichest.container_peek} (既定 左 Alt)。 未割当にすれば
+     * キーは再割当可能な {@code key.omnichest.container_peek} (既定 <b>Z</b>)。 未割当にすれば
      * ON のままでも発火しない。
      */
     public boolean enableContainerPeek = false;

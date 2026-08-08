@@ -110,7 +110,7 @@
   "config.omnichest.render.dimensionMenuAltC": "ディメンションメニュー (Alt+C)",
   "config.omnichest.render.dimensionMenuAltC.tooltip": "Alt+C で「ディメンション別アイテム一覧」メニューを開閉します。 Alt+C が競合する場合は OFF にし、 再割当可能なキー (操作設定 > OmniChest) から開けます。",
   "config.omnichest.render.enableContainerPeek": "コンテナ ピーク",
-  "config.omnichest.render.enableContainerPeek.tooltip": "設置済みのチェスト / 樽 / シュルカーボックスに照準を合わせ、 ピークキー (操作設定 > OmniChest・既定 左 Alt) を押している間だけ、 開かずに中身をプレビューします。 読み取り専用で、 表示するのは「最後に開いたときの記録」 とその古さです。 一度も開いていないコンテナには「未登録」と正直に表示します。",
+  "config.omnichest.render.enableContainerPeek.tooltip": "設置済みのチェスト / 樽 / シュルカーボックスに照準を合わせ、 ピークキー (操作設定 > OmniChest・既定 Z) を押している間だけ、 開かずに中身をプレビューします。 読み取り専用で、 表示するのは「最後に開いたときの記録」 とその古さです。 一度も開いていないコンテナには「未登録」と正直に表示します。",
   "config.omnichest.render.highlightColorRgb": "ハイライト色",
   "config.omnichest.render.highlightColorRgb.tooltip": "ヒットしたチェストを縁取る色。",
   "config.omnichest.render.showCategoryLabels": "カテゴリ ラベルを表示",

@@ -35,7 +35,7 @@ public final class RenderCategoryBuilder {
                 cfg.enableContainerPeek, v -> cfg.enableContainerPeek = v,
                 ConfigLabels.tooltip("render.enableContainerPeek",
                         "Aim at a placed chest / barrel / shulker box and hold the peek key "
-                                + "(Controls > OmniChest, default Left Alt) to preview its contents "
+                                + "(Controls > OmniChest, default Z) to preview its contents "
                                 + "without opening it. Read-only: it shows the last recorded snapshot "
                                 + "with its age, and says \"not recorded\" for containers you never opened."));
 

@@ -79,7 +79,7 @@ public final class ClientKeyBindings {
 
     /**
      * Container Peek: 設置済みコンテナに照準を合わせている間、 中身のポップアップを出す
-     * <b>押しっぱなし</b>キー。 デフォルトは <b>左 Alt</b>。
+     * <b>押しっぱなし</b>キー。 デフォルトは <b>Z</b>。
      *
      * <p>
      * <b>押下判定は {@link KeyMapping#isDown()} のみ</b> ({@link #containerPeekMapping()} 経由で
@@ -95,11 +95,23 @@ public final class ClientKeyBindings {
      * {@code isDown()} は必ず false</b> になる。
      *
      * <p>
-     * <b>既知の衝突</b>: 既定の左 Alt を押している最中に <b>C</b> / <b>D</b> を押すと、
-     * 既存の Alt+C (ディメンションメニュー) / Alt+D (全ピン解除) が発火する。 これらは
-     * KeyMapping ではなく GLFW 生ポーリングなので抑止していない (= 既存挙動を変えない方針)。
-     * 気になる場合は本キーを別のキーへ再割当するか、 Alt+C 側を設定
-     * {@code render.dimensionMenuAltC} で OFF にできる。
+     * <b>なぜ Alt ではなく Z か</b>:
+     * <ul>
+     * <li>Alt は OS の修飾キー (Alt+Tab / Alt+F4 / ウィンドウメニュー / macOS の Option) であり、
+     *     <b>押しっぱなしが前提</b>の本機能では事故を起こしやすい。</li>
+     * <li>本 MOD には Alt+C (ディメンションメニュー) / Alt+D (全ピン解除) という
+     *     <b>GLFW 生ポーリング</b>のコンボが既にあり、 Alt を押している最中に C / D を触ると
+     *     それらが発火してしまう。</li>
+     * <li>Z はバニラの既定キーに存在せず (26.1.2 の {@code Options} バイトコードで全既定コードを
+     *     列挙して確認)、 本 MOD の既存キー (G / J / H / 中クリック) とも、 同居する
+     *     VisualizeGate (V) / HyperSlice (PageUp・PageDown) とも衝突しない。</li>
+     * <li>移動キー (WASD) から離れているので、 押しっぱなしでも移動に混ざらない
+     *     (= 旧 Alt+A を Alt+C へ変えたときと同じ理由)。</li>
+     * </ul>
+     *
+     * <p>
+     * <b>Alt+C / Alt+D 側は一切変更していない</b>。 ユーザーが本キーを<b>自分で Alt に
+     * 割り当てた</b>場合は従来どおり衝突しうるが、 既定では起こらない。
      *
      * <p>
      * 未割当にすると {@code isDown()} が常に false になり、 設定が ON のままでも発火しない。
@@ -198,12 +210,13 @@ public final class ClientKeyBindings {
                 InputConstants.UNKNOWN.getValue(),
                 CATEGORY));
 
-        // コンテナ ピーク (= 押している間だけ中身ポップアップ)。 既定は左 Alt。
+        // コンテナ ピーク (= 押している間だけ中身ポップアップ)。 既定は Z
+        // (= バニラ既定にもモッド既存キーにも無く、 移動キーからも離れている)。
         // tick では一切 consume しない: 判定は描画側が isDown() を毎フレーム読む。
         containerPeek = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 CONTAINER_PEEK_KEY,
                 InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_LEFT_ALT,
+                GLFW.GLFW_KEY_Z,
                 CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientKeyBindings::onTick);
