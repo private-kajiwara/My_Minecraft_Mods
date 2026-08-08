@@ -149,8 +149,11 @@ public final class ExistingCategoriesScreen extends Screen {
                 int count = StorageAssignmentManager.get().byCategory(cat).size();
                 Component countC = OmniChestLocale.get("omnichest.distribution.existing.count", "×%1$d", count);
                 int countColor = count > 0 ? ThemeColorResolver.TEXT_SECONDARY : ThemeColorResolver.TEXT_DIM;
+                // 影を付ける。 件数はチップの<b>外側</b> = 素の背景の上に描かれるため、 この画面で
+                // 唯一 影が無い要素だった (タイトル / 副題 / ヒント / チップラベルはすべて影あり)。
+                // 色と階層 (0 件は控えめ) は変えない。
                 g.text(this.font, countC, x + l.chipW() + ExistingCategoriesFit.COUNT_GAP,
-                        y + (ExistingCategoriesFit.CHIP_H - this.font.lineHeight) / 2 + 1, countColor, false);
+                        y + (ExistingCategoriesFit.CHIP_H - this.font.lineHeight) / 2 + 1, countColor, true);
             }
         } finally {
             g.disableScissor();
