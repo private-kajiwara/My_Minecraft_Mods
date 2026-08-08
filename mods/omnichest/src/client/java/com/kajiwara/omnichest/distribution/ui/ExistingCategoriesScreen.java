@@ -11,6 +11,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
@@ -61,6 +62,7 @@ public final class ExistingCategoriesScreen extends Screen {
      * 値は保持したまま新しいレイアウトで再クランプされる。
      */
     private double scrollPx;
+    private boolean draggingScroll;
 
     public ExistingCategoriesScreen(@Nullable Screen parent) {
         super(OmniChestLocale.get("omnichest.distribution.existing.title", "Existing Categories"));
@@ -112,6 +114,7 @@ public final class ExistingCategoriesScreen extends Screen {
                     l.emptyTextY(this.font.lineHeight), ThemeColorResolver.TEXT_DIM);
         } else {
             renderGrid(g, l);
+            renderScrollbar(g, l);
         }
 
         // フッターヒント (= 倉庫検索と同じ backdrop 帯で視認性確保)。
@@ -150,8 +153,28 @@ public final class ExistingCategoriesScreen extends Screen {
         }
     }
 
+    /**
+     * スクロールバー (= 倉庫分配画面と同じ 4px バー)。 全項目が収まっているときは描かない。
+     *
+     * <p>
+     * この画面は 「登録済みカテゴリの<b>網羅</b>一覧」 なので、 隠れている項目があることが
+     * 見えないと 「これで全部」 と誤解される。 バーはその可視化のために必須。
+     */
+    private void renderScrollbar(GuiGraphicsExtractor g, ExistingCategoriesFit.Layout l) {
+        if (!l.scrollbarVisible()) {
+            return;
+        }
+        int x = l.scrollbarX();
+        int w = l.scrollbarW();
+        int thumbY = l.thumbY(this.scrollPx);
+        g.fill(x, l.listTop(), x + w, l.listBottom(), ThemeColorResolver.SCROLLBAR_TRACK);
+        g.fill(x, thumbY, x + w, thumbY + l.thumbHeight(),
+                this.draggingScroll ? ThemeColorResolver.SCROLLBAR_THUMB_DRAG
+                        : ThemeColorResolver.SCROLLBAR_THUMB);
+    }
+
     // ════════════════════════════════════════════════════════════════════
-    // 入力 (既存 DimensionMenuScreen と同一の流儀。 慣性なし)
+    // 入力 (既存 DistributionScreen / DimensionMenuScreen と同一の流儀。 慣性なし)
     // ════════════════════════════════════════════════════════════════════
 
     @Override
@@ -165,6 +188,38 @@ public final class ExistingCategoriesScreen extends Screen {
         }
         this.scrollPx = l.clampScroll(this.scrollPx - dy * ExistingCategoriesFit.SCROLL_STEP);
         return true;
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (super.mouseClicked(event, doubleClick)) {
+            return true;    // Back ボタンなどの widget が先
+        }
+        ExistingCategoriesFit.Layout l = this.layout;
+        if (event.button() == 0 && l != null && l.isOverScrollbar(event.x(), event.y())) {
+            this.draggingScroll = true;
+            this.scrollPx = l.clampScroll(l.scrollFromMouseY(event.y()));
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        ExistingCategoriesFit.Layout l = this.layout;
+        if (this.draggingScroll && l != null) {
+            this.scrollPx = l.clampScroll(l.scrollFromMouseY(event.y()));
+            return true;
+        }
+        return super.mouseDragged(event, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (event.button() == 0) {
+            this.draggingScroll = false;
+        }
+        return super.mouseReleased(event);
     }
 
     @Override
