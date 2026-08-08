@@ -3,8 +3,8 @@ package com.kajiwara.omnichest.distribution.ui;
 import com.kajiwara.omnichest.classify.StorageCategory;
 import com.kajiwara.omnichest.client.gui.CategoryBadgeRenderer;
 import com.kajiwara.omnichest.client.gui.search.layout.ThemeColorResolver;
-import com.kajiwara.omnichest.client.gui.search.layout.UILayoutMetrics;
 import com.kajiwara.omnichest.distribution.StorageAssignmentManager;
+import com.kajiwara.omnichest.gui.ExistingCategoriesFit;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -28,25 +28,39 @@ import java.util.List;
  * empty-state プレビューの 「必要なカテゴリ」 表示と視覚言語が揃う (= 反復)。
  *
  * <p>
+ * <b>スクロール対応</b> (1.3.0 の Known Issue の解消): 旧実装はグリッドを画面中央に縦センタリングし、
+ * その下端に Back ボタンを積んでいたため、 必要な論理高さが項目数に比例して増え、 カテゴリが
+ * 18 → 27 に増えた 1.3.0 では多くの解像度 / GUI スケールで見切れ・重なりが起きていた。
+ * 現在は上下のバンド (タイトル / 副題 … Back / フッターヒント) を画面端に固定し、 その間を
+ * スクロールするリスト帯にしてある。 <b>必要な論理サイズは項目数に依存しない</b>。
+ *
+ * <p>
+ * <b>レイアウト算術はこの画面に一切置かない</b>。 座標はすべて {@link ExistingCategoriesFit} が返す
+ * {@link ExistingCategoriesFit.Layout} を読むだけにしてある。 こうしておくと
+ * {@code ExistingCategoriesFitTest} (解像度 20 種 × GUI スケール 9 種 × Force Unicode 2 通り) が
+ * <b>実挙動そのもの</b>を検証したことになる。 ここに独自の算術を書き足すとその保証が壊れる。
+ *
+ * <p>
  * <b>ロジック非変更</b>: 読み取り専用。 {@link StorageAssignmentManager} を参照するだけで、 登録データには
- * 一切触れない。 テーマ・寸法は倉庫検索 GUI と同じ {@link ThemeColorResolver} / {@link UILayoutMetrics}。
+ * 一切触れない。 テーマ・寸法は倉庫検索 GUI と同じ {@link ThemeColorResolver} /
+ * {@code UILayoutMetrics} 系の値 ({@link ExistingCategoriesFit} に集約) を使う。
  */
 public final class ExistingCategoriesScreen extends Screen {
-
-    private static final int COLS = 2;
-    private static final int CELL_H = 22;
-    private static final int CHIP_W = 104;
-    private static final int CHIP_H = 16;
-    private static final int COL_GAP = 16;
-    private static final int COUNT_GAP = 6;
 
     @Nullable
     private final Screen parent;
     private final List<StorageCategory> categories = new ArrayList<>();
 
-    // init で算出。
-    private int gridLeft;
-    private int gridTop;
+    /** init で確定するレイアウト (= この画面が持つ唯一の座標源)。 */
+    @Nullable
+    private ExistingCategoriesFit.Layout layout;
+
+    /**
+     * スクロール量 (px)。 画面インスタンス変数なので、 開き直すと ({@link SetCategoryScreen} が
+     * 毎回 new する) 自動的に先頭へ戻る。 ウィンドウリサイズ時は {@code init} が再実行されるが、
+     * 値は保持したまま新しいレイアウトで再クランプされる。
+     */
+    private double scrollPx;
 
     public ExistingCategoriesScreen(@Nullable Screen parent) {
         super(OmniChestLocale.get("omnichest.distribution.existing.title", "Existing Categories"));
@@ -58,40 +72,36 @@ public final class ExistingCategoriesScreen extends Screen {
         }
     }
 
-    private int colW() {
-        return CHIP_W + COUNT_GAP + this.font.width("×999");
-    }
-
-    private int rows() {
-        return (categories.size() + COLS - 1) / COLS;
-    }
-
     @Override
     protected void init() {
         super.init();
-        int gridW = COLS * colW() + (COLS - 1) * COL_GAP;
-        this.gridLeft = (this.width - gridW) / 2;
-        this.gridTop = this.height / 2 - (rows() * CELL_H) / 2;
+        this.layout = ExistingCategoriesFit.compute(this.width, this.height, this.categories.size(),
+                this.font.width("×999"), this.font.lineHeight);
+        // リサイズ後も位置を保ったうえで新しい可視高さへ丸める (= 下端より先へ残らない)。
+        this.scrollPx = this.layout.clampScroll(this.scrollPx);
 
-        int rowH = UILayoutMetrics.BUTTON_HEIGHT;
-        int backW = 120;
-        int backY = this.gridTop + rows() * CELL_H + UILayoutMetrics.SECTION_GAP + 4;
         this.addRenderableWidget(Button.builder(
                 OmniChestLocale.get("omnichest.button.back", "Back"), b -> onClose())
-                .bounds((this.width - backW) / 2, backY, backW, rowH).build());
+                .bounds(this.layout.backX(), this.layout.backY(),
+                        this.layout.backW(), this.layout.backH())
+                .build());
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
+        ExistingCategoriesFit.Layout l = this.layout;
+        if (l == null) {
+            return;
+        }
 
-        // タイトル + サブタイトル。
+        // タイトル + サブタイトル (画面上端のバンドに固定)。
         g.centeredText(this.font, this.getTitle(), this.width / 2,
-                this.gridTop - 34, ThemeColorResolver.TEXT_PRIMARY);
+                l.titleY(), ThemeColorResolver.TEXT_PRIMARY);
         Component subtitle = OmniChestLocale.get("omnichest.distribution.existing.subtitle",
                 "Storages registered per category");
         g.centeredText(this.font, subtitle, this.width / 2,
-                this.gridTop - 20, ThemeColorResolver.TEXT_SECONDARY);
+                l.subtitleY(), ThemeColorResolver.TEXT_SECONDARY);
 
         int total = StorageAssignmentManager.get().size();
         if (total == 0) {
@@ -99,41 +109,62 @@ public final class ExistingCategoriesScreen extends Screen {
             Component empty = OmniChestLocale.get("omnichest.distribution.existing.empty",
                     "No storages registered yet.");
             g.centeredText(this.font, empty, this.width / 2,
-                    this.height / 2 - this.font.lineHeight / 2, ThemeColorResolver.TEXT_DIM);
+                    l.emptyTextY(this.font.lineHeight), ThemeColorResolver.TEXT_DIM);
         } else {
-            renderGrid(g);
+            renderGrid(g, l);
         }
 
         // フッターヒント (= 倉庫検索と同じ backdrop 帯で視認性確保)。
         Component hint = OmniChestLocale.get("omnichest.distribution.existing.hint", "ESC = back");
         int hintW = this.font.width(hint);
-        int hintY = this.height - UILayoutMetrics.FOOTER_HINT_FROM_BOTTOM;
         int cx = this.width / 2;
-        g.fill(cx - hintW / 2 - 6, hintY - 2, cx + hintW / 2 + 6,
-                hintY + this.font.lineHeight + 2, ThemeColorResolver.FOOTER_BACKDROP);
-        g.centeredText(this.font, hint, cx, hintY, ThemeColorResolver.TEXT_DIM);
+        g.fill(cx - hintW / 2 - 6, l.hintBandTop(), cx + hintW / 2 + 6,
+                l.hintY() + this.font.lineHeight + 2, ThemeColorResolver.FOOTER_BACKDROP);
+        g.centeredText(this.font, hint, cx, l.hintY(), ThemeColorResolver.TEXT_DIM);
     }
 
-    private void renderGrid(GuiGraphicsExtractor g) {
-        int colW = colW();
-        for (int i = 0; i < categories.size(); i++) {
-            StorageCategory cat = categories.get(i);
-            int col = i % COLS;
-            int row = i / COLS;
-            int x = gridLeft + col * (colW + COL_GAP);
-            int y = gridTop + row * CELL_H;
+    private void renderGrid(GuiGraphicsExtractor g, ExistingCategoriesFit.Layout l) {
+        g.enableScissor(0, l.listTop(), this.width, l.listBottom());
+        try {
+            for (int i = 0; i < categories.size(); i++) {
+                int x = l.cellX(i);
+                int y = l.cellY(i, this.scrollPx);
+                if (y + ExistingCategoriesFit.CELL_H < l.listTop() || y > l.listBottom()) {
+                    continue;   // 帯の外は描かない (= 軽量化。 既存 DimensionMenuScreen と同流儀)
+                }
+                StorageCategory cat = categories.get(i);
 
-            // カテゴリ色チップ (= 在庫バッジ / カテゴリ設定と同じ視覚言語)。 表示専用なので hover/focus は false。
-            CategoryBadgeRenderer.renderCategoryChip(g, x, y, CHIP_W, CHIP_H, cat,
-                    false, false, cat.displayComponent());
+                // カテゴリ色チップ (= 在庫バッジ / カテゴリ設定と同じ視覚言語)。 表示専用なので hover/focus は false。
+                CategoryBadgeRenderer.renderCategoryChip(g, x, y, l.chipW(),
+                        ExistingCategoriesFit.CHIP_H, cat, false, false, cat.displayComponent());
 
-            // 登録倉庫数を ×N で添える。 0 件はあえて控えめ色で 「未設定」 を伝える (= コントラスト)。
-            int count = StorageAssignmentManager.get().byCategory(cat).size();
-            Component countC = OmniChestLocale.get("omnichest.distribution.existing.count", "×%1$d", count);
-            int countColor = count > 0 ? ThemeColorResolver.TEXT_SECONDARY : ThemeColorResolver.TEXT_DIM;
-            g.text(this.font, countC, x + CHIP_W + COUNT_GAP,
-                    y + (CHIP_H - this.font.lineHeight) / 2 + 1, countColor, false);
+                // 登録倉庫数を ×N で添える。 0 件はあえて控えめ色で 「未設定」 を伝える (= コントラスト)。
+                int count = StorageAssignmentManager.get().byCategory(cat).size();
+                Component countC = OmniChestLocale.get("omnichest.distribution.existing.count", "×%1$d", count);
+                int countColor = count > 0 ? ThemeColorResolver.TEXT_SECONDARY : ThemeColorResolver.TEXT_DIM;
+                g.text(this.font, countC, x + l.chipW() + ExistingCategoriesFit.COUNT_GAP,
+                        y + (ExistingCategoriesFit.CHIP_H - this.font.lineHeight) / 2 + 1, countColor, false);
+            }
+        } finally {
+            g.disableScissor();
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 入力 (既存 DimensionMenuScreen と同一の流儀。 慣性なし)
+    // ════════════════════════════════════════════════════════════════════
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double dx, double dy) {
+        if (super.mouseScrolled(mouseX, mouseY, dx, dy)) {
+            return true;
+        }
+        ExistingCategoriesFit.Layout l = this.layout;
+        if (l == null || l.maxScroll() <= 0) {
+            return false;   // 収まっているときはスクロール自体を無効化
+        }
+        this.scrollPx = l.clampScroll(this.scrollPx - dy * ExistingCategoriesFit.SCROLL_STEP);
+        return true;
     }
 
     @Override
