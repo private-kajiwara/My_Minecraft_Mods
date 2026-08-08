@@ -146,9 +146,18 @@ public final class CategoryBadgeRenderer {
      * カテゴリ 「タグ」 を (x, y) を左上として描画する (= in-world バッジの左半分と同じ視覚言語)。
      *
      * <p>
-     * {@code [カテゴリ名]} を、 半透明 (0x80) カテゴリ色の帯の上に、 明るいカテゴリ色テキストで描く。
+     * {@code [カテゴリ名]} を、 暗めカテゴリ色の帯の上に、 読める明るさのカテゴリ色テキストで描く。
      * {@link #renderBadge} の 「カテゴリ名部分」 を <b>カテゴリ単体から</b> 描けるよう切り出した再利用版で、
      * 振り分けプレビューの 「必要なカテゴリ」 一覧などで使う (= 反復: 在庫バッジと同じ見た目)。
+     *
+     * <p>
+     * <b>不透明化について</b>: 旧実装は帯を {@code 0x80 | rgb} の<b>半透明</b>で敷いていたため、
+     * 実効的な背景色が 「その時たまたま後ろにあるもの」 に依存し、 文字とのコントラストを一切
+     * 保証できなかった (実測: どの背景でも concrete 27 件すべてが 4.5:1 未満。 明るい背景では
+     * 最小 1.04:1)。 帯を {@link TextContrastFit#TAG_BG_FACTOR} で<b>不透明</b>に敷き、
+     * 文字を {@link TextContrastFit#readableTextColor} で決めることで、 背後に何があっても
+     * 比が確定する。 係数 0.50 は 「黒地に 50% で載せたときの見え」 と一致するので、
+     * 暗い背景の上での見た目はほぼ従来どおりになる。
      *
      * @return 描画した帯の総幅 (= 次のタグをここから右に置きたい呼び出し側用)。
      */
@@ -159,9 +168,10 @@ public final class CategoryBadgeRenderer {
         int padX = BADGE_PAD_X;
         int padY = 1;
         int h = font.lineHeight;
-        int bgArgb = (0x80 << 24) | (rgb & 0x00FFFFFF);
-        g.fill(x, y - padY, x + textW + padX * 2, y + h + padY, bgArgb);
-        g.text(font, label, x + padX, y, (0xFF << 24) | (rgb & 0x00FFFFFF), true);
+        int bgRgb = darken(rgb, TextContrastFit.TAG_BG_FACTOR);
+        g.fill(x, y - padY, x + textW + padX * 2, y + h + padY, 0xFF000000 | bgRgb);
+        g.text(font, label, x + padX, y,
+                0xFF000000 | TextContrastFit.readableTextColor(rgb, bgRgb), true);
         return textW + padX * 2;
     }
 
