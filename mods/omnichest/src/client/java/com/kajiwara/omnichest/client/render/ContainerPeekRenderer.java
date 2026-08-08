@@ -14,6 +14,7 @@ import com.kajiwara.omnichest.search.ChestNetworkManager;
 import com.kajiwara.omnichest.search.ContainerSnapshot;
 import com.kajiwara.omnichest.search.ContainerType;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -123,9 +124,24 @@ public final class ContainerPeekRenderer {
      * HUD 登録。 {@link com.kajiwara.omnichest.OmniChestClient} から 1 回だけ呼ぶ。
      * 既存の {@link SelectedItemHudRenderer} / {@link ChestHighlighter} と同じ HUD パスへ載せる
      * (= 新規 Mixin を増やさない)。
+     *
+     * <p>
+     * <b>★なぜ {@code addLast} ではなく {@link VanillaHudElements#CROSSHAIR} の「前」なのか</b>:
+     * ポップアップは配置計算 ({@link ContainerPeekFit#placeY}) で下部 HUD を必ず避け、
+     * 可能な限りクロスヘアも避ける。 しかし <b>54 スロット (高さ 154px) を縦の狭い論理画面
+     * (例: 1920x1080 の GUI スケール 4 = 480x270) に置く場合、 クロスヘアの上にも下にも
+     * 入らない</b> — これは幾何的にどうにもならない。 そこで描画順を 1 段前へ動かし、
+     * <b>バニラのクロスヘア (とホットバー等) が常にポップアップの上に描かれる</b>ようにする。
+     * これで重なっても照準は見えたままになり、 対象ブロックを狙い続けられる。
+     * 下部 HUD に対しては配置計算との二重の保険にもなる。
+     *
+     * <p>
+     * {@code VanillaHudElements.CROSSHAIR} と {@code attachElementBefore} は本 MOD が対応する
+     * 全 Fabric API 版 (rendering-v1 16.2.x / 23.x / 25.x) に存在することを jar で確認済み。
      */
     public static void register() {
-        HudElementRegistry.addLast(
+        HudElementRegistry.attachElementBefore(
+                VanillaHudElements.CROSSHAIR,
                 net.minecraft.resources.Identifier.fromNamespaceAndPath("omnichest", "container_peek"),
                 (g, deltaTracker) -> SafeRenderDispatcher.safeRun("container-peek",
                         () -> INSTANCE.onHudRender(g)));

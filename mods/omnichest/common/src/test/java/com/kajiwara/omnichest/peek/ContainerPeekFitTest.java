@@ -128,13 +128,16 @@ class ContainerPeekFitTest {
 
     @Test
     void popupIsPlacedJustBelowTheCrosshairWhenItFits() {
-        // 高さ 360、 パネル高 140、 クロスヘア中央 180 → 180 + gap(12)。
-        assertEquals(192, ContainerPeekFit.popupY(360, 140, 180));
+        // 高さ 540、 パネル高 140、 クロスヘア中央 270。
+        // 下端 270+12+140 = 422 <= 540 - BOTTOM_HUD_HEIGHT(59) = 481 なので下に置く。
+        assertEquals(282, ContainerPeekFit.popupY(540, 140, 270));
     }
 
     @Test
-    void popupFlipsAboveTheCrosshairWhenItWouldOverflowTheBottom() {
-        // 下に置くと 180+12+140+4 = 336 > 320 なので上へ回す → 180 - 12 - 140 = 28。
+    void popupFlipsAboveTheCrosshairWhenItWouldOverlapTheBottomHud() {
+        // 下に置くと 180+12+140 = 332 > 360 - 59 = 301 (= HUD 帯の上端) なので上へ回す。
+        // → 180 - 12 - 140 = 28。 「画面内には入るが HUD に被る」 のを弾くのが今回の修正点。
+        assertEquals(28, ContainerPeekFit.popupY(360, 140, 180));
         assertEquals(28, ContainerPeekFit.popupY(320, 140, 180));
     }
 

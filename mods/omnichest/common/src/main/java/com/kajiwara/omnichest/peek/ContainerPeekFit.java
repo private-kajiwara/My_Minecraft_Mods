@@ -22,9 +22,14 @@ package com.kajiwara.omnichest.peek;
  *   <li>エンダーチェストで収集設定が OFF のときは {@link Status#ENDER_SEARCH_DISABLED} を返す。
  *       これを {@code NOT_RECORDED} に潰すと 「一度開けば記録される」 という<b>誤誘導</b>になる
  *       (設定が OFF の間は何度開いても記録されないため)。</li>
- *   <li>{@link #popupX} / {@link #popupY} の返り値は、 パネルが画面に収まる限り必ず
- *       {@code [margin, size - margin - panel]} の内側に入る。 収まらない場合でも
- *       {@code margin} 以上を返し、 左上/上端が画面外へ飛び出すことはない。</li>
+ *   <li>{@link #popupX} の返り値は、 パネルが画面幅に収まる限り必ず
+ *       {@code [margin, guiWidth - margin - panelWidth]} の内側に入る。 収まらない場合でも
+ *       {@code margin} 以上を返し、 左端が画面外へ飛び出すことはない。</li>
+ *   <li>{@link #popupY} は<b>画面下端ではなく {@link #BOTTOM_HUD_HEIGHT} を除いた安全帯</b>を
+ *       下端の基準にする。 安全帯にパネルが収まる限り、 返り値は必ず
+ *       {@code [margin, guiHeight - BOTTOM_HUD_HEIGHT - panelHeight]} の内側に入る
+ *       (= ホットバー / 経験値バー / 体力・満腹度 / 防具・空気 / 持ち替えアイテム名 に
+ *       重ならない)。</li>
  * </ul>
  */
 public final class ContainerPeekFit {
@@ -134,13 +139,50 @@ public final class ContainerPeekFit {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // 画面配置 (= クロスヘア直下 + 画面内クランプ)
+    // 画面配置 (= クロスヘア基準 + 下部 HUD 回避 + 画面内クランプ)
     // ════════════════════════════════════════════════════════════════════
 
-    /** クロスヘアとポップアップ上端の間隔 (論理 px)。 照準そのものを隠さないための下駄。 */
+    /** クロスヘアとポップアップの間隔 (論理 px)。 照準そのものを隠さないための下駄。 */
     public static final int CROSSHAIR_GAP = 12;
     /** 画面端との最小マージン (論理 px)。 */
     public static final int SCREEN_MARGIN = 4;
+
+    // ─── バニラ HUD の縦占有 (すべて MC 26.1.2 のバイトコード実測値) ───────────
+    //   ここの数値を勝手に発明しないこと。 出典を各定数の javadoc に明記してある。
+
+    /** ホットバー上端。 {@code Gui#extractItemHotbar} が {@code guiHeight - 22} に 22px の帯を描く。 */
+    public static final int HOTBAR_TOP_OFFSET = 22;
+    /**
+     * 経験値 / 騎乗ジャンプ バーの上端。
+     * {@code ContextualBarRenderer#top} = {@code guiHeight - MARGIN_BOTTOM(24) - HEIGHT(5)}。
+     */
+    public static final int CONTEXTUAL_BAR_TOP_OFFSET = 29;
+    /** 体力 / 満腹度の行の上端。 {@code Gui#extractPlayerHealth} が {@code guiHeight - 39} を使う。 */
+    public static final int STATUS_BAR_TOP_OFFSET = 39;
+    /** 防具 / 空気の行の上端。 {@code Gui#extractArmor} は体力行の 10px 上に描く。 */
+    public static final int ARMOR_BAR_TOP_OFFSET = STATUS_BAR_TOP_OFFSET + 10;
+    /**
+     * 持ち替えたアイテム名の表示上端。 {@code Gui#extractSelectedItemName} が
+     * {@code guiHeight - 59} を使う。 一時表示だが、 ポップアップと同じく<b>画面中央下</b>に出るため
+     * ここまで含めて避ける。
+     */
+    public static final int HELD_ITEM_NAME_TOP_OFFSET = 59;
+
+    /**
+     * ポップアップが侵入してはならない画面下部の帯の高さ (論理 px)。
+     *
+     * <p>
+     * 上の実測値の<b>最大</b>を採る (= 最も高い位置に出る要素まで避ける)。 クリエイティブでは
+     * 体力 / 満腹度 / 経験値バーが描かれず実際の占有は 22px まで縮むが、 <b>広いほうに倒して
+     * おけばモードによらず安全</b>なので分岐しない (= 判定を 1 本に保つ)。 F1 (hideGui) 中は
+     * エンジンが HUD 描画そのものをスキップしポップアップも呼ばれないため、 考慮不要。
+     */
+    public static final int BOTTOM_HUD_HEIGHT = HELD_ITEM_NAME_TOP_OFFSET;
+
+    /** クロスヘアの一辺 (px)。 {@code Gui#extractCrosshair} が 15x15 のスプライトを中央に描く。 */
+    public static final int CROSSHAIR_SIZE = 15;
+    /** クロスヘア中心から端までの距離 (= {@code ceil(15/2)})。 「覆っていない」 判定の基準。 */
+    public static final int CROSSHAIR_HALF = (CROSSHAIR_SIZE + 1) / 2;
 
     /**
      * ポップアップの左端 X。 クロスヘア中心に対して水平中央寄せし、 画面内へクランプする。
@@ -165,24 +207,81 @@ public final class ContainerPeekFit {
         return desired;
     }
 
+    /** ポップアップをどこに置いたか。 診断とテストのために {@link #placeY} が返す。 */
+    public enum Placement {
+        /** クロスヘアの下 (= 既定)。 HUD にもクロスヘアにも掛からない。 */
+        BELOW,
+        /** クロスヘアの上へ反転。 下に置くと HUD 帯に食い込むため。 */
+        ABOVE,
+        /**
+         * 上下どちらの側にも入らないので、 安全帯 (= 上マージン〜HUD 帯上端) の中央へ置いた。
+         * <b>クロスヘア帯とは縦に重なる</b>が、 描画順でバニラのクロスヘアが上に出るため
+         * 照準は見えたままになる ({@code ContainerPeekRenderer} の登録位置を参照)。
+         */
+        CENTERED,
+        /** 安全帯にも収まらない極小画面。 上端でクランプした (= タイトルだけは必ず読める)。 */
+        CLAMPED_TOP
+    }
+
     /**
-     * ポップアップの上端 Y。 まずクロスヘアの少し下に置き、 下に収まらなければ上へ回し、
-     * どちらにも収まらなければ画面内へクランプする。
+     * ポップアップの上端 Y と、 その決め方を返す。
+     *
+     * <p>
+     * <b>なぜ「画面内に収まる」だけでは足りないか</b>: 画面下部にはホットバー / 経験値バー /
+     * 体力・満腹度 / 防具・空気 / 持ち替えアイテム名 が常駐する。 単純に
+     * {@code guiHeight - margin} を下端として扱うと、 6 行グリッド (= ラージチェスト 54 スロット、
+     * 高さ 154px) のときにサマリ行がホットバーに重なって読めなくなる (実機で報告された不具合)。
+     * よって下端の基準は {@code guiHeight - bottomHudHeight} でなければならない。
+     *
+     * <p>
+     * <b>優先順位</b>:
+     * <ol>
+     *   <li>{@link Placement#BELOW} クロスヘアの下。 対象ブロックの見通しが最も良い。</li>
+     *   <li>{@link Placement#ABOVE} 上へ<b>反転</b>。 単に上へずらすとクロスヘアと対象ブロックを
+     *       覆うため、 反転でなければならない。</li>
+     *   <li>{@link Placement#CENTERED} 安全帯の中央。 上下どちらの側にも入らない縦長パネル用。</li>
+     *   <li>{@link Placement#CLAMPED_TOP} 安全帯にも入らない極小画面での最後の砦。</li>
+     * </ol>
+     *
+     * @param bottomHudHeight 画面下部で避けるべき帯の高さ (通常 {@link #BOTTOM_HUD_HEIGHT})
      */
-    public static int popupY(int guiHeight, int panelHeight, int crosshairY, int gap, int margin) {
-        int below = crosshairY + gap;
-        if (below + panelHeight + margin <= guiHeight) {
-            return below;
+    public static Placement placeY(int guiHeight, int panelHeight, int crosshairY,
+            int gap, int margin, int bottomHudHeight) {
+        int safeBottom = guiHeight - Math.max(margin, bottomHudHeight);
+        // (1) クロスヘアの下。
+        if (crosshairY + gap + panelHeight <= safeBottom) {
+            return Placement.BELOW;
         }
-        int above = crosshairY - gap - panelHeight;
-        if (above >= margin) {
-            return above;
+        // (2) クロスヘアの上へ反転。
+        if (crosshairY - gap - panelHeight >= margin) {
+            return Placement.ABOVE;
         }
-        int max = guiHeight - margin - panelHeight;
-        if (max < margin) {
-            return margin;
+        // (3) 安全帯には入るが、 クロスヘアのどちら側にも寄せきれない。
+        if (panelHeight <= safeBottom - margin) {
+            return Placement.CENTERED;
         }
-        return Math.min(Math.max(below, margin), max);
+        // (4) 安全帯にも入らない。
+        return Placement.CLAMPED_TOP;
+    }
+
+    /**
+     * ポップアップの上端 Y。 {@link #placeY} が選んだ配置に対応する座標を返す。
+     */
+    public static int popupY(int guiHeight, int panelHeight, int crosshairY,
+            int gap, int margin, int bottomHudHeight) {
+        int safeBottom = guiHeight - Math.max(margin, bottomHudHeight);
+        switch (placeY(guiHeight, panelHeight, crosshairY, gap, margin, bottomHudHeight)) {
+            case BELOW:
+                return crosshairY + gap;
+            case ABOVE:
+                return crosshairY - gap - panelHeight;
+            case CENTERED:
+                // 安全帯の中央。 上下どちらの端からも等距離になり、 切れる側が出ない。
+                return margin + (safeBottom - margin - panelHeight) / 2;
+            default:
+                // 何をしても収まらない。 タイトル (= パネル上端) を優先して残す。
+                return margin;
+        }
     }
 
     /** {@link #popupX(int, int, int, int)} の既定マージン版。 */
@@ -190,8 +289,15 @@ public final class ContainerPeekFit {
         return popupX(guiWidth, panelWidth, crosshairX, SCREEN_MARGIN);
     }
 
-    /** {@link #popupY(int, int, int, int, int)} の既定 gap / マージン版。 */
+    /** {@link #popupY(int, int, int, int, int, int)} の既定 gap / マージン / HUD 帯版。 */
     public static int popupY(int guiHeight, int panelHeight, int crosshairY) {
-        return popupY(guiHeight, panelHeight, crosshairY, CROSSHAIR_GAP, SCREEN_MARGIN);
+        return popupY(guiHeight, panelHeight, crosshairY,
+                CROSSHAIR_GAP, SCREEN_MARGIN, BOTTOM_HUD_HEIGHT);
+    }
+
+    /** {@link #placeY(int, int, int, int, int, int)} の既定 gap / マージン / HUD 帯版。 */
+    public static Placement placeY(int guiHeight, int panelHeight, int crosshairY) {
+        return placeY(guiHeight, panelHeight, crosshairY,
+                CROSSHAIR_GAP, SCREEN_MARGIN, BOTTOM_HUD_HEIGHT);
     }
 }
