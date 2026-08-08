@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.distribution.ui;
 
 import com.kajiwara.omnichest.classify.ClassificationCache;
 import com.kajiwara.omnichest.classify.StorageCategory;
+import com.kajiwara.omnichest.client.gui.ScreenBackdrop;
 import com.kajiwara.omnichest.client.gui.search.layout.ThemeColorResolver;
 import com.kajiwara.omnichest.client.gui.search.layout.UILayoutMetrics;
 import com.kajiwara.omnichest.distribution.CategoryMapper;
@@ -285,6 +286,8 @@ public final class SetCategoryScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        // 全面の暗転を最初に 1 枚 (= この画面は自前のパネル背景を持たない)。
+        ScreenBackdrop.dim(g, this);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         // タイトル + アクセント線の Y は、 パネル上端 (init の y = height/2 - 76) と歩調を合わせて引き上げる。
         // 「登録済みカテゴリ」 行を足してパネルを 12px 上げたぶん、 ここも上げないとチェスト名ラベルと

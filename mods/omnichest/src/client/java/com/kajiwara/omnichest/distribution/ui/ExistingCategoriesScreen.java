@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.distribution.ui;
 
 import com.kajiwara.omnichest.classify.StorageCategory;
 import com.kajiwara.omnichest.client.gui.CategoryBadgeRenderer;
+import com.kajiwara.omnichest.client.gui.ScreenBackdrop;
 import com.kajiwara.omnichest.client.gui.search.layout.ThemeColorResolver;
 import com.kajiwara.omnichest.distribution.StorageAssignmentManager;
 import com.kajiwara.omnichest.gui.ExistingCategoriesFit;
@@ -91,6 +92,9 @@ public final class ExistingCategoriesScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        // 全面の暗転を最初に 1 枚。 バニラ既定の in-world 暗転は 25% 黒だけで、
+        // シェーダー環境の雪原などでは世界がほぼ素通しになり文字と競合する。
+        ScreenBackdrop.dim(g, this);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         ExistingCategoriesFit.Layout l = this.layout;
         if (l == null) {
@@ -145,8 +149,11 @@ public final class ExistingCategoriesScreen extends Screen {
                 int count = StorageAssignmentManager.get().byCategory(cat).size();
                 Component countC = OmniChestLocale.get("omnichest.distribution.existing.count", "×%1$d", count);
                 int countColor = count > 0 ? ThemeColorResolver.TEXT_SECONDARY : ThemeColorResolver.TEXT_DIM;
+                // 影を付ける。 件数はチップの<b>外側</b> = 素の背景の上に描かれるため、 この画面で
+                // 唯一 影が無い要素だった (タイトル / 副題 / ヒント / チップラベルはすべて影あり)。
+                // 色と階層 (0 件は控えめ) は変えない。
                 g.text(this.font, countC, x + l.chipW() + ExistingCategoriesFit.COUNT_GAP,
-                        y + (ExistingCategoriesFit.CHIP_H - this.font.lineHeight) / 2 + 1, countColor, false);
+                        y + (ExistingCategoriesFit.CHIP_H - this.font.lineHeight) / 2 + 1, countColor, true);
             }
         } finally {
             g.disableScissor();
