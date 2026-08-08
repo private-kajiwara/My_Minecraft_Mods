@@ -1,5 +1,6 @@
 package com.kajiwara.omnichest.template.gui;
 
+import com.kajiwara.omnichest.client.gui.ScreenBackdrop;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import com.kajiwara.omnichest.template.apply.MovePlan;
@@ -110,6 +111,8 @@ public class TemplatePreviewScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        // 全面の暗転を最初に 1 枚 (= この画面は自前のパネル背景を持たない)。
+        ScreenBackdrop.dim(g, this);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(this.font, this.getTitle(), this.width / 2, 20, 0xFFFFFFFF);
 

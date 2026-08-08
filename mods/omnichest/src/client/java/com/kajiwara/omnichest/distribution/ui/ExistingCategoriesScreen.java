@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.distribution.ui;
 
 import com.kajiwara.omnichest.classify.StorageCategory;
 import com.kajiwara.omnichest.client.gui.CategoryBadgeRenderer;
+import com.kajiwara.omnichest.client.gui.ScreenBackdrop;
 import com.kajiwara.omnichest.client.gui.search.layout.ThemeColorResolver;
 import com.kajiwara.omnichest.distribution.StorageAssignmentManager;
 import com.kajiwara.omnichest.gui.ExistingCategoriesFit;
@@ -91,6 +92,9 @@ public final class ExistingCategoriesScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        // 全面の暗転を最初に 1 枚。 バニラ既定の in-world 暗転は 25% 黒だけで、
+        // シェーダー環境の雪原などでは世界がほぼ素通しになり文字と競合する。
+        ScreenBackdrop.dim(g, this);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         ExistingCategoriesFit.Layout l = this.layout;
         if (l == null) {
