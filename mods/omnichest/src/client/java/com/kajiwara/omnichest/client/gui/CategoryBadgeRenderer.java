@@ -4,6 +4,7 @@ import com.kajiwara.omnichest.classify.Classification;
 import com.kajiwara.omnichest.classify.ClassificationCache;
 import com.kajiwara.omnichest.classify.ClassifyConfig;
 import com.kajiwara.omnichest.classify.StorageCategory;
+import com.kajiwara.omnichest.gui.TextContrastFit;
 import com.kajiwara.omnichest.i18n.Keys;
 import com.kajiwara.omnichest.i18n.OmniChestLocale;
 import com.kajiwara.omnichest.search.ContainerSnapshot;
@@ -188,14 +189,19 @@ public final class CategoryBadgeRenderer {
             StorageCategory cat, boolean hovered, boolean focused, @Nullable Component label) {
         int rgb = cat.rgb();
         // ホバー時は明るめ (0.55) / 通常は暗め (0.40) のカテゴリ色を不透明で敷く。
-        float baseF = hovered ? 0.55f : 0.40f;
-        int bg = 0xFF000000 | darken(rgb, baseF);
-        g.fill(x, y, x + w, y + h, bg);
+        float baseF = hovered ? TextContrastFit.CHIP_BG_FACTOR_HOVER : TextContrastFit.CHIP_BG_FACTOR;
+        int bgRgb = darken(rgb, baseF);
+        g.fill(x, y, x + w, y + h, 0xFF000000 | bgRgb);
         // カテゴリ色の枠で輪郭を強調 (= コントラスト)。 フォーカス時は白枠で可視化。
         g.outline(x, y, w, h, focused ? 0xFFFFFFFF : (0xFF000000 | rgb));
         if (label != null) {
             Font font = Minecraft.getInstance().font;
-            int textColor = 0xFF000000 | rgb; // 明るいカテゴリ色テキスト (= バッジと同一)
+            // 文字色は 「カテゴリ色」 を基準に、 この背景の上で WCAG AA (4.5:1) に届くまで
+            // <b>色相を保ったまま</b>白へ寄せた色 ({@link TextContrastFit})。
+            // 元の色が暗いカテゴリ (深層岩 / ネザー素材 / エンド素材 等) は darken した背景との
+            // 輝度差が足りず、 実測で 27 中 22 件が 4.5:1 を割っていた (最悪 1.91:1)。
+            // 既に基準を満たしている 5 件は 1 ビットも変わらない (= 見た目の非回帰)。
+            int textColor = 0xFF000000 | TextContrastFit.readableTextColor(rgb, bgRgb);
             int tx = x + (w - font.width(label)) / 2;
             int ty = y + (h - font.lineHeight) / 2 + 1;
             g.text(font, label, tx, ty, textColor, true);
