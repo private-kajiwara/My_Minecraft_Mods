@@ -2,6 +2,7 @@ package com.kajiwara.omnichest.mixin;
 
 import com.kajiwara.omnichest.catsort.engine.CategorySortEngine;
 import com.kajiwara.omnichest.catsort.ui.SortButtonWidget;
+import com.kajiwara.omnichest.chestsearch.ChestSearchQuery;
 import com.kajiwara.omnichest.client.ClientKeyBindings;
 import com.kajiwara.omnichest.client.gui.CategoryBadgeRenderer;
 import com.kajiwara.omnichest.client.gui.OmniChestScaledScreen;
@@ -36,6 +37,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -61,6 +63,22 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
     @Unique
     private EditBox cits$searchBox;
+
+    /**
+     * 検索欄に今入っているクエリを、 判定に使う<b>語のリスト</b>へ正規化して保持したもの。
+     *
+     * <p>
+     * {@link EditBox#setResponder} 経由で<b>打鍵のたびに</b>更新する。 毎フレーム
+     * {@code getValue()} を語分割し直すのを避けるため、 入力側で 1 度だけ正規化して持つ
+     * (= v1.0.0 が {@code cits$searchQuery} に小文字化済み文字列を持っていたのと同じ考え方)。
+     *
+     * <p>
+     * <b>空リスト = 検索していない</b>。 このとき {@link #cits$dimNonMatchingSlots} は
+     * 最初の 1 行で return し、 描画を<b>1 回も足さない</b> (= 検索欄が空のときの
+     * チェスト GUI は復旧前とピクセル等価)。
+     */
+    @Unique
+    private java.util.List<String> cits$searchTerms = java.util.List.of();
 
     @Unique
     private Button cits$sortByTypeButton;
@@ -842,6 +860,136 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         cir.setReturnValue(true);
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // 検索欄の絞り込み描画 (= クエリに一致しないスロットを暗くする)
+    // ────────────────────────────────────────────────────────────────────
+
+    /** スロット 1 マスの一辺 (px)。 バニラのスロット図形と同じ 16。 */
+    @Unique
+    private static final int CITS_SLOT_SIZE = 16;
+
+    /**
+     * 検索クエリに一致しないスロットへ被せる暗転の色 (ARGB)。
+     *
+     * <p>
+     * <b>v1.0.0 ({@code 1c3b444}) の復元値</b> {@code 0xAA000000} (黒 67%)。 新しく決めた値では
+     * なく、 削除される前に実際に使われていた値をそのまま戻している。 アイテムが 「暗いなりに
+     * 何か判別できる」 濃さで、 絞り込まれていることは一目でわかる、 という釣り合いの点。
+     *
+     * <p>
+     * <b>なぜ {@code ThemeColorResolver#PANEL_BG} (0xCC000000, 黒 80%) を使わないか</b>:
+     * <ul>
+     *   <li>16x16 という小さな図形に 80% を被せると<b>アイテムが判別できなくなる</b>。
+     *       「一致しないものを控えめにする」 のが目的で、 「消す」 のが目的ではない。</li>
+     *   <li>1.5.0 で入れた {@link com.kajiwara.omnichest.client.gui.ScreenBackdrop} の doc が、
+     *       あの 80% の暗転について <b>「チェスト GUI に重ねる描画 (スロットオーバーレイ /
+     *       検索ピン / ビーム) も対象外 (インベントリが見えなくなる)」</b> と明記している。
+     *       ここはまさにその 「チェスト GUI に重ねる描画」 なので、 流儀としても 80% 側では
+     *       なくこちらが正しい。</li>
+     * </ul>
+     */
+    @Unique
+    private static final int CITS_SLOT_DIM_ARGB = 0xAA000000;
+
+    /**
+     * 検索クエリに一致しないコンテナ スロットを暗くする (= 減算による絞り込み)。
+     *
+     * <p>
+     * <b>これがツールチップ ({@code omnichest.editbox.search.tooltip} = "Highlight items in
+     * this chest by name.") が言っている挙動の実体</b>。 1.21.11 移行コミット {@code 8a16b71}
+     * で v1.0.0 の実装ごと消えていたものを復旧させた。
+     *
+     * <p>
+     * <b>★ 注入先を v1.0.0 の {@code render} TAIL から {@code extractContents} TAIL へ変えている</b>。
+     * 26.1.2 の {@code AbstractContainerScreen} を javap で実測した呼び出し順は
+     * (以下メソッド名は base = 26.1 系の名前で示す)
+     * <pre>
+     *   extractRenderState = extractContents → extractCarriedItem → extractSnapbackItem → extractTooltip
+     *   extractContents    = super.extractRenderState(背景+ウィジェット)
+     *                        → pose.push / translate(leftPos, topPos)
+     *                        → extractLabels → extractSlotHighlightBack
+     *                        → extractSlots (→ 各 extractSlot)
+     *                        → extractSlotHighlightFront
+     *                        → pose.pop → RETURN   (return は 1 つだけ)
+     * </pre>
+     * であり、 v1.0.0 が使っていた {@code render} (= 今の {@code extractRenderState}) の TAIL は
+     * <b>ツールチップより後</b>だった。 そこに描くと<b>ツールチップと掴んでいるアイテムの上にまで
+     * 暗転が乗る</b>。 これは v1.0.0 が抱えていた副作用であって仕様ではないので、 復元しない。
+     * {@code extractContents} TAIL なら
+     * <ul>
+     *   <li>スロット (とピンの黄ハイライト) より<b>後</b> = 減算が確実に効く</li>
+     *   <li>掴んでいるアイテム / ツールチップより<b>前</b> = そちらは暗くならない</li>
+     *   <li>{@code pose.pop} の<b>後</b> = スクリーン座標系。 v1.0.0 と同じ
+     *       {@code leftPos + slot.x} がそのまま使える</li>
+     * </ul>
+     * が同時に成立する。 全 6 ノードでこのメソッドの存在・シグネチャ・内部の呼び出し順が
+     * 同一であることを javap で確認済 (1.21.10/1.21.11 では stonecutter の既存 replacement
+     * = 26.1 名から Mojmap 名への一方向変換が、 メソッド名も引数型も自動で書き換えるため
+     * {@code //?} は 1 行も要らない)。
+     *
+     * <p>
+     * <b>ピン (倉庫検索のハイライト) との共存</b>: ピンの黄は
+     * {@link com.kajiwara.omnichest.client.render.SearchMatchSlotRenderer} が
+     * {@code extractSlot} TAIL で<b>加算</b>し、 こちらは {@code extractContents} TAIL で
+     * <b>減算</b>する。 順序は上のとおり<b>黄が先・暗転が後</b>なので:
+     * <ul>
+     *   <li>一致 + ピン → 黄枠つきで明るいまま (= 最も目立つ)</li>
+     *   <li>一致 + ピン無し → 素のまま明るい</li>
+     *   <li><b>非</b>一致 + ピン → 暗転する (黄が薄く透ける)</li>
+     *   <li>非一致 + ピン無し → 暗転</li>
+     * </ul>
+     * 「該当ゼロなら全部暗い」 が字義どおり成立する。 <b>この欄は {@code ChestHighlighter} の
+     * ピン集合に一切触らない</b> (読みも書きもしない) ため、 ピン / ビーム / ワイヤーフレームの
+     * 挙動は不変。
+     *
+     * <p>
+     * <b>ピーク ポップアップ (1.6.0) へは構造的に漏れない</b>: コンテナ ピークは HUD
+     * ({@code ContainerPeekRenderer}) で描かれ Screen ですらなく、 Alt ホバー プレビューと
+     * シュルカー プレビューは {@code extractTooltip} / {@code extractRenderState} TAIL =
+     * いずれも<b>ここより後</b>。 かつ本メソッドが触るのは {@code menu.slots} の
+     * コンテナ側だけで、 ポップアップのグリッドはそこに存在しない。
+     *
+     * <p>
+     * <b>検索欄が空のときは 1 回も描かない</b>: 最初の {@code isEmpty()} で return するため
+     * {@code g.fill} に到達しない (= 復旧前とピクセル等価)。 「全件一致だから結果的に暗転が
+     * 0 枚」 ではなく<b>そもそも呼ばない</b>。
+     */
+    @Inject(method = "extractContents(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("TAIL"))
+    private void cits$dimNonMatchingSlots(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick,
+            CallbackInfo ci) {
+        // ★ 検索していない (空文字 / 空白のみ / 検索バー非表示) なら、 ここで必ず抜ける。
+        //    これより下で描画を行うので、 空クエリ時に描画が 1 枚も増えないことがここで確定する。
+        java.util.List<String> terms = this.cits$searchTerms;
+        if (terms.isEmpty()) {
+            return;
+        }
+
+        AbstractContainerMenu menu = ((AbstractContainerScreen<?>) (Object) this).getMenu();
+        // 上部行 (検索/種類/数量) を持てる画面 = ChestMenu / ShulkerBoxMenu のコンテナ側スロット数。
+        // 検索欄の生成判定と同じ関数を使うことで、 「欄が出ている画面」 と 「絞り込む範囲」 が
+        // 構造的にズレない。
+        int containerSlots = cits$searchRowSlotCount(menu);
+        if (containerSlots <= 0) {
+            return;
+        }
+
+        // コンテナ側のスロットだけを対象にする (= プレイヤーインベントリは暗くしない)。
+        // v1.0.0 と同じ範囲。 手持ちまで暗くすると 「持っているのに見えない」 になるため。
+        int limit = Math.min(containerSlots, menu.slots.size());
+        for (int i = 0; i < limit; i++) {
+            Slot slot = menu.slots.get(i);
+            if (!slot.hasItem()) {
+                continue; // 空スロットは暗くしない (v1.0.0 どおり)。 暗い升目が並ぶと逆に読めなくなる。
+            }
+            if (ChestSearchQuery.matches(slot.getItem().getHoverName().getString(), terms)) {
+                continue;
+            }
+            int x = this.leftPos + slot.x;
+            int y = this.topPos + slot.y;
+            g.fill(x, y, x + CITS_SLOT_SIZE, y + CITS_SLOT_SIZE, CITS_SLOT_DIM_ARGB);
+        }
+    }
+
     @Inject(method = "init", at = @At("TAIL"))
     private void cits$initWidgets(CallbackInfo ci) {
         // ボタンは init のたびに作り直されるので、 元ラベルの控えも作り直す
@@ -860,6 +1008,11 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
         // という不整合になる。 生成前に必ず null へ戻して 「今回 init で作られたものだけ」 にする。
         // ───────────────────────────────────────────────────────────
         this.cits$searchBox = null;
+        // 検索欄は init のたびに新しい空の EditBox として作り直される (= 値は空に戻る) が、
+        // 新規構築では responder が発火しないため、 語のリストも明示的に空へ戻す。
+        // これを忘れると 「resize 後は欄が空なのに絞り込みだけ生きている」 状態になり、
+        // 消せない暗転が残る。 v1.0.0 も init 冒頭で searchQuery を "" に戻していた。
+        this.cits$searchTerms = java.util.List.of();
         this.cits$sortByTypeButton = null;
         this.cits$sortByCountButton = null;
         this.cits$layoutLeftButton = null;
@@ -1091,22 +1244,25 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
 
         // Main Menu Visibility: 検索バーの表示トグルが ON のときだけ生成する。
         //
-        // ⚠ <b>既知の不具合 (1.1.1 時点): この検索欄は現在<u>無機能</u></b>。
-        //   v1.0.0 (1c3b444) には
-        //     ・{@code setResponder} でクエリを保持する入力配線
-        //     ・{@code render} TAIL でクエリに一致しないスロットを暗くする絞り込み描画
-        //   があったが、 1.21.11 移行コミット 8a16b71 ("Minecraftバージョンを1.21.11に更新し、
-        //   不要なファイルを削除") で両方とも巻き添えで削除され、 以降 再実装されていない
-        //   (履歴確認: {@code git log --all -S 'cits$searchQuery'} が導入/削除の 2 件のみ、
-        //    {@code cits$searchBox.getValue} は全履歴で 0 件)。
-        //   現在この欄の値を読む箇所はリポジトリ全体に存在せず、 入力しても何も起きない。
+        // <b>入力配線 (setResponder)</b>: 打鍵のたびにクエリを語へ正規化して
+        // {@link #cits$searchTerms} へ保持する。 実際の絞り込み描画は
+        // {@link #cits$dimNonMatchingSlots} (extractContents TAIL) が行う。
+        //
+        //   ※ この 2 つは v1.0.0 (1c3b444) に存在したが、 1.21.11 移行コミット 8a16b71
+        //     ("Minecraftバージョンを1.21.11に更新し、不要なファイルを削除") で巻き添えで
+        //     削除され、 検索欄は EditBox の生成と描画登録だけが残った状態が続いていた
+        //     (= 打っても何も起きない)。 1.1.1 の CHANGELOG に 「既知の不具合」 として
+        //     記載したもので、 ここで復旧させる。
+        //
+        //   正規化を {@link ChestSearchQuery} (common の MC 非依存 純関数) へ出しているのは、
+        //   trim / 語分割 / 全角スペース (U+3000) の扱いを単体テストで固定するため。
+        //   自前で {@code trim()} や {@code split("\\s+")} を書くと U+3000 が区切りにならず、
+        //   日本語入力のときだけ無言で 0 件になる (詳細は ChestSearchQuery の doc)。
         //
         //   なお {@link com.kajiwara.omnichest.client.render.SearchMatchSlotRenderer} による
-        //   スロットのハイライトは {@link com.kajiwara.omnichest.client.render.ChestHighlighter}
-        //   由来 (= {@code SearchScreen} でピンしたアイテム) であって、 この欄とは無関係。
-        //   ツールチップ ({@link Keys#EDITBOX_SEARCH_TOOLTIP}
-        //   "Highlight items in this chest by name.") は現状の挙動と一致していない。
-        //   機能復旧は次バージョン予定 (CHANGELOG の 1.1.1「既知の不具合」参照)。
+        //   スロットの黄ハイライトは {@link com.kajiwara.omnichest.client.render.ChestHighlighter}
+        //   由来 (= {@code SearchScreen} でピンしたアイテム) で、 この欄とは<b>別系統</b>。
+        //   この欄はピン集合へ <b>populate しない</b> (= 読みも書きもしない)。
         //
         //   ※ 検索索引 ({@code ContainerScanner} / {@code SearchIndex}) と倉庫検索 ({@code SearchScreen})
         //     は<b>この欄とは独立</b>に従来どおり動作する (= 表示トグルを OFF にしても影響しない)。
@@ -1119,6 +1275,7 @@ public abstract class GenericContainerScreenMixin extends Screen implements Omni
                 Keys.EDITBOX_SEARCH_HINT_GENERIC, "Search..."));
         cits$applyTooltip(this.cits$searchBox, Keys.EDITBOX_SEARCH_TOOLTIP,
                 "Highlight items in this chest by name.");
+        this.cits$searchBox.setResponder(q -> this.cits$searchTerms = ChestSearchQuery.terms(q));
         this.addRenderableWidget(this.cits$searchBox);
         }
 
