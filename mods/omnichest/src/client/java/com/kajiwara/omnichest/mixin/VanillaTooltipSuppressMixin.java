@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *   <li>ALT を離した瞬間に {@link TooltipVisibilityController#shouldSuppress} が false に戻り、
  *       次フレームから即座にバニラ Tooltip 復帰 (= state 破壊なし)。</li>
  *   <li>適用範囲は {@link AbstractContainerScreen} のみ (= プレイヤー インベントリ + チェスト系)。
- *       REI / EMI 等の専用 GUI / OmniChest Settings 画面には影響しない。</li>
+ *       プレビュー側も 2 Mixin で同じ範囲を担当する。 REI / EMI 専用 GUI / 設定画面には影響しない。</li>
  *   <li>ホバー対象がシュルカー <em>以外</em> なら抑制しない (= ALT で全 Tooltip が消える副作用を防止)。</li>
  * </ul>
  *
