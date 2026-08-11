@@ -14,17 +14,17 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * チェスト GUI / インベントリ GUI で、 ALT を押しながらシュルカーボックスをホバーしたときに
- * その中身を <b>読み取り専用</b> でプレビュー表示する Mixin。
+ * チェスト GUI 系 ({@code AbstractContainerScreen.extractRenderState} が実行される画面) で、 ALT を
+ * 押しながらシュルカーボックスをホバーしたとき中身を <b>読み取り専用</b> でプレビュー表示する Mixin。
  *
  * <p>
  * 描画は {@code render} の TAIL (= バニラのアイテムツールチップ描画よりも後) に注入することで、
  * プレビューパネルが最前面に出る。 ホバー中スロットは既存の {@link AbstractContainerScreenAccessor}
- * から取得する (= 専用 {@code @Shadow} を増やさず、 他 Mixin と疎結合)。
- *
- * <p>
- * 同 class への他 Mixin (SlotLock / Generic / SearchMatch) とは注入対象 / メソッドが重ならないため
- * 共存できる。 例外時は {@link SafeRenderDispatcher} で握り潰してゲーム本体を巻き込まない。
+ * から取得する (= 専用 {@code @Shadow} を増やさず、 他 Mixin と疎結合)。 同 class への他 Mixin
+ * (SlotLock / Generic / SearchMatch) とは注入対象が重ならず共存でき、 例外は
+ * {@link SafeRenderDispatcher} で握り潰す。 <b>プレイヤー インベントリ / 作業台 / かまど系</b>は
+ * {@code AbstractRecipeBookScreen} が {@code super} を呼ばないため本 Mixin では発火せず、
+ * {@link RecipeBookShulkerPreviewMixin} が同じ入口で担当する (= 注入点は排他 / 二重描画なし)。
  */
 @Mixin(AbstractContainerScreen.class)
 public abstract class ShulkerPreviewScreenMixin extends Screen {

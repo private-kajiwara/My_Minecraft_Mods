@@ -12,6 +12,7 @@
 		"RenderTypeAccessor",
 		"SearchMatchSlotMixin",
 		"ShulkerPreviewScreenMixin",
+		"RecipeBookShulkerPreviewMixin",
 		"VanillaTooltipSuppressMixin"
 	],
 	"injectors": {

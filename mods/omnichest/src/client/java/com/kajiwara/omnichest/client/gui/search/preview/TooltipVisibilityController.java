@@ -18,8 +18,8 @@ import org.jetbrains.annotations.Nullable;
  *   <li><b>状態破壊なし</b>: バニラ Tooltip キューや state に触れない。 cancel するのは
  *       「render パスの 1 呼び出しのみ」 で、 mixin 側が CallbackInfo.cancel() するだけ。</li>
  *   <li><b>他 Screen に波及しない</b>: 適用は {@code AbstractContainerScreen.renderTooltip}
- *       のみ (= プレイヤー インベントリ + チェスト系)。 REI/EMI 専用 Screen / 設定画面 /
- *       OmniChest Settings GUI は影響を受けない。</li>
+ *       のみ (= プレイヤー インベントリ + チェスト系)。 プレビュー側も同じ範囲を担当するため、
+ *       抑制だけが効く画面は無い。 REI/EMI 専用 Screen / 設定画面は影響を受けない。</li>
  *   <li><b>Tooltip suppression のみ</b>: アイテム ロジック / インベントリ操作 / 検索ロジックは
  *       一切変更しない (= 純粋な描画キャンセル)。</li>
  * </ul>
